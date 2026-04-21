@@ -6,3 +6,4 @@ export * from "./accounts";
 export * from "./dimensions";
 export * from "./periods";
 export * from "./journal_meta";
+export * from "./journals";

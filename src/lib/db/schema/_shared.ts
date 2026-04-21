@@ -180,3 +180,75 @@ export const exchangeRateType = pgEnum("exchange_rate_type", [
   "budget",
   "consolidation",
 ]);
+
+// ---------------------------------------------------------------------------
+// Journals & posting
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a journal came from. Drives which source_codes / templates apply,
+ * which period-status exceptions are allowed, and which subledger holds the
+ * originating document.
+ */
+export const journalSource = pgEnum("journal_source", [
+  "manual",
+  "ap",
+  "ar",
+  "cash_receipt",
+  "cash_disbursement",
+  "payroll",
+  "inventory",
+  "fixed_asset",
+  "ic",
+  "recurring",
+  "reversing",
+  "adjusting",
+  "year_end_close",
+]);
+
+/**
+ * Journal lifecycle.
+ *   draft             — being built, not yet posted
+ *   pending_approval  — awaiting an approver (if approval workflow enabled)
+ *   posted            — committed to the ledger, immutable
+ *   reversed          — has been reversed by another journal
+ */
+export const journalStatus = pgEnum("journal_status", [
+  "draft",
+  "pending_approval",
+  "posted",
+  "reversed",
+]);
+
+/**
+ * Batch lifecycle. Batches group multiple journals for a single post run.
+ *   open      — journals being staged
+ *   posting   — post run in flight (prevents concurrent posts)
+ *   posted    — all journals in batch successfully posted
+ *   error     — at least one journal failed; batch halted mid-post
+ */
+export const batchStatus = pgEnum("batch_status", [
+  "open",
+  "posting",
+  "posted",
+  "error",
+]);
+
+/**
+ * Type of the balancing account on a journal template. Determines how the
+ * subledger link on that side of the entry is interpreted.
+ *   gl            — balancing account is a plain GL account
+ *   bank          — bank account (links to bank master)
+ *   customer      — AR customer (subledger)
+ *   vendor        — AP vendor (subledger)
+ *   fixed_asset   — fixed asset (subledger)
+ *   ic_partner    — intercompany partner (for IC journals)
+ */
+export const balAccountType = pgEnum("bal_account_type", [
+  "gl",
+  "bank",
+  "customer",
+  "vendor",
+  "fixed_asset",
+  "ic_partner",
+]);

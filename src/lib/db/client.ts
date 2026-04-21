@@ -3,6 +3,19 @@ import postgres from "postgres";
 import * as schema from "./schema";
 
 /*
+ * Standalone scripts (run via `tsx` / `node`) don't get `.env.local` loaded
+ * for free the way Next.js does — the dev server reads it automatically.
+ * If neither connection env var is populated, try dotenv before giving up.
+ * Safe no-op in production (both vars are already set by the platform).
+ */
+if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const dotenv = require("dotenv") as typeof import("dotenv");
+  dotenv.config({ path: ".env.local" });
+  dotenv.config({ path: ".env" });
+}
+
+/*
  * Connection string resolution:
  *   1. DATABASE_URL — our canonical name, used locally via .env.local
  *   2. POSTGRES_URL — auto-provisioned by Vercel's Supabase integration

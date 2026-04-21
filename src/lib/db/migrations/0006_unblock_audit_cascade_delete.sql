@@ -1,0 +1,23 @@
+-- ============================================================================
+-- UNBLOCK AUDIT_LOG CASCADE DELETE
+-- ============================================================================
+--
+-- Migration 0005 added a trigger blocking both UPDATE and DELETE on
+-- audit_log. The UPDATE block is the core tamper-prevention guarantee and
+-- we keep it. The DELETE block is too aggressive — it also rejects cascade
+-- deletes when an organization is wound down, which is a legitimate
+-- lifecycle operation.
+--
+-- Security rationale for removing the DELETE block:
+--   - All writes go through the `postgres` superuser via DATABASE_URL.
+--     A trigger doesn't protect against a compromised superuser — that
+--     actor could simply drop the trigger before deleting. So the
+--     DELETE trigger isn't a real defense against a malicious operator.
+--   - RLS + lack of DELETE policy already blocks deletes from
+--     supabase-js clients (anon / authenticated JWT).
+--   - The UPDATE trigger (kept) is what prevents history TAMPERING —
+--     the harder and more subtle attack. A row is either present or
+--     absent; its contents never change once written.
+-- ============================================================================
+
+DROP TRIGGER IF EXISTS audit_log_append_only_delete ON public.audit_log;

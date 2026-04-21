@@ -29,6 +29,34 @@
       "when": 1776799350000,
       "tag": "0003_seed_currencies",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776800273928,
+      "tag": "0004_mysterious_mercury",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776800471677,
+      "tag": "0005_posting_immutability",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776800674958,
+      "tag": "0006_unblock_audit_cascade_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776800745638,
+      "tag": "0007_delete_bypass_flag",
+      "breakpoints": true
     }
   ]
 }
