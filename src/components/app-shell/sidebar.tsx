@@ -36,8 +36,9 @@ const NAV: NavGroup[] = [
     icon: Banknote,
     items: [
       { label: "Dashboard", href: "/dashboard" },
-      { label: "General Ledger", href: "/gl", soon: true },
-      { label: "Period Close", href: "/gl/close", soon: true },
+      { label: "Chart of Accounts", href: "/accounts" },
+      { label: "General Ledger", href: "/gl" },
+      { label: "Period Close", href: "/periods" },
       { label: "Audit Trail", href: "/audit", soon: true },
     ],
   },
