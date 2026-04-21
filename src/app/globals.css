@@ -1,0 +1,188 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * GROUNDWORKS DESIGN SYSTEM
+ * Dark-mode first. Gold-on-obsidian palette ported from the prototype.
+ * shadcn tokens are mapped onto the Groundworks palette so every shadcn
+ * component picks up the brand automatically.
+ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-epilogue);
+  --font-mono: var(--font-jetbrains);
+  --font-heading: var(--font-bebas);
+
+  /* shadcn semantic tokens */
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Groundworks brand tokens — use these for status/semantic domain colors */
+  --color-gw-gold: var(--gw-gold);
+  --color-gw-gold-bright: var(--gw-gold-bright);
+  --color-gw-green: var(--gw-green);
+  --color-gw-green-bright: var(--gw-green-bright);
+  --color-gw-red: var(--gw-red);
+  --color-gw-red-bright: var(--gw-red-bright);
+  --color-gw-blue: var(--gw-blue);
+  --color-gw-blue-bright: var(--gw-blue-bright);
+  --color-gw-teal: var(--gw-teal);
+  --color-gw-teal-bright: var(--gw-teal-bright);
+  --color-gw-amber: var(--gw-amber);
+  --color-gw-amber-bright: var(--gw-amber-bright);
+  --color-gw-purple-bright: var(--gw-purple-bright);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+/*
+ * Default theme = dark. ERP users stare at this all day;
+ * the prototype's dark/gold palette is the product's identity.
+ */
+:root,
+.dark {
+  /* Groundworks palette (source of truth) */
+  --gw-bg: #141210;
+  --gw-surface: #1E1B18;
+  --gw-raised: #262219;
+  --gw-border: #302B24;
+  --gw-border-strong: #3D3730;
+  --gw-muted: #58524A;
+  --gw-dim: #8A8078;
+  --gw-light: #C8BFB0;
+  --gw-bright: #EDE5D8;
+  --gw-white: #FAF7F2;
+
+  --gw-gold: #C07A0A;
+  --gw-gold-bright: #E09418;
+  --gw-gold-deep: #301E02;
+
+  --gw-green: #1E6040;
+  --gw-green-bright: #3CA870;
+  --gw-red: #6E2030;
+  --gw-red-bright: #B04050;
+  --gw-blue: #163862;
+  --gw-blue-bright: #2878C0;
+  --gw-teal: #126060;
+  --gw-teal-bright: #28A8A8;
+  --gw-amber: #5A3800;
+  --gw-amber-bright: #D08030;
+  --gw-purple-bright: #8048C0;
+
+  /* shadcn tokens mapped onto the palette */
+  --background: var(--gw-bg);
+  --foreground: var(--gw-bright);
+  --card: var(--gw-surface);
+  --card-foreground: var(--gw-bright);
+  --popover: var(--gw-raised);
+  --popover-foreground: var(--gw-bright);
+  --primary: var(--gw-gold);
+  --primary-foreground: var(--gw-bg);
+  --secondary: var(--gw-raised);
+  --secondary-foreground: var(--gw-bright);
+  --muted: var(--gw-surface);
+  --muted-foreground: var(--gw-dim);
+  --accent: var(--gw-raised);
+  --accent-foreground: var(--gw-bright);
+  --destructive: var(--gw-red-bright);
+  --border: var(--gw-border);
+  --input: var(--gw-border);
+  --ring: var(--gw-gold);
+
+  --sidebar: var(--gw-surface);
+  --sidebar-foreground: var(--gw-dim);
+  --sidebar-primary: var(--gw-gold);
+  --sidebar-primary-foreground: var(--gw-bg);
+  --sidebar-accent: var(--gw-raised);
+  --sidebar-accent-foreground: var(--gw-light);
+  --sidebar-border: var(--gw-border);
+  --sidebar-ring: var(--gw-gold);
+
+  --radius: 0.5rem;
+}
+
+/* Optional light mode override for future, kept minimal for now */
+.light {
+  --background: #FAF7F2;
+  --foreground: #1E1B18;
+  --card: #FFFFFF;
+  --card-foreground: #1E1B18;
+  --popover: #FFFFFF;
+  --popover-foreground: #1E1B18;
+  --primary: #C07A0A;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EDE5D8;
+  --secondary-foreground: #1E1B18;
+  --muted: #EDE5D8;
+  --muted-foreground: #58524A;
+  --accent: #EDE5D8;
+  --accent-foreground: #1E1B18;
+  --destructive: #B04050;
+  --border: #D8CFBE;
+  --input: #D8CFBE;
+  --ring: #C07A0A;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    background: var(--background);
+    color: var(--foreground);
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  /* Display / heading font utility — use via `font-heading` */
+  .font-heading {
+    font-family: var(--font-bebas), sans-serif;
+    letter-spacing: 0.08em;
+  }
+
+  /* Thin scrollbars matching the prototype */
+  ::-webkit-scrollbar {
+    width: 3px;
+    height: 3px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--gw-surface);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--gw-muted);
+    border-radius: 2px;
+  }
+}
