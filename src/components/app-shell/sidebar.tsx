@@ -44,6 +44,8 @@ const NAV: NavGroup[] = [
       { label: "Allocations", href: "/allocations" },
       { label: "Budgets", href: "/budgets" },
       { label: "Period Close", href: "/periods" },
+      { label: "Exchange Rates", href: "/rates" },
+      { label: "FX Revaluation", href: "/rates/revaluation" },
       { label: "Audit Trail", href: "/audit", soon: true },
     ],
   },
