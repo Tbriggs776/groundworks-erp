@@ -10,13 +10,22 @@ AI layers — in one platform.
 - **Tier 0 — Platform slab:** ✅ Next.js 16, Supabase, Drizzle, multi-tenant
   schema, magic-link auth, audit log, money + period utilities, app shell.
 - **Tier 1 — Identity hardening + onboarding:** ✅ RLS on all tables, signup
-  trigger, onboarding flow creates org + owner membership + system
-  dimensions + source codes + (optionally) a ~70-account contractor CoA
-  template.
+  trigger, onboarding flow seeds system dimensions + source codes + optional
+  ~70-account contractor CoA.
 - **Tier 1 — GL masters:** ✅ Accounts, dimensions, fiscal periods, multi-
-  currency, exchange rates, source/reason/number series. 19 tables, 11 enums
-  at BC parity.
-- **Tier 1 — Journals + posting engine:** 🚧 in progress (Chunk B).
+  currency, exchange rates, source/reason/number series. BC parity.
+- **Tier 1 — Journals + posting engine:** ✅ 5 tables, 11 validations,
+  reversal + auto-reversal, DB-level immutability triggers, 11/11 e2e checks.
+- **Tier 1 — Recurring / allocation / budget / cron:** ✅ 8 more tables,
+  daily cron route, 12/12 e2e checks.
+- **Tier 1 — UI (CoA / Periods / GL list + detail / Manual JE):** ✅
+  Screens wired end-to-end. You can log in, generate a fiscal year, post a
+  journal, and drill into it.
+- **Tier 1 — Dimensions / Recurring / Allocation / Budget UI:** 🚧 next
+  (Chunk D.2).
+- **Tier 1 — Reports (Trial Balance, GL Detail, BS, IS):** 🚧 next
+  (Chunk E).
+- **Tier 1 — FX revaluation:** 🚧 (Chunk F).
 
 See [CLAUDE.md](./CLAUDE.md) for architecture and conventions.
 
@@ -157,11 +166,12 @@ npm run db:push         Direct schema push (dev prototyping only — bypasses mi
 - [x] **Tier 0 — Platform:** multi-tenant, auth, audit, money/dates, shell
 - [x] **Tier 1.1 — Hardening:** RLS, signup trigger, onboarding flow
 - [x] **Tier 1.2 — GL masters:** accounts, dimensions, fiscal periods, currency
-- [ ] **Tier 1.3 — Journals + posting engine**
-- [ ] **Tier 1.4 — Recurring / allocation / budget**
-- [ ] **Tier 1.5 — UI: CoA / Dimensions / Fiscal / Manual JE**
-- [ ] **Tier 1.6 — Reports: Trial Balance, GL Detail, BS, IS**
-- [ ] **Tier 1.7 — FX revaluation**
+- [x] **Tier 1.3 — Journals + posting engine** (11 validations, 11/11 e2e)
+- [x] **Tier 1.4 — Recurring / allocation / budget / daily cron** (12/12 e2e)
+- [x] **Tier 1.5 — UI: CoA / Periods / GL list + detail / Manual JE**
+- [ ] **Tier 1.6 — UI: Dimensions, Recurring, Allocation, Budget**
+- [ ] **Tier 1.7 — Reports: Trial Balance, GL Detail, BS, IS**
+- [ ] **Tier 1.8 — FX revaluation**
 - [ ] **Tier 2 — Master data:** customers, vendors, employees, cost codes, jobs
 - [ ] **Tier 3 — Preconstruction → Job Cost wedge:** estimating, commitments,
   change orders, AP → job cost
