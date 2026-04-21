@@ -326,7 +326,8 @@ async function main() {
     }\n`
   );
 
-  await (db.$client as unknown as { end: () => Promise<void> }).end();
+  // process.exit() tears down the postgres connections; skip explicit end()
+  // because the lazy proxy wraps `$client` in a way that hides it from .end().
   process.exit(failed === 0 ? 0 : 1);
 }
 
