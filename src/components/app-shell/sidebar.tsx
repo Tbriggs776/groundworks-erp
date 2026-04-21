@@ -37,7 +37,11 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Dashboard", href: "/dashboard" },
       { label: "Chart of Accounts", href: "/accounts" },
+      { label: "Dimensions", href: "/dimensions" },
       { label: "General Ledger", href: "/gl" },
+      { label: "Recurring", href: "/recurring" },
+      { label: "Allocations", href: "/allocations" },
+      { label: "Budgets", href: "/budgets" },
       { label: "Period Close", href: "/periods" },
       { label: "Audit Trail", href: "/audit", soon: true },
     ],
