@@ -2,11 +2,21 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 
-const connectionString = process.env.DATABASE_URL;
+/*
+ * Connection string resolution:
+ *   1. DATABASE_URL — our canonical name, used locally via .env.local
+ *   2. POSTGRES_URL — auto-provisioned by Vercel's Supabase integration
+ *                     (already points at the pooled connection)
+ * Either should be the TRANSACTION POOLER URL (port 6543) in serverless
+ * environments. A direct connection works for long-lived dev processes but
+ * exhausts under Vercel's per-request connection model.
+ */
+const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
 if (!connectionString) {
   throw new Error(
-    "DATABASE_URL is not set. In production this should be the Supabase " +
-      "pooled connection string (transaction mode). See .env.example."
+    "Neither DATABASE_URL nor POSTGRES_URL is set. In production this " +
+      "should be the Supabase pooled connection string (transaction mode). " +
+      "See .env.example."
   );
 }
 
