@@ -50,6 +50,8 @@ export const SYSTEM_SOURCE_CODES: Array<{ code: string; description: string }> =
   { code: "IC", description: "Intercompany" },
   { code: "INV", description: "Inventory" },
   { code: "FA", description: "Fixed Assets" },
+  { code: "REC", description: "Recurring Entry" },
+  { code: "ALLOC", description: "Allocation Entry" },
 ];
 
 export const DEFAULT_REASON_CODES: Array<{ code: string; description: string }> = [
@@ -67,6 +69,8 @@ export const DEFAULT_NUMBER_SERIES: Array<{
 }> = [
   { code: "JE", description: "Journal Entries", prefix: "JE-", width: 6 },
   { code: "REV", description: "Reversing Entries", prefix: "REV-", width: 6 },
+  { code: "REC", description: "Recurring-Generated Entries", prefix: "REC-", width: 6 },
+  { code: "ALLOC", description: "Allocation Entries", prefix: "ALLOC-", width: 6 },
 ];
 
 export async function seedOrganizationDefaults(

@@ -515,9 +515,14 @@ export async function v9PeriodStatus(
 export async function v10UserPostingWindow(
   tx: Tx,
   journalId: string,
-  actorId: string,
+  actorId: string | null,
   organizationId: string
 ): Promise<ValidationResult> {
+  // System-triggered posts (cron/recurring/auto-reverse) bypass user window
+  // restrictions — the underlying recurring_journal already passed through a
+  // human-authored approval when it was created.
+  if (!actorId) return { ok: true };
+
   const [j] = await tx
     .select({ journalDate: glJournals.journalDate })
     .from(glJournals)
@@ -609,7 +614,7 @@ export async function v11ReversalIntegrity(
 // ---------------------------------------------------------------------------
 
 export type PostValidationOpts = {
-  actorId: string;
+  actorId: string | null;
   organizationId: string;
   overridePassword?: string;
   overrideReason?: string;

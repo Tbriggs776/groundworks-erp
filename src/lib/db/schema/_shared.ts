@@ -252,3 +252,45 @@ export const balAccountType = pgEnum("bal_account_type", [
   "fixed_asset",
   "ic_partner",
 ]);
+
+// ---------------------------------------------------------------------------
+// Recurring / allocation / budget
+// ---------------------------------------------------------------------------
+
+/**
+ * Recurring-journal cadence. `frequency_day` on the recurring row interprets
+ * monthly/quarterly/etc. as day-of-month; weekly/biweekly uses a weekday idx.
+ */
+export const recurringFrequency = pgEnum("recurring_frequency", [
+  "daily",
+  "weekly",
+  "biweekly",
+  "monthly",
+  "quarterly",
+  "semiannually",
+  "annually",
+]);
+
+/**
+ * Recurring lifecycle.
+ *   active — scheduler generates a JE on each next_run_date
+ *   paused — still live, no generation until resumed
+ *   ended  — terminal; end_date reached or manually ended
+ */
+export const recurringStatus = pgEnum("recurring_status", [
+  "active",
+  "paused",
+  "ended",
+]);
+
+/**
+ * Allocation driver type.
+ *   fixed       — static percentages on allocation_targets
+ *   statistical — percentages derived from a statistical account's
+ *                 dimension-bucketed balance (e.g., allocate rent by
+ *                 square footage recorded in a `SQFT` statistical acct)
+ */
+export const allocationType = pgEnum("allocation_type", [
+  "fixed",
+  "statistical",
+]);

@@ -40,7 +40,9 @@ export type JournalLineInput = {
 
 export type CreateAndPostInput = {
   organizationId: string;
-  actorId: string;
+  /** null = system-triggered (cron, recurring, auto-reverse). Audit row
+   *  records actor_id=null which is fine; the event name tells the story. */
+  actorId: string | null;
   journalDate: string; // ISO date YYYY-MM-DD
   sourceCodeId: string;
   source: NewGlJournal["source"];
@@ -202,7 +204,7 @@ export async function postDraft(
   opts: {
     journalId: string;
     journalNumber?: string;
-    actorId: string;
+    actorId: string | null;
     organizationId: string;
     overridePassword?: string;
     overrideReason?: string;
@@ -286,7 +288,7 @@ export async function postDraft(
 export async function reverseJournal(
   originalId: string,
   opts: {
-    actorId: string;
+    actorId: string | null;
     organizationId: string;
     reversalDate?: string; // default: today
     description?: string; // default: "Reversal of <original number>"
