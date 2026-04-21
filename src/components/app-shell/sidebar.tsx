@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   Banknote,
   Building2,
+  FileBarChart,
   Hammer,
   HardHat,
   LineChart,
@@ -44,6 +45,16 @@ const NAV: NavGroup[] = [
       { label: "Budgets", href: "/budgets" },
       { label: "Period Close", href: "/periods" },
       { label: "Audit Trail", href: "/audit", soon: true },
+    ],
+  },
+  {
+    label: "Reports",
+    icon: FileBarChart,
+    items: [
+      { label: "Trial Balance", href: "/reports/trial-balance" },
+      { label: "Balance Sheet", href: "/reports/balance-sheet" },
+      { label: "Income Statement", href: "/reports/income-statement" },
+      { label: "GL Detail", href: "/reports/gl-detail" },
     ],
   },
   {
