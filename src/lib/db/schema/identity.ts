@@ -27,6 +27,18 @@ export const organizations = pgTable(
     fiscalYearStartMonth: integer("fiscal_year_start_month")
       .notNull()
       .default(1),
+
+    // GL behavior settings
+    /**
+     * Hard-close override password. Hashed with argon2. Null = no override
+     * permitted (admins must set one for hard-close overrides to be possible).
+     * See src/lib/auth/password.ts for hashing helpers.
+     */
+    hardCloseOverridePasswordHash: text("hard_close_override_password_hash"),
+    requireReasonForOverride: boolean("require_reason_for_override")
+      .notNull()
+      .default(true),
+
     settings: jsonb("settings").notNull().default({}),
     ...timestamps,
   },

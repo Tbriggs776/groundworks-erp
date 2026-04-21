@@ -1,25 +1,18 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { requireCurrentOrg } from "@/lib/auth";
 
 /**
- * Every authenticated route nests under (app). The middleware already
- * redirects anonymous users to /auth/login, but we double-check here in case
- * middleware is bypassed (e.g., in tests) and to expose the user to pages
- * via the root server boundary.
+ * The (app) route group requires:
+ *   1. An authenticated user (middleware / proxy catches anon earlier)
+ *   2. An active membership — if none, bounce to /onboarding so the user
+ *      creates their first org.
+ *
+ * Once both are satisfied, every child route has a guaranteed user + org.
  */
 export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/auth/login");
-  }
-
+  await requireCurrentOrg();
   return <>{children}</>;
 }
