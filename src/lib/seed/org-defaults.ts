@@ -1,12 +1,16 @@
 import type { db } from "@/lib/db/client";
 import {
   accounts,
+  contractTypes,
+  costCodes,
   dimensions,
   numberSeries,
   reasonCodes,
   sourceCodes,
 } from "@/lib/db/schema";
 import { CONTRACTOR_COA } from "./contractor-coa";
+import { CSI_DIVISIONS } from "./csi-masterformat";
+import { DEFAULT_CONTRACT_TYPES } from "./contract-types";
 
 /**
  * Tenant defaults seeded on org creation. Called inside the onboarding
@@ -76,8 +80,13 @@ export const DEFAULT_NUMBER_SERIES: Array<{
 export async function seedOrganizationDefaults(
   tx: Tx,
   organizationId: string,
-  opts: { includeContractorCoa: boolean }
+  opts: {
+    includeContractorCoa: boolean;
+    /** Seed the 50 CSI MasterFormat divisions (opt-in, default true). */
+    includeCsiCostCodes?: boolean;
+  }
 ): Promise<void> {
+  const includeCsi = opts.includeCsiCostCodes ?? true;
   // Dimensions — system, code-stable, name-editable
   await tx
     .insert(dimensions)
@@ -140,6 +149,39 @@ export async function seedOrganizationDefaults(
         CONTRACTOR_COA.map((a) => ({
           ...a,
           organizationId,
+        }))
+      )
+      .onConflictDoNothing();
+  }
+
+  // Default contract types (always seeded; flagged isSystem so admins
+  // can't delete them, only rename / deactivate).
+  await tx
+    .insert(contractTypes)
+    .values(
+      DEFAULT_CONTRACT_TYPES.map((t) => ({
+        organizationId,
+        code: t.code,
+        name: t.name,
+        description: t.description,
+        isSystem: true,
+        sortOrder: t.sortOrder,
+      }))
+    )
+    .onConflictDoNothing();
+
+  // CSI MasterFormat top-level divisions (opt-in, default true).
+  if (includeCsi) {
+    await tx
+      .insert(costCodes)
+      .values(
+        CSI_DIVISIONS.map((d) => ({
+          organizationId,
+          code: d.code,
+          name: d.name,
+          description: d.description,
+          costType: d.costType,
+          sortOrder: d.sortOrder,
         }))
       )
       .onConflictDoNothing();

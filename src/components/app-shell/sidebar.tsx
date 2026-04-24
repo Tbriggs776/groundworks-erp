@@ -11,6 +11,7 @@ import {
   HardHat,
   LineChart,
   Receipt,
+  Settings,
   Truck,
   Wallet,
 } from "lucide-react";
@@ -63,7 +64,8 @@ const NAV: NavGroup[] = [
     label: "Projects",
     icon: HardHat,
     items: [
-      { label: "Jobs", href: "/jobs", soon: true },
+      { label: "Jobs", href: "/jobs" },
+      { label: "Cost Codes", href: "/cost-codes" },
       { label: "Job Cost", href: "/jobs/cost", soon: true },
       { label: "Change Orders", href: "/jobs/change-orders", soon: true },
       { label: "Commitments", href: "/commitments", soon: true },
@@ -123,6 +125,13 @@ const NAV: NavGroup[] = [
       { label: "CRM", href: "/crm", soon: true },
       { label: "Estimating", href: "/estimating", soon: true },
       { label: "BI", href: "/bi", soon: true },
+    ],
+  },
+  {
+    label: "Settings",
+    icon: Settings,
+    items: [
+      { label: "Contract Types", href: "/settings/contract-types" },
     ],
   },
 ];

@@ -294,3 +294,40 @@ export const allocationType = pgEnum("allocation_type", [
   "fixed",
   "statistical",
 ]);
+
+// ---------------------------------------------------------------------------
+// Projects / Jobs / Cost Codes
+// ---------------------------------------------------------------------------
+
+/**
+ * Cost code classification — drives reporting (e.g., "Labor burden as % of
+ * labor cost") and default GL mapping when AP bills or time entries post to
+ * a cost code.
+ *   overhead — indirect construction cost, not tied to a single job
+ *   statistical — non-monetary (hours, sqft) for allocation or KPIs
+ */
+export const costType = pgEnum("cost_type", [
+  "labor",
+  "material",
+  "equipment",
+  "subcontractor",
+  "other",
+  "overhead",
+  "statistical",
+]);
+
+/**
+ * Job state machine. Transitions are strict (enforced in server actions):
+ *   bid → awarded | closed
+ *   awarded → active | closed
+ *   active → on_hold | closed
+ *   on_hold → active | closed
+ *   closed → (terminal; reopen requires admin + audit)
+ */
+export const jobStatus = pgEnum("job_status", [
+  "bid",
+  "awarded",
+  "active",
+  "on_hold",
+  "closed",
+]);

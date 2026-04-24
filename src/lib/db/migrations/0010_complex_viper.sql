@@ -1,0 +1,2 @@
+CREATE TYPE "public"."cost_type" AS ENUM('labor', 'material', 'equipment', 'subcontractor', 'other', 'overhead', 'statistical');--> statement-breakpoint
+CREATE TYPE "public"."job_status" AS ENUM('bid', 'awarded', 'active', 'on_hold', 'closed');

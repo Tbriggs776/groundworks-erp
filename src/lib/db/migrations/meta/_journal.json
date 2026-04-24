@@ -71,6 +71,20 @@
       "when": 1777057777432,
       "tag": "0009_rainy_micromax",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777058441675,
+      "tag": "0010_complex_viper",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777058496884,
+      "tag": "0011_great_killmonger",
+      "breakpoints": true
     }
   ]
 }
