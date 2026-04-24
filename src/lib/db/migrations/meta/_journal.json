@@ -85,6 +85,20 @@
       "when": 1777058496884,
       "tag": "0011_great_killmonger",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1777059724263,
+      "tag": "0012_mean_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1777059740624,
+      "tag": "0013_certain_betty_ross",
+      "breakpoints": true
     }
   ]
 }

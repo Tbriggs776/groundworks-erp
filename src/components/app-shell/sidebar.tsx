@@ -86,7 +86,7 @@ const NAV: NavGroup[] = [
     icon: Wallet,
     items: [
       { label: "Vendors", href: "/vendors" },
-      { label: "AP", href: "/ap", soon: true },
+      { label: "AP Bills", href: "/ap/bills" },
       { label: "POs", href: "/po", soon: true },
       { label: "Subcontractors", href: "/subs", soon: true },
     ],
@@ -132,6 +132,7 @@ const NAV: NavGroup[] = [
     icon: Settings,
     items: [
       { label: "Contract Types", href: "/settings/contract-types" },
+      { label: "Approval Thresholds", href: "/settings/approval-thresholds" },
     ],
   },
 ];

@@ -1,0 +1,2 @@
+CREATE TYPE "public"."ap_bill_status" AS ENUM('draft', 'pending_approval', 'rejected', 'approved', 'posted', 'paid', 'voided');--> statement-breakpoint
+CREATE TYPE "public"."approval_scope" AS ENUM('ap_bill');

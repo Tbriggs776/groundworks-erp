@@ -331,3 +331,34 @@ export const jobStatus = pgEnum("job_status", [
   "on_hold",
   "closed",
 ]);
+
+// ---------------------------------------------------------------------------
+// AP (Accounts Payable)
+// ---------------------------------------------------------------------------
+
+/**
+ * AP bill lifecycle:
+ *   draft — being built
+ *   pending_approval — submitted, awaiting a qualified approver
+ *   rejected — approver kicked it back; moves back to draft (with reason)
+ *   approved — approver signed off; ready to post
+ *   posted — GL journal created; vendor now owed
+ *   paid — fully paid via one or more payment applications (2.2b)
+ *   voided — reversed via a reversing GL journal
+ */
+export const apBillStatus = pgEnum("ap_bill_status", [
+  "draft",
+  "pending_approval",
+  "rejected",
+  "approved",
+  "posted",
+  "paid",
+  "voided",
+]);
+
+/**
+ * What an approval threshold applies to. Starts with `ap_bill`; future
+ * domains (manual JE, AP payment, job change order over X) slot in here
+ * without a breaking migration.
+ */
+export const approvalScope = pgEnum("approval_scope", ["ap_bill"]);

@@ -1,6 +1,7 @@
 import type { db } from "@/lib/db/client";
 import {
   accounts,
+  approvalThresholds,
   contractTypes,
   costCodes,
   dimensions,
@@ -75,6 +76,8 @@ export const DEFAULT_NUMBER_SERIES: Array<{
   { code: "REV", description: "Reversing Entries", prefix: "REV-", width: 6 },
   { code: "REC", description: "Recurring-Generated Entries", prefix: "REC-", width: 6 },
   { code: "ALLOC", description: "Allocation Entries", prefix: "ALLOC-", width: 6 },
+  { code: "AP", description: "AP Bills", prefix: "AP-", width: 6 },
+  { code: "APPAY", description: "AP Payments", prefix: "APPAY-", width: 6 },
 ];
 
 export async function seedOrganizationDefaults(
@@ -186,4 +189,19 @@ export async function seedOrganizationDefaults(
       )
       .onConflictDoNothing();
   }
+
+  // Default AP approval threshold — one tier spanning all amounts, admin
+  // role required. Admins can add more tiers via /settings/approval-thresholds.
+  await tx
+    .insert(approvalThresholds)
+    .values({
+      organizationId,
+      scope: "ap_bill",
+      tierName: "Default",
+      minAmount: "0",
+      maxAmount: null,
+      requiredRole: "admin",
+      sortOrder: 0,
+    })
+    .onConflictDoNothing();
 }
