@@ -87,6 +87,7 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Vendors", href: "/vendors" },
       { label: "AP Bills", href: "/ap/bills" },
+      { label: "AP Payments", href: "/ap/payments" },
       { label: "POs", href: "/po", soon: true },
       { label: "Subcontractors", href: "/subs", soon: true },
     ],

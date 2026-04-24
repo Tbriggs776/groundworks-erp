@@ -135,6 +135,11 @@ const SUBLEDGER_SOURCES = new Set([
   "payroll",
   "inventory",
   "fixed_asset",
+  // A reversing entry mirrors a legitimate original — if the original was
+  // allowed to touch a control account (subledger-sourced), the reversal
+  // must also be allowed, otherwise voiding AP/AR postings is impossible.
+  // The link to the original via reverses_journal_id preserves auditability.
+  "reversing",
 ]);
 
 /**

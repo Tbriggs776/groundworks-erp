@@ -82,7 +82,8 @@ export const CONTRACTOR_COA: AccountSeed[] = [
   { code: "4900", name: "Other Income", category: "income_statement", subcategory: "other_revenue", normalBalance: "credit" },
   { code: "4910", name: "Interest Income", category: "income_statement", subcategory: "other_revenue", normalBalance: "credit" },
   { code: "4920", name: "Gain on Sale of Assets", category: "income_statement", subcategory: "other_revenue", normalBalance: "credit" },
-  { code: "4930", name: "Unrealized FX Gain", category: "income_statement", subcategory: "other_revenue", normalBalance: "credit", description: "Period-end revaluation gain on foreign-currency balances" },
+    { code: "4930", name: "Unrealized FX Gain", category: "income_statement", subcategory: "other_revenue", normalBalance: "credit", description: "Period-end revaluation gain on foreign-currency balances" },
+  { code: "4940", name: "Purchase Discounts Earned", category: "income_statement", subcategory: "other_revenue", normalBalance: "credit", description: "Early-pay discounts taken on AP bills" },
 
   // --- COGS / DIRECT COSTS ---
   { code: "5000", name: "Direct Labor", category: "income_statement", subcategory: "cogs_labor", normalBalance: "debit" },

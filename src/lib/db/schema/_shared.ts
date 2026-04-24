@@ -362,3 +362,26 @@ export const apBillStatus = pgEnum("ap_bill_status", [
  * without a breaking migration.
  */
 export const approvalScope = pgEnum("approval_scope", ["ap_bill"]);
+
+/**
+ * AP payment method. `other` catches weird one-offs; everything common
+ * has a first-class slot.
+ */
+export const paymentMethod = pgEnum("payment_method", [
+  "check",
+  "ach",
+  "wire",
+  "credit_card",
+  "cash",
+  "other",
+]);
+
+/**
+ * AP payment lifecycle. Simpler than bills — payments are either being
+ * assembled (draft), committed to the ledger (posted), or reversed (voided).
+ */
+export const apPaymentStatus = pgEnum("ap_payment_status", [
+  "draft",
+  "posted",
+  "voided",
+]);
