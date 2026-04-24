@@ -10,3 +10,4 @@ export * from "./journals";
 export * from "./recurring";
 export * from "./allocations";
 export * from "./budgets";
+export * from "./parties";

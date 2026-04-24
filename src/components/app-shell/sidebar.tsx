@@ -73,6 +73,7 @@ const NAV: NavGroup[] = [
     label: "Billing",
     icon: Receipt,
     items: [
+      { label: "Customers", href: "/customers" },
       { label: "AR", href: "/ar", soon: true },
       { label: "AIA / SOV", href: "/ar/aia", soon: true },
       { label: "Retainage", href: "/ar/retainage", soon: true },
@@ -82,6 +83,7 @@ const NAV: NavGroup[] = [
     label: "Procurement",
     icon: Wallet,
     items: [
+      { label: "Vendors", href: "/vendors" },
       { label: "AP", href: "/ap", soon: true },
       { label: "POs", href: "/po", soon: true },
       { label: "Subcontractors", href: "/subs", soon: true },
@@ -91,7 +93,7 @@ const NAV: NavGroup[] = [
     label: "People",
     icon: Building2,
     items: [
-      { label: "HRIS", href: "/hr", soon: true },
+      { label: "Employees", href: "/employees" },
       { label: "Payroll", href: "/payroll", soon: true },
       { label: "Time & Expense", href: "/time", soon: true },
     ],
