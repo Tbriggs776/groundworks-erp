@@ -58,6 +58,7 @@ const NAV: NavGroup[] = [
       { label: "Balance Sheet", href: "/reports/balance-sheet" },
       { label: "Income Statement", href: "/reports/income-statement" },
       { label: "GL Detail", href: "/reports/gl-detail" },
+      { label: "Job Cost", href: "/reports/job-cost" },
     ],
   },
   {
@@ -66,7 +67,7 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Jobs", href: "/jobs" },
       { label: "Cost Codes", href: "/cost-codes" },
-      { label: "Job Cost", href: "/jobs/cost", soon: true },
+      { label: "Job Cost Report", href: "/reports/job-cost" },
       { label: "Change Orders", href: "/jobs/change-orders", soon: true },
       { label: "Commitments", href: "/commitments", soon: true },
     ],
