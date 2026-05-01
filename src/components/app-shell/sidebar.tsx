@@ -68,7 +68,7 @@ const NAV: NavGroup[] = [
       { label: "Jobs", href: "/jobs" },
       { label: "Cost Codes", href: "/cost-codes" },
       { label: "Job Cost Report", href: "/reports/job-cost" },
-      { label: "Change Orders", href: "/jobs/change-orders", soon: true },
+      { label: "Change Orders", href: "/change-orders" },
       { label: "Commitments", href: "/commitments", soon: true },
     ],
   },

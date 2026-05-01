@@ -26,7 +26,7 @@ export type ApprovalRouting = {
 
 export async function resolveApprovalRouting(
   organizationId: string,
-  scope: "ap_bill",
+  scope: "ap_bill" | "change_order",
   amount: string | number
 ): Promise<ApprovalRouting> {
   const amt = money(amount);

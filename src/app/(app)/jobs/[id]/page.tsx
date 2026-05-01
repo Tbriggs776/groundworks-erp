@@ -15,6 +15,7 @@ import {
 import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
 import { getJobCostSummary } from "@/lib/projects/job-cost";
+import { getJobChangeOrderSummary } from "@/lib/projects/change-orders";
 import { JobStatusActions } from "./status-actions";
 import { JobForm } from "../job-form";
 
@@ -41,33 +42,35 @@ export default async function JobDetailPage({
     );
   if (!result) notFound();
 
-  const [customerRows, contractTypeRows, pmRows, summary] = await Promise.all([
-    db
-      .select()
-      .from(customers)
-      .where(eq(customers.organizationId, organization.id))
-      .orderBy(asc(customers.code)),
-    db
-      .select()
-      .from(contractTypes)
-      .where(eq(contractTypes.organizationId, organization.id))
-      .orderBy(asc(contractTypes.sortOrder)),
-    db
-      .select({
-        id: profiles.id,
-        email: profiles.email,
-        fullName: profiles.fullName,
-      })
-      .from(profiles)
-      .innerJoin(memberships, eq(memberships.userId, profiles.id))
-      .where(
-        and(
-          eq(memberships.organizationId, organization.id),
-          eq(memberships.isActive, true)
-        )
-      ),
-    getJobCostSummary(organization.id, id),
-  ]);
+  const [customerRows, contractTypeRows, pmRows, summary, coSummary] =
+    await Promise.all([
+      db
+        .select()
+        .from(customers)
+        .where(eq(customers.organizationId, organization.id))
+        .orderBy(asc(customers.code)),
+      db
+        .select()
+        .from(contractTypes)
+        .where(eq(contractTypes.organizationId, organization.id))
+        .orderBy(asc(contractTypes.sortOrder)),
+      db
+        .select({
+          id: profiles.id,
+          email: profiles.email,
+          fullName: profiles.fullName,
+        })
+        .from(profiles)
+        .innerJoin(memberships, eq(memberships.userId, profiles.id))
+        .where(
+          and(
+            eq(memberships.organizationId, organization.id),
+            eq(memberships.isActive, true)
+          )
+        ),
+      getJobCostSummary(organization.id, id),
+      getJobChangeOrderSummary(organization.id, id),
+    ]);
 
   const { job, customer, contractType } = result;
 
@@ -117,6 +120,65 @@ export default async function JobDetailPage({
               ← Back to list
             </Link>
           </div>
+        </div>
+
+        {/* Change Orders summary strip */}
+        <div className="rounded-md border border-border bg-card p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-6">
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground font-semibold mb-1">
+                Change Orders
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <span>
+                  <span className="font-mono text-foreground">
+                    {coSummary.executedCount}
+                  </span>{" "}
+                  <span className="text-muted-foreground">executed</span>
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <span>
+                  <span className="font-mono text-foreground">
+                    {coSummary.pendingCount}
+                  </span>{" "}
+                  <span className="text-muted-foreground">pending</span>
+                </span>
+                {coSummary.rejectedCount > 0 && (
+                  <>
+                    <span className="text-muted-foreground">·</span>
+                    <span>
+                      <span className="font-mono text-destructive">
+                        {coSummary.rejectedCount}
+                      </span>{" "}
+                      <span className="text-muted-foreground">rejected</span>
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground font-semibold mb-1">
+                Live contract Δ
+              </div>
+              <div
+                className={`font-mono text-base ${
+                  Number(coSummary.liveContractDelta) < 0
+                    ? "text-destructive"
+                    : Number(coSummary.liveContractDelta) > 0
+                      ? "text-primary"
+                      : "text-muted-foreground"
+                }`}
+              >
+                {formatMoney(coSummary.liveContractDelta)}
+              </div>
+            </div>
+          </div>
+          <Link
+            href={`/jobs/${id}/change-orders`}
+            className="text-xs text-primary hover:underline"
+          >
+            View all →
+          </Link>
         </div>
 
         {summary && (

@@ -106,6 +106,13 @@
       "when": 1777060524172,
       "tag": "0014_confused_stature",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1777654925861,
+      "tag": "0015_true_maverick",
+      "breakpoints": true
     }
   ]
 }

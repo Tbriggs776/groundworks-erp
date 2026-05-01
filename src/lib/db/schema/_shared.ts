@@ -357,11 +357,15 @@ export const apBillStatus = pgEnum("ap_bill_status", [
 ]);
 
 /**
- * What an approval threshold applies to. Starts with `ap_bill`; future
- * domains (manual JE, AP payment, job change order over X) slot in here
- * without a breaking migration.
+ * What an approval threshold applies to. Starts with `ap_bill` and
+ * `change_order`; future domains (manual JE, AP payment, etc.) slot in
+ * here without a breaking migration. The Postgres enum is append-only
+ * so order matters — never reorder existing values.
  */
-export const approvalScope = pgEnum("approval_scope", ["ap_bill"]);
+export const approvalScope = pgEnum("approval_scope", [
+  "ap_bill",
+  "change_order",
+]);
 
 /**
  * AP payment method. `other` catches weird one-offs; everything common
@@ -383,5 +387,25 @@ export const paymentMethod = pgEnum("payment_method", [
 export const apPaymentStatus = pgEnum("ap_payment_status", [
   "draft",
   "posted",
+  "voided",
+]);
+
+/**
+ * Change Order lifecycle:
+ *   draft             — being built, lines editable
+ *   pending_approval  — submitted, lines locked, awaiting qualified approver
+ *   rejected          — approver kicked it back; can be re-submitted (returns to draft)
+ *   approved          — approved, ready to execute (apply to contract + budget)
+ *   executed          — applied to job: contractAmount bumped + per-line budget bumps
+ *                       persisted to job_cost_codes
+ *   voided            — reversed (admin only). Reverts the contract bump and the
+ *                       budget bumps. Terminal.
+ */
+export const changeOrderStatus = pgEnum("change_order_status", [
+  "draft",
+  "pending_approval",
+  "rejected",
+  "approved",
+  "executed",
   "voided",
 ]);
