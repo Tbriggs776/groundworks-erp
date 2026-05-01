@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   accounts,
@@ -15,6 +15,10 @@ import {
   type JournalLineInput,
 } from "@/lib/gl/posting";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
+import {
+  consumeCommitmentLineForBill,
+  releaseCommitmentLineFromBill,
+} from "@/lib/projects/commitments";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -168,6 +172,24 @@ export async function postBillToGl(
     throw new Error(`GL posting failed: ${result.code}: ${result.error}`);
   }
 
+  // Consume commitments — for any bill line that referenced a
+  // commitment_line, increment commitment_lines.invoiced_amount and
+  // (if commitment is still issued) drop committed_amount on the
+  // matching job_cost_code. The math:
+  //   committed -= line.amount   (it's no longer "future spend")
+  //   actual    += line.amount   (already in GL via the post above)
+  // Net effect on open_budget = budget - committed - actual: zero.
+  // Bills not linked to a commitment leave committed alone (no
+  // commitment to consume).
+  for (const { line } of lines) {
+    if (!line.commitmentLineId) continue;
+    await consumeCommitmentLineForBill(tx, {
+      commitmentLineId: line.commitmentLineId,
+      organizationId,
+      amount: toDbMoney(line.amount),
+    });
+  }
+
   await writeAudit(
     {
       organizationId,
@@ -179,6 +201,7 @@ export async function postBillToGl(
         billNumber: bill.billNumber,
         journalId: result.journalId,
         totalAmount: toDbMoney(total),
+        commitmentLineLinks: lines.filter((l) => l.line.commitmentLineId).length,
       },
     },
     tx
@@ -214,6 +237,33 @@ export async function voidBillFromGl(
     throw new Error(`GL reversal failed: ${result.error}`);
   }
 
+  // Release commitments — undo the invoiced_amount bumps and (if the
+  // commitment is still issued) restore committed_amount. If the
+  // commitment has been closed/voided since this bill was posted, we
+  // still decrement invoiced for audit accuracy but skip the committed
+  // restore — committed already settled at zero remaining on close.
+  const linkedLines = await tx
+    .select({
+      id: apBillLines.id,
+      amount: apBillLines.amount,
+      commitmentLineId: apBillLines.commitmentLineId,
+    })
+    .from(apBillLines)
+    .where(
+      and(
+        eq(apBillLines.billId, opts.bill.id),
+        isNotNull(apBillLines.commitmentLineId)
+      )
+    );
+  for (const ll of linkedLines) {
+    if (!ll.commitmentLineId) continue;
+    await releaseCommitmentLineFromBill(tx, {
+      commitmentLineId: ll.commitmentLineId,
+      organizationId: opts.organizationId,
+      amount: toDbMoney(ll.amount),
+    });
+  }
+
   await writeAudit(
     {
       organizationId: opts.organizationId,
@@ -225,6 +275,7 @@ export async function voidBillFromGl(
         billNumber: opts.bill.billNumber,
         reason: opts.reason,
         reversalJournalId: result.journalId,
+        commitmentLineLinksReleased: linkedLines.length,
       },
     },
     tx

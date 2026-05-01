@@ -16,6 +16,7 @@ import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
 import { getJobCostSummary } from "@/lib/projects/job-cost";
 import { getJobChangeOrderSummary } from "@/lib/projects/change-orders";
+import { getJobCommitmentsSummary } from "@/lib/projects/commitments";
 import { JobStatusActions } from "./status-actions";
 import { JobForm } from "../job-form";
 
@@ -42,8 +43,14 @@ export default async function JobDetailPage({
     );
   if (!result) notFound();
 
-  const [customerRows, contractTypeRows, pmRows, summary, coSummary] =
-    await Promise.all([
+  const [
+    customerRows,
+    contractTypeRows,
+    pmRows,
+    summary,
+    coSummary,
+    commitmentsSummary,
+  ] = await Promise.all([
       db
         .select()
         .from(customers)
@@ -70,6 +77,7 @@ export default async function JobDetailPage({
         ),
       getJobCostSummary(organization.id, id),
       getJobChangeOrderSummary(organization.id, id),
+      getJobCommitmentsSummary(organization.id, id),
     ]);
 
   const { job, customer, contractType } = result;
@@ -175,6 +183,71 @@ export default async function JobDetailPage({
           </div>
           <Link
             href={`/jobs/${id}/change-orders`}
+            className="text-xs text-primary hover:underline"
+          >
+            View all →
+          </Link>
+        </div>
+
+        {/* Commitments summary strip */}
+        <div className="rounded-md border border-border bg-card p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-6">
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground font-semibold mb-1">
+                Commitments
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <span>
+                  <span className="font-mono text-foreground">
+                    {commitmentsSummary.issuedCount}
+                  </span>{" "}
+                  <span className="text-muted-foreground">issued</span>
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <span>
+                  <span className="font-mono text-foreground">
+                    {commitmentsSummary.draftCount}
+                  </span>{" "}
+                  <span className="text-muted-foreground">draft</span>
+                </span>
+                {commitmentsSummary.closedCount > 0 && (
+                  <>
+                    <span className="text-muted-foreground">·</span>
+                    <span>
+                      <span className="font-mono text-muted-foreground">
+                        {commitmentsSummary.closedCount}
+                      </span>{" "}
+                      <span className="text-muted-foreground">closed</span>
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground font-semibold mb-1">
+                Issued total
+              </div>
+              <div className="font-mono text-base text-foreground">
+                {formatMoney(commitmentsSummary.totalCommitted)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground font-semibold mb-1">
+                Remaining
+              </div>
+              <div
+                className={`font-mono text-base ${
+                  Number(commitmentsSummary.totalRemaining) < 0
+                    ? "text-destructive"
+                    : "text-primary"
+                }`}
+              >
+                {formatMoney(commitmentsSummary.totalRemaining)}
+              </div>
+            </div>
+          </div>
+          <Link
+            href={`/jobs/${id}/commitments`}
             className="text-xs text-primary hover:underline"
           >
             View all →

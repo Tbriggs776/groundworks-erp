@@ -69,7 +69,7 @@ const NAV: NavGroup[] = [
       { label: "Cost Codes", href: "/cost-codes" },
       { label: "Job Cost Report", href: "/reports/job-cost" },
       { label: "Change Orders", href: "/change-orders" },
-      { label: "Commitments", href: "/commitments", soon: true },
+      { label: "Commitments", href: "/commitments" },
     ],
   },
   {
@@ -89,8 +89,7 @@ const NAV: NavGroup[] = [
       { label: "Vendors", href: "/vendors" },
       { label: "AP Bills", href: "/ap/bills" },
       { label: "AP Payments", href: "/ap/payments" },
-      { label: "POs", href: "/po", soon: true },
-      { label: "Subcontractors", href: "/subs", soon: true },
+      { label: "Commitments", href: "/commitments" },
     ],
   },
   {

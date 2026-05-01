@@ -37,6 +37,7 @@ type Line = {
   description: string;
   jobId: string;
   costCodeId: string;
+  commitmentLineId: string;
 };
 
 const EMPTY: Line = {
@@ -46,17 +47,38 @@ const EMPTY: Line = {
   description: "",
   jobId: "",
   costCodeId: "",
+  commitmentLineId: "",
 };
 
 function newLine(): Line {
   return { ...EMPTY, id: crypto.randomUUID() };
 }
 
+/**
+ * Available commitment line for the picker. The page passes ALL issued
+ * commitment lines (with parent commitment metadata) and the form
+ * filters per row by vendor + job.
+ */
+export type CommitmentLineOption = {
+  id: string;
+  commitmentId: string;
+  commitmentNumber: string;
+  type: "po" | "subcontract";
+  vendorId: string;
+  jobId: string;
+  costCodeId: string;
+  accountId: string;
+  amount: string;
+  invoicedAmount: string;
+  description: string | null;
+};
+
 export function BillForm({
   vendors,
   accounts,
   jobs,
   costCodes,
+  commitmentLines = [],
   initial,
   initialLines,
 }: {
@@ -64,6 +86,11 @@ export function BillForm({
   accounts: Account[];
   jobs: Job[];
   costCodes: CostCode[];
+  /**
+   * Available issued-commitment lines across the org. Filtered per
+   * bill line by the bill's vendor (and the line's job, when set).
+   */
+  commitmentLines?: CommitmentLineOption[];
   initial?: ApBill;
   initialLines?: ApBillLine[];
 }) {
@@ -98,6 +125,7 @@ export function BillForm({
           description: l.description ?? "",
           jobId: l.jobId ?? "",
           costCodeId: l.costCodeId ?? "",
+          commitmentLineId: l.commitmentLineId ?? "",
         }))
       : [newLine()]
   );
@@ -123,6 +151,39 @@ export function BillForm({
   }
   function removeLine(id: string) {
     setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+  }
+
+  /**
+   * Filter commitment lines available for a bill line. Bills are vendor-
+   * scoped, so only commitment lines under THIS vendor's commitments are
+   * eligible. If the bill line has a job set, further filter to that job.
+   */
+  function eligibleCommitmentLines(line: Line): CommitmentLineOption[] {
+    return commitmentLines.filter((cl) => {
+      if (cl.vendorId !== vendorId) return false;
+      if (line.jobId && cl.jobId !== line.jobId) return false;
+      return true;
+    });
+  }
+
+  /**
+   * Picking a commitment line force-fills the line's job, cost code, and
+   * account. Clearing the picker leaves those values in place (the user
+   * may still want them).
+   */
+  function pickCommitmentLine(lineId: string, commitmentLineId: string) {
+    if (!commitmentLineId) {
+      updateLine(lineId, { commitmentLineId: "" });
+      return;
+    }
+    const cl = commitmentLines.find((x) => x.id === commitmentLineId);
+    if (!cl) return;
+    updateLine(lineId, {
+      commitmentLineId,
+      jobId: cl.jobId,
+      costCodeId: cl.costCodeId,
+      accountId: cl.accountId,
+    });
   }
 
   async function previewRouting() {
@@ -152,6 +213,7 @@ export function BillForm({
             description: l.description,
             jobId: l.jobId || null,
             costCodeId: l.costCodeId || null,
+            commitmentLineId: l.commitmentLineId || null,
           })),
       };
       const r = isEdit
@@ -239,9 +301,10 @@ export function BillForm({
             <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
               <th className="text-left font-medium px-3 py-2 w-8"></th>
               <th className="text-left font-medium px-3 py-2">Account</th>
-              <th className="text-left font-medium px-3 py-2 w-40">Job</th>
-              <th className="text-left font-medium px-3 py-2 w-40">Cost code</th>
-              <th className="text-right font-medium px-3 py-2 w-32">Amount</th>
+              <th className="text-left font-medium px-3 py-2 w-36">Job</th>
+              <th className="text-left font-medium px-3 py-2 w-36">Cost code</th>
+              <th className="text-left font-medium px-3 py-2 w-36">PO / Sub</th>
+              <th className="text-right font-medium px-3 py-2 w-28">Amount</th>
               <th className="text-left font-medium px-3 py-2">Description</th>
               <th className="text-left font-medium px-3 py-2 w-10"></th>
             </tr>
@@ -295,6 +358,35 @@ export function BillForm({
                   </select>
                 </td>
                 <td className="px-3 py-2">
+                  <select
+                    value={l.commitmentLineId}
+                    onChange={(e) =>
+                      pickCommitmentLine(l.id, e.target.value)
+                    }
+                    disabled={!vendorId}
+                    title={
+                      !vendorId
+                        ? "Pick a vendor first"
+                        : "Apply to a PO / subcontract line"
+                    }
+                    className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5 disabled:opacity-40"
+                  >
+                    <option value="">— direct —</option>
+                    {eligibleCommitmentLines(l).map((cl) => {
+                      const remaining =
+                        money(cl.amount).minus(money(cl.invoicedAmount));
+                      return (
+                        <option key={cl.id} value={cl.id}>
+                          {cl.commitmentNumber} · {formatMoney(
+                            remaining.toFixed(2)
+                          )}{" "}
+                          left
+                        </option>
+                      );
+                    })}
+                  </select>
+                </td>
+                <td className="px-3 py-2">
                   <input
                     type="text"
                     inputMode="decimal"
@@ -330,7 +422,7 @@ export function BillForm({
               <td></td>
               <td
                 className="px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground"
-                colSpan={3}
+                colSpan={4}
               >
                 Subtotal
               </td>

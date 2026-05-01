@@ -13,6 +13,7 @@ import {
 import { apBillStatus, timestamps } from "./_shared";
 import { accounts } from "./accounts";
 import { approvalThresholds } from "./approvals";
+import { commitmentLines } from "./commitments";
 import { costCodes } from "./cost_codes";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
@@ -155,6 +156,17 @@ export const apBillLines = pgTable(
       onDelete: "set null",
     }),
 
+    /**
+     * Optional link to a commitment line. When set, posting this bill
+     * line increments commitment_lines.invoiced_amount and decrements
+     * job_cost_codes.committed_amount (if the parent commitment is still
+     * issued). Voiding the bill reverses both. See lib/ap/posting.ts.
+     */
+    commitmentLineId: uuid("commitment_line_id").references(
+      () => commitmentLines.id,
+      { onDelete: "set null" }
+    ),
+
     description: text("description"),
 
     ...timestamps,
@@ -162,6 +174,10 @@ export const apBillLines = pgTable(
   (t) => [
     uniqueIndex("ap_bill_lines_bill_line_key").on(t.billId, t.lineNumber),
     index("ap_bill_lines_job_idx").on(t.organizationId, t.jobId),
+    index("ap_bill_lines_commitment_idx").on(
+      t.organizationId,
+      t.commitmentLineId
+    ),
   ]
 );
 
@@ -207,6 +223,10 @@ export const apBillLinesRelations = relations(apBillLines, ({ one }) => ({
   costCode: one(costCodes, {
     fields: [apBillLines.costCodeId],
     references: [costCodes.id],
+  }),
+  commitmentLine: one(commitmentLines, {
+    fields: [apBillLines.commitmentLineId],
+    references: [commitmentLines.id],
   }),
 }));
 

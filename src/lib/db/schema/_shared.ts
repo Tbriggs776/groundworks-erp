@@ -409,3 +409,29 @@ export const changeOrderStatus = pgEnum("change_order_status", [
   "executed",
   "voided",
 ]);
+
+/**
+ * Commitment type. POs are general purchase orders for materials/equipment;
+ * subcontracts are agreements with subs covering scope on a job. Both share
+ * the same lifecycle and consume budget the same way; the type distinction
+ * drives reporting and number prefix only.
+ */
+export const commitmentType = pgEnum("commitment_type", ["po", "subcontract"]);
+
+/**
+ * Commitment lifecycle:
+ *   draft   — being built; lines editable; no impact on job cost
+ *   issued  — committed_amount on each (job, cost_code) bumped by line amount;
+ *             AP bills can be billed against the commitment lines
+ *   closed  — no further bills; remaining un-invoiced amount drops off
+ *             committed_amount (we admit we won't spend it)
+ *   voided  — reversed (admin only). Like close but explicit "this commitment
+ *             never happened" + audit reason. Bills already billed against
+ *             it stay billed (with the linkage preserved for history).
+ */
+export const commitmentStatus = pgEnum("commitment_status", [
+  "draft",
+  "issued",
+  "closed",
+  "voided",
+]);

@@ -79,6 +79,8 @@ export const DEFAULT_NUMBER_SERIES: Array<{
   { code: "AP", description: "AP Bills", prefix: "AP-", width: 6 },
   { code: "APPAY", description: "AP Payments", prefix: "APPAY-", width: 6 },
   { code: "CO", description: "Change Orders", prefix: "CO-", width: 6 },
+  { code: "PO", description: "Purchase Orders", prefix: "PO-", width: 6 },
+  { code: "SUB", description: "Subcontracts", prefix: "SUB-", width: 6 },
 ];
 
 export async function seedOrganizationDefaults(
