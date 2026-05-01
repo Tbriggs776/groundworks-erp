@@ -71,7 +71,10 @@ export default async function JournalDetailPage({
                 {journal.sourceCode.code} / {j.source}
               </span>
               <span>·</span>
-              <JournalStatusBadge status={j.status} />
+              <JournalStatusBadge
+                status={j.status}
+                reversed={Boolean(j.reversedByJournalId)}
+              />
             </div>
             <p className="mt-3 text-sm">{j.description}</p>
           </div>
@@ -176,7 +179,18 @@ export default async function JournalDetailPage({
   );
 }
 
-function JournalStatusBadge({ status }: { status: string }) {
+function JournalStatusBadge({
+  status,
+  reversed,
+}: {
+  status: string;
+  reversed: boolean;
+}) {
+  // Reversed-original journals stay status='posted' in the data model so
+  // they keep participating in 'posted'-filtered reports (they net against
+  // the reversal entry). The "Reversed" display label is derived from
+  // reversed_by_journal_id.
+  const effective = reversed && status === "posted" ? "reversed" : status;
   const style: Record<string, "outline" | "secondary" | "destructive" | "default"> = {
     draft: "outline",
     pending_approval: "outline",
@@ -184,8 +198,8 @@ function JournalStatusBadge({ status }: { status: string }) {
     reversed: "secondary",
   };
   return (
-    <Badge variant={style[status] ?? "outline"} className="text-[9px]">
-      {status}
+    <Badge variant={style[effective] ?? "outline"} className="text-[9px]">
+      {effective}
     </Badge>
   );
 }

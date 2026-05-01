@@ -21,6 +21,7 @@ export default async function GlPage() {
       source: glJournals.source,
       description: glJournals.description,
       status: glJournals.status,
+      reversedByJournalId: glJournals.reversedByJournalId,
       periodCode: fiscalPeriods.periodCode,
       totalDebit: sql<string>`COALESCE((SELECT SUM(debit_local) FROM ${glLines} WHERE journal_id = ${glJournals.id}), 0)::text`,
     })
@@ -98,7 +99,10 @@ export default async function GlPage() {
                     {formatMoney(j.totalDebit)}
                   </td>
                   <td className="px-3 py-2">
-                    <StatusBadge status={j.status} />
+                    <StatusBadge
+                      status={j.status}
+                      reversed={Boolean(j.reversedByJournalId)}
+                    />
                   </td>
                 </tr>
               ))}
@@ -110,7 +114,18 @@ export default async function GlPage() {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  status,
+  reversed,
+}: {
+  status: string;
+  reversed: boolean;
+}) {
+  // A posted journal that has been reversed displays as "Reversed" — the
+  // signal lives on reversed_by_journal_id, not on status (the original
+  // entry stays status='posted' so reports still pick it up and net it
+  // against the reversal).
+  const effective = reversed && status === "posted" ? "reversed" : status;
   const style: Record<string, "outline" | "secondary" | "destructive" | "default"> = {
     draft: "outline",
     pending_approval: "outline",
@@ -124,8 +139,8 @@ function StatusBadge({ status }: { status: string }) {
     reversed: "Reversed",
   };
   return (
-    <Badge variant={style[status] ?? "outline"} className="text-[9px]">
-      {label[status] ?? status}
+    <Badge variant={style[effective] ?? "outline"} className="text-[9px]">
+      {label[effective] ?? effective}
     </Badge>
   );
 }

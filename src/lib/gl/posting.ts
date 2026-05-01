@@ -196,8 +196,11 @@ export async function createDraftJournal(
 /**
  * Post an existing draft journal. Runs all 11 validations; on success sets
  * status='posted', stamps posted_at/posted_by, writes an audit row, and —
- * if this is a reversing journal — updates the original's
- * reversed_by_journal_id.
+ * if this is a reversing journal — sets the original's
+ * reversed_by_journal_id (the original stays status='posted'; both entries
+ * remain in the ledger and net out, which is the correct accounting model
+ * and keeps trial balance / balance sheet / income statement queries that
+ * filter `status='posted'` correct without further changes).
  */
 export async function postDraft(
   tx: Tx,
@@ -247,13 +250,15 @@ export async function postDraft(
       source: glJournals.source,
     });
 
-  // If this is a reversal, link the original.
+  // If this is a reversal, link the original. Do NOT change the original's
+  // status — both entries stay 'posted' and net to zero. The reversal link
+  // (reversed_by_journal_id) is the canonical "has been reversed" signal;
+  // status is purely a lifecycle marker (draft / pending / posted).
   if (updated.reversesJournalId) {
     await tx
       .update(glJournals)
       .set({
         reversedByJournalId: updated.id,
-        status: "reversed",
         updatedAt: sql`now()`,
       })
       .where(eq(glJournals.id, updated.reversesJournalId));
@@ -314,10 +319,10 @@ export async function reverseJournal(
     if (!orig) {
       return { ok: false, code: "original_not_found", error: "Original journal not found." };
     }
-    // Check "already reversed" BEFORE the status check — a reversed journal
-    // has status='reversed' (not 'posted'), so the status check would win
-    // and surface the wrong error.
-    if (orig.reversedBy || orig.status === "reversed") {
+    // reversed_by_journal_id is the canonical "already reversed" signal.
+    // The original keeps status='posted' even after reversal — its lines and
+    // the reversal's lines net to zero in any 'posted'-filtered report.
+    if (orig.reversedBy) {
       return {
         ok: false,
         code: "already_reversed",
