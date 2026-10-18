@@ -9,6 +9,7 @@ import {
   type Account,
 } from "@/lib/db/schema";
 import { money } from "@/lib/money";
+import { inLedger, inLedgerSql } from "./ledger";
 
 /**
  * Financial reports. All amounts in org base currency (debit_local /
@@ -60,8 +61,8 @@ export async function getTrialBalance(
       category: accounts.category,
       subcategory: accounts.subcategory,
       normalBalance: accounts.normalBalance,
-      totalDebit: sql<string>`COALESCE(SUM(CASE WHEN ${glJournals.status} = 'posted' AND ${glJournals.journalDate} <= ${opts.asOfDate}::date THEN ${glLines.debitLocal} ELSE 0 END), 0)::text`,
-      totalCredit: sql<string>`COALESCE(SUM(CASE WHEN ${glJournals.status} = 'posted' AND ${glJournals.journalDate} <= ${opts.asOfDate}::date THEN ${glLines.creditLocal} ELSE 0 END), 0)::text`,
+      totalDebit: sql<string>`COALESCE(SUM(CASE WHEN ${inLedgerSql} AND ${glJournals.journalDate} <= ${opts.asOfDate}::date THEN ${glLines.debitLocal} ELSE 0 END), 0)::text`,
+      totalCredit: sql<string>`COALESCE(SUM(CASE WHEN ${inLedgerSql} AND ${glJournals.journalDate} <= ${opts.asOfDate}::date THEN ${glLines.creditLocal} ELSE 0 END), 0)::text`,
     })
     .from(accounts)
     .leftJoin(glLines, eq(glLines.accountId, accounts.id))
@@ -334,7 +335,7 @@ export async function getIncomeStatement(
       glJournals,
       and(
         eq(glJournals.id, glLines.journalId),
-        eq(glJournals.status, "posted"),
+        inLedger(),
         sql`${glJournals.journalDate} BETWEEN ${opts.fromDate}::date AND ${opts.toDate}::date`
       )
     )
@@ -471,7 +472,7 @@ export async function getGlDetail(
         glJournals,
         and(
           eq(glJournals.id, glLines.journalId),
-          eq(glJournals.status, "posted")
+          inLedger()
         )
       )
       .where(
@@ -503,7 +504,7 @@ export async function getGlDetail(
       and(
         eq(glLines.organizationId, organizationId),
         eq(glLines.accountId, opts.accountId),
-        eq(glJournals.status, "posted"),
+        inLedger(),
         rangeStart
           ? sql`${glJournals.journalDate} >= ${rangeStart}::date`
           : sql`TRUE`,

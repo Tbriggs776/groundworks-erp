@@ -126,7 +126,9 @@ export type JournalDetail = GlJournal & {
   }>;
 };
 
-const totalDebit = sql<string>`COALESCE((SELECT SUM(debit_local) FROM ${glLines} WHERE journal_id = ${glJournals.id}), 0)::text`;
+// Literal "gl_journals"."id": Drizzle leaves columns unqualified in
+// single-table selects, which would bind `id` to gl_lines inside here.
+const totalDebit = sql<string>`COALESCE((SELECT SUM(debit_local) FROM ${glLines} WHERE journal_id = "gl_journals"."id"), 0)::text`;
 
 export async function listJournals(
   ctx: Ctx,

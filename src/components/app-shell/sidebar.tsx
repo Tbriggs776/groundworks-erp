@@ -40,9 +40,9 @@ const NAV: NavGroup[] = [
     icon: Receipt,
     items: [
       { label: "Customers", href: "/customers" },
-      { label: "Invoices", href: "/ar/invoices", soon: true },
-      { label: "Payments Received", href: "/ar/payments", soon: true },
-      { label: "Products & Services", href: "/items", soon: true },
+      { label: "Invoices", href: "/ar/invoices" },
+      { label: "Payments Received", href: "/ar/payments" },
+      { label: "Products & Services", href: "/items" },
     ],
   },
   {
@@ -75,6 +75,8 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Profit & Loss", href: "/reports/income-statement" },
       { label: "Balance Sheet", href: "/reports/balance-sheet" },
+      { label: "AR Aging", href: "/reports/ar-aging" },
+      { label: "AP Aging", href: "/reports/ap-aging" },
       { label: "Trial Balance", href: "/reports/trial-balance" },
       { label: "GL Detail", href: "/reports/gl-detail" },
     ],

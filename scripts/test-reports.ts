@@ -23,7 +23,7 @@ import {
   sourceCodes,
 } from "../src/lib/db/schema";
 import { generateFiscalYear } from "../src/lib/gl/fiscal-calendar";
-import { createAndPostJournal } from "../src/lib/gl/posting";
+import { createAndPostJournal, reverseJournal } from "../src/lib/gl/posting";
 import {
   getBalanceSheet,
   getGlDetail,
@@ -279,6 +279,43 @@ async function main() {
         );
       }
     }
+  });
+
+  console.log("\nReversals");
+  await check("a reversed entry and its reversal net to zero in every report", async () => {
+    const mistakeId = await post({
+      date: "2026-04-01",
+      desc: "Rent posted twice by mistake",
+      lines: [
+        { accountId: fixtures.rent.id, debit: "5000.00" },
+        { accountId: fixtures.cash.id, credit: "5000.00" },
+      ],
+    });
+    const r = await reverseJournal(mistakeId, {
+      actorId: null,
+      organizationId: fixtures.org.id,
+      reversalDate: "2026-04-02",
+    });
+    if (!r.ok) throw new Error(`reverse failed: ${r.code} ${r.error}`);
+
+    const tb = await getTrialBalance(fixtures.org.id, { asOfDate: "2026-12-31" });
+    const cash = tb.find((row) => row.code === "1010");
+    if (!cash?.netDebit.equals(115000))
+      throw new Error(`TB cash=${cash?.netDebit} ≠ 115000 after reversal`);
+    const is = await getIncomeStatement(fixtures.org.id, {
+      fromDate: "2026-01-01",
+      toDate: "2026-12-31",
+    });
+    if (!is.netIncome.equals(15000))
+      throw new Error(`NI=${is.netIncome} ≠ 15000 after reversal`);
+    const { rows } = await getGlDetail(fixtures.org.id, {
+      accountId: fixtures.cash.id,
+      fromDate: "2026-01-01",
+      toDate: "2026-12-31",
+    });
+    if (rows.length !== 6) throw new Error(`expected 6 cash lines, got ${rows.length}`);
+    if (!rows[rows.length - 1].runningBalance.equals(115000))
+      throw new Error(`GL detail cash ends at ${rows[rows.length - 1].runningBalance}`);
   });
 
   // Cleanup

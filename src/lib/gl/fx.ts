@@ -144,7 +144,7 @@ export async function foreignCurrenciesWithActivity(
     SELECT DISTINCT j.currency
       FROM public.gl_journals j
      WHERE j.organization_id = ${organizationId}
-       AND j.status = 'posted'
+       AND j.status IN ('posted', 'reversed')
        AND j.journal_date <= ${asOfDate}::date
        AND j.currency <> ${baseCurrency}
   `);

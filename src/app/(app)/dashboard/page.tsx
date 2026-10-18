@@ -9,6 +9,7 @@ import {
   glLines,
 } from "@/lib/db/schema";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
+import { inLedger } from "@/lib/gl/ledger";
 import { formatMoney } from "@/lib/money";
 
 export default async function DashboardPage() {
@@ -40,7 +41,7 @@ export default async function DashboardPage() {
       .where(
         and(
           eq(glJournals.organizationId, organization.id),
-          eq(glJournals.status, "posted")
+          inLedger()
         )
       ),
     db
@@ -65,7 +66,7 @@ export default async function DashboardPage() {
       .where(
         and(
           eq(glJournals.organizationId, organization.id),
-          eq(glJournals.status, "posted"),
+          inLedger(),
           sql`${fiscalPeriods.startDate} <= ${today}::date`,
           sql`${fiscalPeriods.endDate} >= ${today}::date`
         )

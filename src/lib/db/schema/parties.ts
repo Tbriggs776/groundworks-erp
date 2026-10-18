@@ -66,6 +66,10 @@ export const customers = pgTable(
 
     customerType: customerType("customer_type").notNull().default("commercial"),
 
+    /** Primary billing email / phone (QBO's "Email" and "Phone"). */
+    email: text("email"),
+    phone: text("phone"),
+
     // Contact info (see comment above for JSON shape)
     addresses: jsonb("addresses").notNull().default([]),
     contacts: jsonb("contacts").notNull().default([]),
@@ -106,6 +110,9 @@ export const vendors = pgTable(
     displayName: text("display_name"),
 
     vendorType: vendorType("vendor_type").notNull().default("supplier"),
+
+    email: text("email"),
+    phone: text("phone"),
 
     addresses: jsonb("addresses").notNull().default([]),
     contacts: jsonb("contacts").notNull().default([]),

@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import { Plus, Search } from "lucide-react";
 import type { Customer } from "@/lib/db/schema";
+import type { CustomerRow } from "@/lib/parties/service";
+import { formatMoney, money } from "@/lib/money";
 import {
   createCustomer,
   updateCustomer,
@@ -37,7 +39,13 @@ const TYPE_LABEL: Record<string, string> = {
   tax_exempt: "Tax-exempt",
 };
 
-export function CustomersClient({ customers }: { customers: Customer[] }) {
+export function CustomersClient({
+  customers,
+  truncated,
+}: {
+  customers: CustomerRow[];
+  truncated: boolean;
+}) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
@@ -49,7 +57,8 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
       (c) =>
         c.code.toLowerCase().includes(s) ||
         c.name.toLowerCase().includes(s) ||
-        (c.displayName ?? "").toLowerCase().includes(s)
+        (c.displayName ?? "").toLowerCase().includes(s) ||
+        (c.email ?? "").toLowerCase().includes(s)
     );
   }, [customers, q]);
 
@@ -59,7 +68,7 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
         <div className="relative flex-1 max-w-md">
           <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by code or name…"
+            placeholder="Search by code, name, or email…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             className="pl-8"
@@ -84,13 +93,14 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
               <th className="text-left font-medium px-3 py-2">Name</th>
               <th className="text-left font-medium px-3 py-2 w-32">Type</th>
               <th className="text-right font-medium px-3 py-2 w-24">Terms</th>
+              <th className="text-right font-medium px-3 py-2 w-32">Open balance</th>
               <th className="text-left font-medium px-3 py-2 w-24">Flags</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-10 text-center text-xs text-muted-foreground">
+                <td colSpan={6} className="px-3 py-10 text-center text-xs text-muted-foreground">
                   No customers match.
                 </td>
               </tr>
@@ -107,9 +117,9 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
                 <td className="px-3 py-2 font-mono text-xs text-primary">{c.code}</td>
                 <td className="px-3 py-2">
                   <div>{c.name}</div>
-                  {c.displayName && (
+                  {(c.displayName || c.email) && (
                     <div className="text-[11px] text-muted-foreground">
-                      {c.displayName}
+                      {[c.displayName, c.email].filter(Boolean).join(" · ")}
                     </div>
                   )}
                 </td>
@@ -118,6 +128,13 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
                 </td>
                 <td className="px-3 py-2 text-right text-xs text-muted-foreground">
                   Net {c.defaultPaymentTermsDays}
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-xs">
+                  {money(c.openBalance).isZero() ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    formatMoney(c.openBalance, { currency: c.currency })
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex gap-1 flex-wrap">
@@ -136,7 +153,8 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
       </div>
 
       <div className="text-[11px] text-muted-foreground">
-        {filtered.length} of {customers.length} customers.
+        {filtered.length} of {customers.length} customers
+        {truncated && " (showing the first 200 — search to narrow)"}.
       </div>
 
       <CustomerForm open={open} onOpenChange={setOpen} initial={editing} />
@@ -160,6 +178,8 @@ function CustomerForm({
   const [code, setCode] = useState(initial?.code ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
+  const [email, setEmail] = useState(initial?.email ?? "");
+  const [phone, setPhone] = useState(initial?.phone ?? "");
   const [customerType, setCustomerType] = useState<CustomerInput["customerType"]>(
     (initial?.customerType ?? "commercial") as CustomerInput["customerType"]
   );
@@ -175,19 +195,19 @@ function CustomerForm({
     setErr(null);
     start(async () => {
       const payload: CustomerInput = {
-        code: code.trim(),
+        code: code.trim() || undefined,
         name: name.trim(),
         displayName: displayName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
         customerType,
         defaultPaymentTermsDays: Number(terms) || 30,
         currency: currency.toUpperCase(),
-        creditLimit,
+        creditLimit: creditLimit || null,
         taxExempt,
         taxId,
         notes,
         isActive,
-        addresses: [],
-        contacts: [],
       };
       const r = isEdit
         ? await updateCustomer(initial!.id, payload)
@@ -215,16 +235,26 @@ function CustomerForm({
           <div className="grid grid-cols-[1fr_2fr] gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Code</Label>
-              <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="CUST-001" />
+              <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="auto" />
             </div>
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Name</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ACME Building Corp" autoFocus />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Corp" autoFocus />
             </div>
           </div>
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Display name</Label>
-            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="ACME" />
+            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Acme" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Billing email</Label>
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ap@acme.com" />
+            </div>
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Phone</Label>
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
@@ -278,7 +308,7 @@ function CustomerForm({
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={pending || !code.trim() || !name.trim()} onClick={submit}>
+          <Button disabled={pending || !name.trim()} onClick={submit}>
             {pending ? "Saving…" : isEdit ? "Save changes" : "Create customer"}
           </Button>
         </DialogFooter>

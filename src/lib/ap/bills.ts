@@ -123,7 +123,7 @@ export async function listBills(
     SELECT SUM(a.applied_amount + a.discount_amount)
       FROM ${apPaymentApplications} a
       JOIN ${apPayments} p ON p.id = a.payment_id
-     WHERE a.bill_id = ${apBills.id} AND p.status = 'posted'
+     WHERE a.bill_id = "ap_bills"."id" AND p.status = 'posted'
   ), 0)`;
 
   const rows = await ctx.tx
