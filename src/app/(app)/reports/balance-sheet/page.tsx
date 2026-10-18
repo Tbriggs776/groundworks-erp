@@ -47,7 +47,7 @@ export default async function BalanceSheetPage({
           </div>
         </div>
 
-        <div className="rounded-md border border-border overflow-hidden">
+        <div className="gw-table-wrap rounded-md border border-border overflow-x-auto">
           <table className="w-full text-sm">
             <tbody>
               <SectionBlock section={bs.assets} />

@@ -201,3 +201,68 @@
     border-radius: 2px;
   }
 }
+
+/*
+ * Data tables. Every table sits in a `.gw-table-wrap` that scrolls
+ * sideways instead of clipping. Scroll shadows hint that more columns
+ * are off-screen. On phones: tighter cells, headers and numbers never
+ * wrap, and the first column pins so rows keep their label while
+ * scrolling. Unlayered so it beats the per-cell Tailwind padding.
+ */
+.gw-table-wrap {
+  overscroll-behavior-x: contain;
+  background:
+    linear-gradient(to right, var(--background) 40%, transparent) left / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--background) 40%, transparent) right / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(224 148 24 / 0.22), transparent) left / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(224 148 24 / 0.22), transparent) right / 12px 100% no-repeat scroll;
+}
+
+.gw-table-wrap th {
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .gw-table-wrap th,
+  .gw-table-wrap td {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
+  .gw-table-wrap td {
+    padding-top: 0.625rem;
+    padding-bottom: 0.625rem;
+  }
+
+  /* Keep short values on one line; let prose (text-sm) wrap at a sane width */
+  .gw-table-wrap td {
+    white-space: nowrap;
+  }
+
+  .gw-table-wrap td.text-sm:not(.font-mono):not(.text-right) {
+    white-space: normal;
+    min-width: 14rem;
+  }
+
+  /* Editable line tables: give fields room instead of crushing them */
+  .gw-table-wrap td:has(input:not([type="checkbox"]):not([type="radio"]), textarea) {
+    min-width: 8rem;
+  }
+
+  .gw-table-wrap td:has(select) {
+    min-width: 12rem;
+  }
+
+  .gw-table-wrap tr > :first-child:not([colspan]) {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--background);
+    box-shadow: inset -1px 0 0 var(--border);
+  }
+
+  .gw-table-wrap thead tr > :first-child:not([colspan]),
+  .gw-table-wrap tfoot tr > :first-child:not([colspan]) {
+    background: color-mix(in oklab, var(--muted) 50%, var(--background));
+  }
+}
