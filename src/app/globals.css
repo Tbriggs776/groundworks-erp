@@ -266,3 +266,28 @@
     background: color-mix(in oklab, var(--muted) 50%, var(--background));
   }
 }
+
+/*
+ * Page form action rows (Save / Cancel). On phones they pin to the bottom
+ * of the screen so the primary action is always in thumb reach, with
+ * full-height buttons and the primary one stretched.
+ */
+@media (max-width: 767px) {
+  .gw-form-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    margin-inline: -1rem;
+    padding: 0.75rem 1rem;
+    background: color-mix(in oklab, var(--background) 92%, transparent);
+    backdrop-filter: blur(8px);
+  }
+
+  .gw-form-actions > [data-slot="button"] {
+    height: 2.5rem;
+  }
+
+  .gw-form-actions > [data-slot="button"]:first-child {
+    flex: 1;
+  }
+}

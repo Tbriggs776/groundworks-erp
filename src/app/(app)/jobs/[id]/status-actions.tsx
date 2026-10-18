@@ -113,7 +113,7 @@ function CloseJobDialog({
   const [note, setNote] = useState("");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-heading tracking-[0.12em]">
             CLOSE JOB

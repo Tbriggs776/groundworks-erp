@@ -261,7 +261,7 @@ function CostCodeForm({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-heading tracking-[0.12em]">
             {isEdit ? "EDIT COST CODE" : "NEW COST CODE"}
@@ -271,7 +271,7 @@ function CostCodeForm({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="grid grid-cols-[1fr_2fr] gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                 Code

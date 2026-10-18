@@ -90,7 +90,7 @@ function VoidDialog({
   const [reason, setReason] = useState("");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-heading tracking-[0.12em]">
             VOID POSTED PAYMENT
