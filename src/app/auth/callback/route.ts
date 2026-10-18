@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { safeRedirectPath } from "@/lib/ui/redirect";
 
 /**
  * OAuth / magic-link callback. Supabase sends the user back here with a
@@ -21,15 +22,4 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.redirect(new URL(redirectTo, url.origin));
-}
-
-/**
- * Only same-origin paths. Without this, `?redirectTo=https://evil.example`
- * (or `//evil.example`) would bounce a freshly signed-in user offsite.
- */
-function safeRedirectPath(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
-    return "/dashboard";
-  }
-  return value;
 }

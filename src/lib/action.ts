@@ -1,5 +1,5 @@
-import { runAs, type Ctx, type Role } from "@/lib/actor";
-import { requireActor } from "@/lib/auth";
+import { runAs, runAsWorkspace, type Ctx, type Role, type WorkspaceRole, type WsCtx } from "@/lib/actor";
+import { requireActor, requireWorkspaceActor } from "@/lib/auth";
 import { toAppError, type ErrorCode } from "@/lib/errors";
 
 /**
@@ -29,6 +29,21 @@ export async function serviceAction<T extends object>(
   const actor = await requireActor(minRole);
   try {
     const result = await runAs(actor, fn);
+    return { ok: true, ...result };
+  } catch (err) {
+    const e = toAppError(err);
+    return { ok: false, error: e.message, code: e.code };
+  }
+}
+
+/** Same as serviceAction, for workspace-level services (people, policy, companies). */
+export async function workspaceAction<T extends object>(
+  minRole: WorkspaceRole,
+  fn: (ctx: WsCtx) => Promise<T>
+): Promise<ActionResult<T>> {
+  const actor = await requireWorkspaceActor(minRole);
+  try {
+    const result = await runAsWorkspace(actor, fn);
     return { ok: true, ...result };
   } catch (err) {
     const e = toAppError(err);

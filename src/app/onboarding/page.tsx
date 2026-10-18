@@ -1,59 +1,35 @@
 import { redirect } from "next/navigation";
-import { getCurrentOrg, requireUser } from "@/lib/auth";
-import { OnboardingForm } from "./form";
+import { getUserWorkspaces, requireUser } from "@/lib/auth";
+import { AuthFrame } from "@/components/auth-frame";
+import { CompanyForm } from "@/components/company-form";
+import { startWorkspace } from "./actions";
 
 /**
- * Create an organization. First login lands here (no membership yet);
- * existing users come via the org switcher's "New organization" link
- * (`?new=1`) to add another company.
+ * Sign-up step 1: name the company. New users land here after their first
+ * sign-in (from /signup the company name is already filled in). Existing
+ * users come with `?new=1` to start a separate workspace; adding a company
+ * to the current workspace lives under Workspace → Companies.
  */
 export default async function OnboardingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ new?: string }>;
+  searchParams: Promise<{ new?: string; company?: string }>;
 }) {
   const user = await requireUser();
-  const { new: addAnother } = await searchParams;
-  const current = await getCurrentOrg();
-  if (current && !addAnother) redirect("/dashboard");
+  const { new: another, company } = await searchParams;
+  if (!another && (await getUserWorkspaces()).length > 0) redirect("/dashboard");
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-md">
-        <div className="mb-10 text-center">
-          <div className="inline-flex items-center gap-3">
-            <div className="h-10 w-10 rounded-md bg-primary grid place-items-center">
-              <span className="font-heading text-primary-foreground text-xl">
-                G
-              </span>
-            </div>
-            <div className="text-left">
-              <div className="font-heading text-xl tracking-[0.2em]">
-                GROUNDWORKS
-              </div>
-              <div className="text-[10px] tracking-[0.3em] text-muted-foreground uppercase">
-                Let&apos;s set up your company
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-border bg-card p-6">
-          <h1 className="font-heading text-2xl tracking-[0.1em] mb-1">
-            CREATE YOUR ORGANIZATION
-          </h1>
-          <p className="text-xs text-muted-foreground mb-6">
-            You&apos;re signed in as <span className="text-foreground">{user.email}</span>.
-            Name the company you&apos;ll be running on Groundworks.
-          </p>
-
-          <OnboardingForm />
-        </div>
-
-        <p className="text-[11px] text-center text-muted-foreground mt-6">
-          You&apos;ll be the owner. You can invite teammates next.
-        </p>
-      </div>
-    </div>
+    <AuthFrame
+      wide
+      tagline={another ? "New workspace" : "Step 1 of 2 · Your company"}
+      footer="You'll be the owner. You can invite teammates and add more companies next."
+    >
+      <h1 className="font-heading text-2xl tracking-[0.1em] mb-1">SET UP YOUR COMPANY</h1>
+      <p className="text-xs text-muted-foreground mb-6">
+        Signed in as <span className="text-foreground">{user.email}</span>.
+      </p>
+      <CompanyForm action={startWorkspace} defaultName={company?.slice(0, 100)} submitLabel="Create company" askWorkspaceName />
+    </AuthFrame>
   );
 }

@@ -1,4 +1,5 @@
 import { authenticateApiKey, tokenFromHeaders } from "@/lib/agents/authenticate";
+import { requestMeta } from "@/lib/actor";
 import { AppError, toAppError } from "@/lib/errors";
 import { executeOperation } from "./execute";
 import { OPERATIONS, matchOperation } from "./operations";
@@ -60,11 +61,16 @@ export async function handleRest(request: Request, segments: string[]): Promise<
 
   let actor;
   try {
-    actor = await authenticateApiKey(tokenFromHeaders(request.headers), "api");
+    actor = await authenticateApiKey(tokenFromHeaders(request.headers), "api", requestMeta(request.headers));
   } catch (err) {
-    return errorResponse(toAppError(err), undefined, {
-      "www-authenticate": 'Bearer realm="groundworks"',
-    });
+    const e = toAppError(err);
+    return errorResponse(
+      e,
+      undefined,
+      e.code === "rate_limited"
+        ? { "retry-after": String(e.details?.retryAfterSeconds ?? 60) }
+        : { "www-authenticate": 'Bearer realm="groundworks"' }
+    );
   }
 
   let input: Record<string, unknown> = {};

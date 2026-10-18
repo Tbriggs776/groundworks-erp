@@ -7,13 +7,14 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-import { eq, like, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/lib/db/client";
 import {
   accounts,
   memberships,
   organizations,
   profiles,
+  workspaceMembers,
   type Account,
   type Organization,
   type Profile,
@@ -22,6 +23,7 @@ import { runAs, userActor, type Actor, type Ctx, type Role } from "../../src/lib
 import { AppError, toAppError } from "../../src/lib/errors";
 import { generateFiscalYear } from "../../src/lib/gl/fiscal-calendar";
 import { seedOrganizationDefaults } from "../../src/lib/seed/org-defaults";
+import { deleteFixtures, testWorkspace } from "./workspace";
 
 const PASS = "\x1b[32m✓\x1b[0m";
 const FAIL = "\x1b[31m✗\x1b[0m";
@@ -82,7 +84,7 @@ export type TestOrg = {
 export async function deleteOrgs(slugPrefix: string) {
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
-    await tx.delete(organizations).where(like(organizations.slug, `${slugPrefix}%`));
+    await deleteFixtures(tx, slugPrefix);
   });
 }
 
@@ -93,9 +95,12 @@ export async function createTestOrg(slugPrefix: string): Promise<TestOrg> {
   if (!owner) throw new Error("No profiles. Run scripts/dev/reset-test-db.sh first.");
 
   const org = await db.transaction(async (tx) => {
+    const slug = `${slugPrefix}${Date.now()}`;
+    const workspaceId = await testWorkspace(tx, slug, `Test ${slugPrefix}`);
+    await tx.insert(workspaceMembers).values({ workspaceId, userId: owner.id, role: "owner" });
     const [o] = await tx
       .insert(organizations)
-      .values({ name: `Test ${slugPrefix}`, slug: `${slugPrefix}${Date.now()}` })
+      .values({ workspaceId, name: `Test ${slugPrefix}`, slug })
       .returning();
     await tx
       .insert(memberships)

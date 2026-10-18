@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import path from "node:path";
+import { STATIC_SECURITY_HEADERS } from "./src/lib/security/headers";
 
 const nextConfig: NextConfig = {
   /*
@@ -8,6 +9,10 @@ const nextConfig: NextConfig = {
    */
   turbopack: {
     root: path.resolve(import.meta.dirname ?? __dirname),
+  },
+  poweredByHeader: false,
+  async headers() {
+    return [{ source: "/:path*", headers: STATIC_SECURITY_HEADERS }];
   },
 };
 

@@ -4,7 +4,9 @@ import {
   agentAutonomy,
   agents,
   apiKeys,
+  organizations,
   profiles,
+  workspaces,
   type Agent,
   type ApiKey,
 } from "@/lib/db/schema";
@@ -215,6 +217,21 @@ export async function createApiKey(
     throw new AppError("invalid_input", "None of the requested scopes are allowed for this principal.");
   }
 
+  // Workspace policy: keys must expire within the configured lifetime.
+  const [{ maxDays }] = await ctx.tx
+    .select({ maxDays: workspaces.apiKeyMaxDays })
+    .from(organizations)
+    .innerJoin(workspaces, eq(workspaces.id, organizations.workspaceId))
+    .where(eq(organizations.id, org));
+  if (maxDays && data.expiresInDays && data.expiresInDays > maxDays) {
+    throw new AppError(
+      "invalid_input",
+      `Your workspace limits API keys to ${maxDays} days. Choose ${maxDays} or fewer.`,
+      { maxDays }
+    );
+  }
+  const expiresInDays = data.expiresInDays ?? maxDays ?? null;
+
   const { token, prefix, secretHash } = generateApiKey();
   const [key] = await ctx.tx
     .insert(apiKeys)
@@ -226,9 +243,7 @@ export async function createApiKey(
       prefix,
       secretHash,
       scopes,
-      expiresAt: data.expiresInDays
-        ? sql`now() + make_interval(days => ${data.expiresInDays})`
-        : null,
+      expiresAt: expiresInDays ? sql`now() + make_interval(days => ${expiresInDays})` : null,
       createdBy: ctx.actor.userId,
     })
     .returning();

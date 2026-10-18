@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { agents, apiKeys, memberships, organizations } from "@/lib/db/schema";
+import { agents, apiKeys, memberships, organizations, workspaceMembers } from "@/lib/db/schema";
 import {
   intersectScopes,
+  type RequestMeta,
   scopesForAutonomy,
   scopesForRole,
   type Actor,
   type Channel,
 } from "@/lib/actor";
+import { consumeRateLimit } from "@/lib/api/rate-limit";
 import { AppError } from "@/lib/errors";
 import { hashApiKey, looksLikeApiKey } from "./keys";
 
@@ -18,11 +20,13 @@ import { hashApiKey, looksLikeApiKey } from "./keys";
  * agent's autonomy takes effect immediately.
  *
  * Failures are deliberately vague ("invalid or revoked API key") so a
- * caller can't distinguish "never existed" from "revoked".
+ * caller can't distinguish "never existed" from "revoked". A valid key
+ * then spends one unit of its per-minute budget (src/lib/api/rate-limit.ts).
  */
 export async function authenticateApiKey(
   token: string | null | undefined,
-  channel: Exclude<Channel, "ui" | "system">
+  channel: Exclude<Channel, "ui" | "system">,
+  meta: RequestMeta = { ipAddress: null, userAgent: null }
 ): Promise<Actor> {
   if (!token) {
     throw new AppError(
@@ -40,6 +44,7 @@ export async function authenticateApiKey(
       agent: agents,
       memberRole: memberships.role,
       memberActive: memberships.isActive,
+      seatActive: workspaceMembers.isActive,
     })
     .from(apiKeys)
     .innerJoin(
@@ -53,6 +58,14 @@ export async function authenticateApiKey(
         eq(memberships.userId, apiKeys.userId),
         eq(memberships.organizationId, apiKeys.organizationId),
         isNull(memberships.deletedAt)
+      )
+    )
+    .leftJoin(
+      workspaceMembers,
+      and(
+        eq(workspaceMembers.userId, apiKeys.userId),
+        eq(workspaceMembers.workspaceId, organizations.workspaceId),
+        isNull(workspaceMembers.deletedAt)
       )
     )
     .where(eq(apiKeys.secretHash, hashApiKey(token)));
@@ -82,9 +95,12 @@ export async function authenticateApiKey(
       channel,
       maxPostAmount: row.agent.autonomy === "post" ? row.agent.maxPostAmount : null,
       requestId: randomUUID(),
+      ...meta,
     };
   } else {
-    if (!row.memberRole || !row.memberActive || !row.key.userId) throw invalid;
+    // A personal key lives only as long as the person's company access and
+    // workspace seat.
+    if (!row.memberRole || !row.memberActive || !row.seatActive || !row.key.userId) throw invalid;
     actor = {
       organizationId: row.key.organizationId,
       kind: "user",
@@ -97,8 +113,11 @@ export async function authenticateApiKey(
       channel,
       maxPostAmount: null,
       requestId: randomUUID(),
+      ...meta,
     };
   }
+
+  await consumeRateLimit(row.key.id);
 
   // Usage stamps, throttled to one write per key per minute.
   await db

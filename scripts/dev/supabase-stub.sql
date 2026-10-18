@@ -10,6 +10,18 @@ CREATE TABLE IF NOT EXISTS auth.users (
   created_at timestamptz DEFAULT now()
 );
 
+-- Supabase keeps MFA factors here; the app reads verified ones for
+-- people lists and access reviews.
+CREATE TABLE IF NOT EXISTS auth.mfa_factors (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  friendly_name text,
+  factor_type text NOT NULL DEFAULT 'totp',
+  status text NOT NULL DEFAULT 'unverified',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
 LANGUAGE sql STABLE AS $$
   SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid

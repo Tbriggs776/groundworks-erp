@@ -9,7 +9,7 @@ dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
 import { db } from "../../src/lib/db/client";
-import { memberships, organizations, profiles } from "../../src/lib/db/schema";
+import { memberships, organizations, profiles, workspaceMembers, workspaces } from "../../src/lib/db/schema";
 import { runAs, userActor } from "../../src/lib/actor";
 import * as agentsSvc from "../../src/lib/agents/service";
 import { createItem } from "../../src/lib/ar/items";
@@ -24,9 +24,12 @@ async function main() {
   const year = new Date().getFullYear();
 
   const org = await db.transaction(async (tx) => {
+    const slug = `demo-${Date.now()}`;
+    const [w] = await tx.insert(workspaces).values({ name: "Demo Workspace", slug, createdBy: owner.id }).returning();
+    await tx.insert(workspaceMembers).values({ workspaceId: w.id, userId: owner.id, role: "owner" });
     const [o] = await tx
       .insert(organizations)
-      .values({ name: "Demo Co", slug: `demo-${Date.now()}` })
+      .values({ workspaceId: w.id, name: "Demo Co", slug })
       .returning();
     await tx.insert(memberships).values({ organizationId: o.id, userId: owner.id, role: "owner" });
     await seedOrganizationDefaults(tx, o.id, { includeDefaultCoa: true });

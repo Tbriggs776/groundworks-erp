@@ -12,7 +12,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { db } from "../src/lib/db/client";
 import {
@@ -32,6 +32,7 @@ import {
 } from "../src/lib/gl/reports";
 import { seedOrganizationDefaults } from "../src/lib/seed/org-defaults";
 import { money, sumMoney } from "../src/lib/money";
+import { deleteFixtures, testWorkspace } from "./lib/workspace";
 
 const PASS = "\x1b[32m✓\x1b[0m";
 const FAIL = "\x1b[31m✗\x1b[0m";
@@ -53,7 +54,7 @@ async function main() {
 
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
-    await tx.delete(organizations).where(like(organizations.slug, "reports-test-%"));
+    await deleteFixtures(tx, "reports-test-");
   });
 
   const [actor] = await db.select().from(profiles).limit(1);
@@ -62,7 +63,7 @@ async function main() {
   const fixtures = await db.transaction(async (tx) => {
     const [org] = await tx
       .insert(organizations)
-      .values({ name: "Reports Test", slug: testSlug, baseCurrency: "USD" })
+      .values({ workspaceId: await testWorkspace(tx, testSlug), name: "Reports Test", slug: testSlug, baseCurrency: "USD" })
       .returning();
     await tx.insert(memberships).values({
       organizationId: org.id,

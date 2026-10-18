@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   BookOpen,
   Bot,
+  Building2,
   FileBarChart,
   LayoutDashboard,
   Receipt,
@@ -17,6 +18,10 @@ type NavItem = {
   label: string;
   href: string;
   soon?: boolean;
+  /** Highlight only on this exact path (not its children). */
+  exact?: boolean;
+  /** Workspace owners / admins only. */
+  adminOnly?: boolean;
 };
 
 type NavGroup = {
@@ -92,11 +97,22 @@ const NAV: NavGroup[] = [
     ],
   },
   {
+    label: "Workspace",
+    icon: Building2,
+    items: [
+      { label: "Companies", href: "/workspace", exact: true },
+      { label: "People", href: "/workspace/people" },
+      { label: "Security Policy", href: "/workspace/security" },
+      { label: "Access Review", href: "/workspace/access-review", adminOnly: true },
+      { label: "Audit Log", href: "/workspace/audit", adminOnly: true },
+    ],
+  },
+  {
     label: "Settings",
     icon: Settings,
     items: [
-      { label: "Team", href: "/settings/team" },
       { label: "Approval Thresholds", href: "/settings/approval-thresholds" },
+      { label: "My Security", href: "/account/security" },
     ],
   },
 ];
@@ -124,7 +140,13 @@ export function Brand() {
  * The nav list itself. Rendered inside the desktop sidebar and the mobile
  * drawer; `onNavigate` lets the drawer close itself after a tap.
  */
-export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarNav({
+  onNavigate,
+  workspaceAdmin,
+}: {
+  onNavigate?: () => void;
+  workspaceAdmin: boolean;
+}) {
   const pathname = usePathname();
 
   return (
@@ -137,9 +159,9 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
               {group.label}
             </span>
           </div>
-          {group.items.map((item) => {
+          {group.items.filter((item) => workspaceAdmin || !item.adminOnly).map((item) => {
             const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
+              pathname === item.href || (!item.exact && pathname.startsWith(`${item.href}/`));
             return (
               <Link
                 key={`${group.label}-${item.href}`}
@@ -171,14 +193,14 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 /** Desktop sidebar. Hidden below `md`; phones use the drawer in the topbar. */
-export function Sidebar() {
+export function Sidebar({ workspaceAdmin }: { workspaceAdmin: boolean }) {
   return (
     <aside className="hidden md:flex w-60 shrink-0 border-r border-border bg-sidebar flex-col relative">
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[var(--gw-gold)] via-[var(--gw-gold-bright)] to-[var(--gw-gold)]" />
       <div className="px-4 py-4 border-b border-border">
         <Brand />
       </div>
-      <SidebarNav />
+      <SidebarNav workspaceAdmin={workspaceAdmin} />
     </aside>
   );
 }

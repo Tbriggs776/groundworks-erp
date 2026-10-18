@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   inet,
   jsonb,
@@ -8,7 +10,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import { organizations, profiles } from "./identity";
+import { organizations, profiles, workspaces } from "./identity";
 
 /**
  * Who performed an audited action:
@@ -42,6 +44,11 @@ export const auditChannel = pgEnum("audit_channel", [
  * `metadata` carries event-specific payload (before/after snapshots, amounts,
  * reference numbers). Keep PII out of metadata where possible.
  *
+ * Company events carry `organization_id`; workspace events (people,
+ * invitations, security policy, sign-ins) carry only `workspace_id`. A
+ * BEFORE INSERT trigger fills `workspace_id` from the company, so callers
+ * pass whichever they have.
+ *
  * `agent_id` / `api_key_id` are plain UUIDs without FKs on purpose: the
  * append-only trigger rejects UPDATEs, so an ON DELETE SET NULL would make
  * the parent undeletable. Agents are deactivated and keys revoked instead.
@@ -50,9 +57,14 @@ export const auditLog = pgTable(
   "audit_log",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** Null for workspace-level events. */
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "cascade",
+    }),
+    /** Always set (trigger-filled from organization_id when omitted). */
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, {
+      onDelete: "cascade",
+    }),
     actorId: uuid("actor_id").references(() => profiles.id, {
       onDelete: "set null",
     }),
@@ -78,6 +90,8 @@ export const auditLog = pgTable(
     index("audit_log_entity_idx").on(t.entityType, t.entityId),
     index("audit_log_event_idx").on(t.event),
     index("audit_log_agent_idx").on(t.organizationId, t.agentId),
+    index("audit_log_ws_time_idx").on(t.workspaceId, t.occurredAt),
+    check("audit_log_workspace_required", sql`${t.workspaceId} IS NOT NULL`),
   ]
 );
 

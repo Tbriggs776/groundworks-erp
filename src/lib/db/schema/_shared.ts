@@ -40,6 +40,16 @@ export const membershipRole = pgEnum("membership_role", [
 // Role comparison is done in app code via RoleRank — see src/lib/auth.ts.
 // Keep the order of this enum aligned with the rank function.
 
+/**
+ * Workspace-level role. A workspace is the account a business signs up
+ * for; it holds one or more companies (organizations).
+ *   owner  — everything, including other owners and deleting the workspace
+ *   admin  — people, company access, new companies, security policy
+ *   member — works only in the companies they've been given access to
+ * What someone can do inside a company is still their membership role.
+ */
+export const workspaceRole = pgEnum("workspace_role", ["owner", "admin", "member"]);
+
 // ---------------------------------------------------------------------------
 // Chart of Accounts
 // ---------------------------------------------------------------------------

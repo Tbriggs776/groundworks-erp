@@ -10,16 +10,22 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-import { eq, like, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import {
+  accessReviews,
   agents,
   apiKeys,
+  auditLog,
   memberships,
   organizations,
   profiles,
+  userSessions,
+  workspaceMembers,
+  workspaces,
 } from "../src/lib/db/schema";
 import { seedOrganizationDefaults } from "../src/lib/seed/org-defaults";
+import { deleteFixtures, testWorkspace } from "./lib/workspace";
 
 const PASS = "\x1b[32m✓\x1b[0m";
 const FAIL = "\x1b[31m✗\x1b[0m";
@@ -60,7 +66,7 @@ async function main() {
   const testSlug = `rls-test-${Date.now()}`;
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
-    await tx.delete(organizations).where(like(organizations.slug, "rls-test-%"));
+    await deleteFixtures(tx, "rls-test-");
   });
 
   const [member] = await db.select().from(profiles).limit(1);
@@ -74,11 +80,15 @@ async function main() {
   const org = await db.transaction(async (tx) => {
     const [o] = await tx
       .insert(organizations)
-      .values({ name: "RLS Test", slug: testSlug })
+      .values({ workspaceId: await testWorkspace(tx, testSlug), name: "RLS Test", slug: testSlug })
       .returning();
     await tx
       .insert(memberships)
       .values({ organizationId: o.id, userId: member.id, role: "owner" });
+    await tx.insert(workspaceMembers).values({ workspaceId: o.workspaceId, userId: member.id, role: "owner" });
+    await tx.insert(userSessions).values({ id: crypto.randomUUID(), userId: member.id, authenticatedAt: new Date() });
+    await tx.insert(accessReviews).values({ workspaceId: o.workspaceId, reviewedBy: member.id, snapshot: {} });
+    await tx.insert(auditLog).values({ workspaceId: o.workspaceId, actorId: member.id, event: "rls.workspace_event" });
     await seedOrganizationDefaults(tx, o.id, { includeDefaultCoa: true });
     const [agent] = await tx
       .insert(agents)
@@ -134,6 +144,37 @@ async function main() {
     if (n !== 0) throw new Error(`member saw ${n} api_keys rows`);
   });
 
+  await check("member sees their workspace; outsider and anon see none", async () => {
+    const mine = await visibleCount("workspaces", "authenticated", member.id);
+    if (mine === 0) throw new Error("member saw 0 workspaces");
+    for (const [who, n] of [
+      ["outsider", await visibleCount("workspaces", "authenticated", outsiderAuth.id)],
+      ["anon", await visibleCount("workspaces", "anon")],
+    ] as const) {
+      if (n !== 0) throw new Error(`${who} saw ${n} workspaces`);
+    }
+  });
+
+  await check("workspace members, access reviews, workspace audit rows: outsider sees none", async () => {
+    for (const table of ["workspace_members", "access_reviews"]) {
+      if ((await visibleCount(table, "authenticated", member.id)) === 0) throw new Error(`owner saw 0 ${table}`);
+      const n = await visibleCount(table, "authenticated", outsiderAuth.id);
+      if (n !== 0) throw new Error(`outsider saw ${n} ${table}`);
+    }
+    const auditMine = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT set_config('request.jwt.claim.sub', ${member.id}, true)`);
+      await tx.execute(sql`SET LOCAL ROLE authenticated`);
+      const [r] = await tx.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM public.audit_log WHERE event = 'rls.workspace_event'`);
+      return r.n;
+    });
+    if (auditMine !== 1) throw new Error(`workspace admin saw ${auditMine} workspace audit rows`);
+  });
+
+  await check("user_sessions are invisible even to their owner", async () => {
+    const n = await visibleCount("user_sessions", "authenticated", member.id);
+    if (n !== 0) throw new Error(`member saw ${n} user_sessions rows`);
+  });
+
   await check("anon cannot insert customers", async () => {
     try {
       await db.transaction(async (tx) => {
@@ -154,6 +195,7 @@ async function main() {
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
     await tx.delete(organizations).where(eq(organizations.id, org.id));
+    await tx.delete(workspaces).where(eq(workspaces.id, org.workspaceId));
   });
   await db.execute(sql`DELETE FROM auth.users WHERE id = ${outsiderAuth.id}`);
 

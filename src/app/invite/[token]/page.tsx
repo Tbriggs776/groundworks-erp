@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { findInvitation } from "@/lib/team/service";
+import { findInvitation } from "@/lib/workspace/service";
+import { AuthFrame } from "@/components/auth-frame";
 import { AcceptButton } from "./accept-button";
 
 /**
- * Invitation landing page. The proxy sends signed-out visitors to login
- * first (with a redirect back here), so by now we know who they are.
+ * Invitation landing page. The proxy sends signed-out visitors to sign in
+ * first (with a redirect back here); a new person's first sign-in creates
+ * their account. By now we know who they are.
  */
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -15,9 +17,8 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   const emailMatches = invite && invite.email.toLowerCase() === user.email.toLowerCase();
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6 space-y-4">
-        <div className="font-heading text-xl tracking-[0.15em]">GROUNDWORKS</div>
+    <AuthFrame tagline="Invitation">
+      <div className="space-y-4">
         {!invite ? (
           <>
             <p className="text-sm">This invitation is invalid, expired, or already used.</p>
@@ -26,19 +27,31 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
         ) : !emailMatches ? (
           <>
             <p className="text-sm">
-              This invitation to <strong>{invite.organizationName}</strong> is for{" "}
+              This invitation to <strong>{invite.workspaceName}</strong> is for{" "}
               <span className="font-mono">{invite.email}</span>.
             </p>
             <p className="text-xs text-muted-foreground">
               You&apos;re signed in as {user.email}. Sign out and sign back in with the invited address.
             </p>
+            <form action="/auth/signout" method="post">
+              <button type="submit" className="text-xs text-primary hover:underline">Sign out</button>
+            </form>
           </>
         ) : (
           <>
             <p className="text-sm">
-              You&apos;ve been invited to join <strong>{invite.organizationName}</strong> as{" "}
-              <span className="capitalize">{invite.role}</span>.
+              You&apos;ve been invited to <strong>{invite.workspaceName}</strong>
+              {invite.workspaceRole !== "member" && <> as a workspace {invite.workspaceRole}</>}.
             </p>
+            {invite.grants.length > 0 && (
+              <ul className="text-xs text-muted-foreground space-y-1">
+                {invite.grants.map((g) => (
+                  <li key={g.organizationId}>
+                    {g.companyName}: <span className="capitalize text-foreground">{g.role}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <AcceptButton token={token} />
           </>
         )}
@@ -46,6 +59,6 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           Go to my dashboard
         </Link>
       </div>
-    </div>
+    </AuthFrame>
   );
 }

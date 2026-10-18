@@ -26,11 +26,14 @@ export function ApiKeysClient({
   everyone,
   allowedScopes,
   origin,
+  maxDays,
 }: {
   mine: PersonalKeyRow[];
   everyone: Array<PersonalKeyRow & { userEmail: string }>;
   allowedScopes: Scope[];
   origin: string;
+  /** Workspace limit on key lifetime; null = none. */
+  maxDays: number | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -38,7 +41,9 @@ export function ApiKeysClient({
   const [token, setToken] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<Scope[]>(["read"]);
-  const [expires, setExpires] = useState("90");
+  const lifetimes = [30, 90, 365].filter((d) => !maxDays || d <= maxDays);
+  if (maxDays && !lifetimes.includes(maxDays)) lifetimes.push(maxDays);
+  const [expires, setExpires] = useState(String(lifetimes.includes(90) ? 90 : lifetimes[lifetimes.length - 1]));
 
   function run<T extends { ok: boolean; error?: string }>(fn: () => Promise<T>, after?: (r: T) => void) {
     setErr(null);
@@ -123,10 +128,10 @@ export function ApiKeysClient({
                 onChange={(e) => setExpires(e.target.value)}
                 className="w-full text-sm bg-background border border-border rounded-md px-2 py-2"
               >
-                <option value="30">30 days</option>
-                <option value="90">90 days</option>
-                <option value="365">1 year</option>
-                <option value="">Never</option>
+                {lifetimes.map((d) => (
+                  <option key={d} value={d}>{d === 365 ? "1 year" : `${d} days`}</option>
+                ))}
+                {!maxDays && <option value="">Never</option>}
               </select>
             </div>
           </div>

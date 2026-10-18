@@ -1,5 +1,5 @@
 import { authenticateApiKey, tokenFromHeaders } from "@/lib/agents/authenticate";
-import type { Actor } from "@/lib/actor";
+import { requestMeta, type Actor } from "@/lib/actor";
 import { toAppError } from "@/lib/errors";
 import { executeOperation } from "./execute";
 import { inputJsonSchema } from "./json-schema";
@@ -184,9 +184,14 @@ function isRequest(m: unknown): m is JsonRpcRequest {
 export async function handleMcp(request: Request): Promise<Response> {
   let actor: Actor;
   try {
-    actor = await authenticateApiKey(tokenFromHeaders(request.headers), "mcp");
+    actor = await authenticateApiKey(tokenFromHeaders(request.headers), "mcp", requestMeta(request.headers));
   } catch (err) {
     const e = toAppError(err);
+    if (e.code === "rate_limited") {
+      return httpJson(rpcError(null, -32002, e.message), 429, {
+        "retry-after": String(e.details?.retryAfterSeconds ?? 60),
+      });
+    }
     return httpJson(rpcError(null, -32001, e.message), 401, {
       "www-authenticate": 'Bearer realm="groundworks", error="invalid_token"',
     });
