@@ -327,7 +327,7 @@ export function BillForm({
 
       {err && <p className="text-sm text-destructive">{err}</p>}
 
-      <div className="flex items-center gap-3 pt-3 border-t border-border">
+      <div className="gw-form-actions flex flex-wrap items-center gap-3 pt-3 border-t border-border">
         <Button onClick={submit} disabled={!canSave}>
           {pending ? "Saving…" : isEdit ? "Save changes" : "Save draft"}
         </Button>
