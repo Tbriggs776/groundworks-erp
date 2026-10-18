@@ -127,6 +127,20 @@
       "when": 1792353953568,
       "tag": "0017_strip_construction",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792354567994,
+      "tag": "0018_agents_and_api_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792354589826,
+      "tag": "0019_rls_everywhere",
+      "breakpoints": true
     }
   ]
 }

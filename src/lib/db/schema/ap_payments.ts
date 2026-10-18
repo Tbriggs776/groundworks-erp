@@ -15,6 +15,7 @@ import {
   timestamps,
 } from "./_shared";
 import { accounts } from "./accounts";
+import { agents } from "./agents";
 import { apBills } from "./ap";
 import { glJournals } from "./journals";
 import { organizations, profiles } from "./identity";
@@ -85,6 +86,15 @@ export const apPayments = pgTable(
     // Lifecycle
     status: apPaymentStatus("status").notNull().default("draft"),
 
+    // Who created the document — a human or an agent (never both). Drives
+    // the review queue: agent-created drafts wait there for a human.
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
+
     postedAt: timestamp("posted_at", { withTimezone: true }),
     postedBy: uuid("posted_by").references(() => profiles.id, {
       onDelete: "set null",
@@ -115,10 +125,12 @@ export const apPayments = pgTable(
 
 /**
  * AP PAYMENT APPLICATIONS — which bills this payment applies to, and how
- * much goes to each. `applied_amount` is the full amount being taken off
- * the bill's open balance; `discount_amount` is the early-pay discount
- * portion (cash saved vs. face value). The cash actually leaving the
- * bank = applied_amount − discount_amount.
+ * much goes to each. `applied_amount` is the CASH applied to the bill;
+ * `discount_amount` is the early-pay discount taken on top of it. The
+ * bill's open balance drops by applied_amount + discount_amount.
+ *
+ * (The payment HEADER's applied_amount is the gross — cash + discount —
+ * and its net_amount is the cash.)
  */
 export const apPaymentApplications = pgTable(
   "ap_payment_applications",

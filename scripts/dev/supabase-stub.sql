@@ -27,3 +27,12 @@ BEGIN
     CREATE ROLE service_role NOLOGIN;
   END IF;
 END $$;
+
+-- Supabase grants the API roles full table privileges in `public` and relies
+-- on RLS to filter rows. Mirror that so scripts/test-rls.ts exercises the
+-- same exposure PostgREST would.
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;

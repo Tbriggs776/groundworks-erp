@@ -1,20 +1,15 @@
-import { and, eq } from "drizzle-orm";
-import { db } from "@/lib/db/client";
-import {
-  accounts,
-  apBillLines,
-  sourceCodes,
-  type ApBill,
-} from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { apBillLines, type ApBill } from "@/lib/db/schema";
+import { auditFields, type Ctx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
+import { AppError } from "@/lib/errors";
 import {
   createAndPostJournal,
   reverseJournal,
   type JournalLineInput,
 } from "@/lib/gl/posting";
+import { controlAccount, sourceCodeId } from "@/lib/gl/lookups";
 import { sumMoney, toDbMoney } from "@/lib/money";
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * AP → GL posting. For a given approved bill:
@@ -22,50 +17,18 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *   - Credits the AP control account (the one flagged isControl and
  *     matching subcategory=payables, typically code 2000) for the total
  *
- * Runs inside the caller's transaction so a post failure rolls back
- * everything (bill status update, audit row, GL journal).
+ * Runs inside the caller's transaction (ctx.tx) so a post failure rolls
+ * back everything (bill status update, audit row, GL journal).
  */
 export async function postBillToGl(
-  tx: Tx,
-  opts: {
-    bill: ApBill;
-    actorId: string | null;
-    organizationId: string;
-  }
+  ctx: Ctx,
+  bill: ApBill
 ): Promise<{ journalId: string; journalNumber: string }> {
-  const { bill, actorId, organizationId } = opts;
+  const { actor, tx } = ctx;
+  const organizationId = actor.organizationId;
 
-  // Find the AP control account (isControl=true, subcategory='payables')
-  const [apControl] = await tx
-    .select({ id: accounts.id, code: accounts.code })
-    .from(accounts)
-    .where(
-      and(
-        eq(accounts.organizationId, organizationId),
-        eq(accounts.isControl, true),
-        eq(accounts.subcategory, "payables")
-      )
-    )
-    .limit(1);
-  if (!apControl) {
-    throw new Error(
-      "No AP control account found. Seed the default CoA or flag a payables account as isControl=true."
-    );
-  }
-
-  // AP source code
-  const [apSource] = await tx
-    .select({ id: sourceCodes.id })
-    .from(sourceCodes)
-    .where(
-      and(
-        eq(sourceCodes.organizationId, organizationId),
-        eq(sourceCodes.code, "PJ") // PJ = Purchase / AP Journal
-      )
-    );
-  if (!apSource) {
-    throw new Error("PJ source code missing. Re-run org seeding.");
-  }
+  const apControl = await controlAccount(tx, organizationId, "payables");
+  const pjSource = await sourceCodeId(tx, organizationId, "PJ");
 
   const lines = await tx
     .select()
@@ -74,7 +37,7 @@ export async function postBillToGl(
     .orderBy(apBillLines.lineNumber);
 
   if (lines.length === 0) {
-    throw new Error("Bill has no lines to post.");
+    throw new AppError("invalid_state", "Bill has no lines to post.");
   }
 
   const jeLines: JournalLineInput[] = lines.map((line) => ({
@@ -89,39 +52,38 @@ export async function postBillToGl(
   jeLines.push({
     accountId: apControl.id,
     credit: toDbMoney(total),
-    memo: `AP bill ${bill.billNumber} — ${bill.vendorInvoiceNumber ?? "no vendor invoice #"}`,
+    memo: `Bill ${bill.billNumber} — ${bill.vendorInvoiceNumber ?? "no vendor invoice #"}`,
     vendorId: bill.vendorId,
   });
 
-  const postedAt = bill.postingDate ?? bill.billDate;
-
-  // createAndPostJournal opens its own transaction, but we're already inside
-  // a tx. For v1 we accept nested behavior — if the outer tx rolls back,
-  // the inner posts do too (Drizzle transactions are savepoint-based in
-  // postgres-js). If we need stricter control, refactor to pass tx.
-  const result = await createAndPostJournal({
-    organizationId,
-    actorId,
-    journalDate: postedAt,
-    sourceCodeId: apSource.id,
-    source: "ap",
-    description:
-      bill.description ??
-      `AP bill ${bill.billNumber} from vendor ${bill.vendorId}`,
-    currency: bill.currency,
-    exchangeRate: bill.exchangeRate,
-    documentNo: bill.vendorInvoiceNumber ?? bill.billNumber,
-    lines: jeLines,
-  });
+  const result = await createAndPostJournal(
+    {
+      organizationId,
+      actorId: actor.userId,
+      actor,
+      journalDate: bill.postingDate ?? bill.billDate,
+      sourceCodeId: pjSource,
+      source: "ap",
+      description: bill.description ?? `Bill ${bill.billNumber}`,
+      currency: bill.currency,
+      exchangeRate: bill.exchangeRate,
+      documentNo: bill.vendorInvoiceNumber ?? bill.billNumber,
+      lines: jeLines,
+    },
+    tx
+  );
 
   if (!result.ok) {
-    throw new Error(`GL posting failed: ${result.code}: ${result.error}`);
+    throw new AppError("posting_failed", result.error, {
+      postingCode: result.code,
+      ...result.meta,
+    });
   }
 
   await writeAudit(
     {
       organizationId,
-      actorId,
+      ...auditFields(actor),
       event: "ap.bill.posted",
       entityType: "ap_bill",
       entityId: bill.id,
@@ -142,38 +104,42 @@ export async function postBillToGl(
  * which creates a new JE swapping debits and credits.
  */
 export async function voidBillFromGl(
-  tx: Tx,
-  opts: {
-    bill: ApBill;
-    actorId: string | null;
-    organizationId: string;
-    reason: string;
-  }
+  ctx: Ctx,
+  bill: ApBill,
+  reason: string
 ): Promise<{ journalId: string }> {
-  if (!opts.bill.glJournalId) {
-    throw new Error("Bill has no posted GL journal to reverse.");
+  const { actor, tx } = ctx;
+  if (!bill.glJournalId) {
+    throw new AppError("invalid_state", "Bill has no posted GL journal to reverse.");
   }
 
-  const result = await reverseJournal(opts.bill.glJournalId, {
-    actorId: opts.actorId,
-    organizationId: opts.organizationId,
-    description: `Void of AP bill ${opts.bill.billNumber} — ${opts.reason}`,
-  });
+  const result = await reverseJournal(
+    bill.glJournalId,
+    {
+      actorId: actor.userId,
+      actor,
+      organizationId: actor.organizationId,
+      description: `Void of bill ${bill.billNumber} — ${reason}`,
+    },
+    tx
+  );
 
   if (!result.ok) {
-    throw new Error(`GL reversal failed: ${result.error}`);
+    throw new AppError("posting_failed", `GL reversal failed: ${result.error}`, {
+      postingCode: result.code,
+    });
   }
 
   await writeAudit(
     {
-      organizationId: opts.organizationId,
-      actorId: opts.actorId,
+      organizationId: actor.organizationId,
+      ...auditFields(actor),
       event: "ap.bill.voided",
       entityType: "ap_bill",
-      entityId: opts.bill.id,
+      entityId: bill.id,
       metadata: {
-        billNumber: opts.bill.billNumber,
-        reason: opts.reason,
+        billNumber: bill.billNumber,
+        reason,
         reversalJournalId: result.journalId,
       },
     },

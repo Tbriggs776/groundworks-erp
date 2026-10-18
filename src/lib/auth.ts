@@ -2,7 +2,8 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { membershipRole, memberships, organizations } from "@/lib/db/schema";
+import { memberships, organizations } from "@/lib/db/schema";
+import { hasRole, userActor, type Actor, type Role } from "@/lib/actor";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -43,7 +44,7 @@ export async function requireUser(): Promise<SessionUser> {
 export type MembershipWithOrg = {
   membershipId: string;
   organizationId: string;
-  role: (typeof membershipRole.enumValues)[number];
+  role: Role;
   organization: typeof organizations.$inferSelect;
 };
 
@@ -105,23 +106,7 @@ export async function requireCurrentOrg(): Promise<MembershipWithOrg> {
   return current;
 }
 
-/**
- * Role hierarchy for authorization checks. Higher rank = more privilege.
- * Roles are listed in the membership_role enum; keep these in sync.
- */
-export const ROLE_RANK = {
-  owner: 5,
-  admin: 4,
-  accountant: 3,
-  bookkeeper: 2,
-  viewer: 0,
-} as const satisfies Record<MembershipWithOrg["role"], number>;
-
-export type Role = keyof typeof ROLE_RANK;
-
-export function hasRole(role: Role, min: Role): boolean {
-  return ROLE_RANK[role] >= ROLE_RANK[min];
-}
+export { ROLE_RANK, hasRole, type Role } from "@/lib/actor";
 
 /**
  * Route guard for routes that require a minimum role. Redirects to login /
@@ -138,4 +123,18 @@ export async function requireRole(min: Role): Promise<MembershipWithOrg> {
     forbidden();
   }
   return current;
+}
+
+/**
+ * The signed-in human as an Actor, for calling service functions from
+ * server actions. Applies the same minimum-role gate as requireRole.
+ */
+export async function requireActor(min: Role = "viewer"): Promise<Actor> {
+  const user = await requireUser();
+  const current = await requireRole(min);
+  return userActor({
+    organizationId: current.organizationId,
+    userId: user.id,
+    role: current.role,
+  });
 }

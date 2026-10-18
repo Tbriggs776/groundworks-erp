@@ -159,6 +159,53 @@ async function main() {
       throw new Error(`expected unbalanced_currency, got ${r.code}`);
   });
 
+  await check("a failed post leaves no draft journal behind", async () => {
+    const [{ n }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(glJournals)
+      .where(
+        and(
+          eq(glJournals.organizationId, fixtures.org.id),
+          eq(glJournals.status, "draft")
+        )
+      );
+    if (n !== 0) throw new Error(`found ${n} orphan draft journal(s)`);
+  });
+
+  await check("another org's account is rejected (tenant integrity)", async () => {
+    const [otherOrg] = await db
+      .insert(organizations)
+      .values({ name: "GL Test Other", slug: `${testSlug}-other` })
+      .returning();
+    const [foreign] = await db
+      .insert(accounts)
+      .values({
+        organizationId: otherOrg.id,
+        code: "9999",
+        name: "Someone else's cash",
+        category: "balance_sheet",
+        subcategory: "cash",
+        normalBalance: "debit",
+      })
+      .returning({ id: accounts.id });
+    const r = await createAndPostJournal({
+      organizationId: fixtures.org.id,
+      actorId: fixtures.actor.id,
+      journalDate: "2026-03-15",
+      sourceCodeId: fixtures.sourceCodeId,
+      source: "manual",
+      description: "Cross-tenant attempt",
+      lines: [
+        { accountId: foreign.id, debit: "10.00" },
+        { accountId: fixtures.cash.id, credit: "10.00" },
+      ],
+    });
+    await db.delete(organizations).where(eq(organizations.id, otherOrg.id));
+    if (r.ok) throw new Error("expected failure, got success");
+    if (r.code !== "account_missing")
+      throw new Error(`expected account_missing, got ${r.code}`);
+  });
+
   await check("manual post to control account is rejected", async () => {
     const r = await createAndPostJournal({
       organizationId: fixtures.org.id,

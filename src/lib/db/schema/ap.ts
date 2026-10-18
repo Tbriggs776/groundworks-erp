@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { apBillStatus, timestamps } from "./_shared";
 import { accounts } from "./accounts";
+import { agents } from "./agents";
 import { approvalThresholds } from "./approvals";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
@@ -113,6 +114,15 @@ export const apBills = pgTable(
     description: text("description"),
     notes: text("notes"),
 
+    // Who created the document — a human or an agent (never both). Drives
+    // the review queue: agent-created drafts wait there for a human.
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
+
     ...timestamps,
   },
   (t) => [
@@ -120,6 +130,7 @@ export const apBills = pgTable(
     index("ap_bills_org_status_idx").on(t.organizationId, t.status),
     index("ap_bills_vendor_idx").on(t.organizationId, t.vendorId),
     index("ap_bills_due_idx").on(t.organizationId, t.dueDate),
+    index("ap_bills_agent_idx").on(t.organizationId, t.createdByAgentId),
   ]
 );
 

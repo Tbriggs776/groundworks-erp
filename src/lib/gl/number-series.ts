@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { numberSeries } from "@/lib/db/schema";
+import { AppError } from "@/lib/errors";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -40,7 +41,8 @@ export async function nextNumber(
     });
 
   if (!row) {
-    throw new Error(
+    throw new AppError(
+      "invalid_state",
       `Number series "${seriesCode}" not found (or inactive) for this organization.`
     );
   }

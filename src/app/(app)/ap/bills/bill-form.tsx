@@ -121,7 +121,7 @@ export function BillForm({
         vendorInvoiceNumber,
         billDate,
         dueDate,
-        discountDate,
+        discountDate: discountDate || null,
         currency: currency.toUpperCase(),
         exchangeRate: "1",
         discountPercent: "0",
