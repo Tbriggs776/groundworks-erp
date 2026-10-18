@@ -603,6 +603,18 @@ export const OPERATIONS: Operation[] = [
     run: (ctx, input) => bills.voidBill(ctx, input),
   }),
   op({
+    name: "delete_bill",
+    title: "Delete a draft bill",
+    description: "Discard a draft or rejected bill. Posted bills must be voided instead.",
+    group: "Expenses",
+    method: "DELETE",
+    path: "/bills/{id}",
+    scope: "write",
+    destructive: true,
+    input: ById,
+    run: (ctx, input) => bills.deleteDraftBill(ctx, input),
+  }),
+  op({
     name: "list_bill_payments",
     title: "List bill payments",
     description: "Payments to vendors, newest first. Filter by status or vendorId.",

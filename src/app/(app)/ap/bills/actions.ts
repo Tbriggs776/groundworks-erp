@@ -11,7 +11,6 @@ import * as bills from "@/lib/ap/bills";
  */
 
 export type BillInput = Omit<bills.CreateBillInput, "submit">;
-export type { ActionResult };
 
 function revalidate(billId?: string) {
   revalidatePath("/ap/bills");

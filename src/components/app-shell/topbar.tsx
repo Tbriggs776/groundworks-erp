@@ -11,15 +11,17 @@ import {
 import { LogOut, Menu } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { OrgSwitcher } from "./org-switcher";
 import { Brand, SidebarNav } from "./sidebar";
 
 type Props = {
   title: string;
   crumb?: string;
   userEmail?: string | null;
+  org?: { current: string; orgs: Array<{ id: string; name: string }> };
 };
 
-export function Topbar({ title, crumb, userEmail }: Props) {
+export function Topbar({ title, crumb, userEmail, org }: Props) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [navOpen, setNavOpen] = useState(false);
@@ -59,6 +61,11 @@ export function Topbar({ title, crumb, userEmail }: Props) {
               <Brand />
             </div>
             <SidebarNav onNavigate={() => setNavOpen(false)} />
+            {org && (
+              <div className="border-t border-border px-4 py-3 sm:hidden">
+                <OrgSwitcher current={org.current} orgs={org.orgs} />
+              </div>
+            )}
             {userEmail && (
               <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground truncate pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                 {userEmail}
@@ -80,6 +87,11 @@ export function Topbar({ title, crumb, userEmail }: Props) {
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
+        {org && (
+          <div className="hidden sm:block">
+            <OrgSwitcher current={org.current} orgs={org.orgs} />
+          </div>
+        )}
         {userEmail && (
           <span className="hidden lg:inline text-xs text-muted-foreground">
             {userEmail}

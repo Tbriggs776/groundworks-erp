@@ -7,7 +7,6 @@ import * as parties from "@/lib/parties/service";
 /** Customer server actions — thin wrappers over src/lib/parties/service.ts. */
 
 export type CustomerInput = parties.CreateCustomerInput;
-export type { ActionResult };
 
 export async function createCustomer(input: CustomerInput): Promise<ActionResult> {
   const r = await serviceAction("bookkeeper", async (ctx) => ({

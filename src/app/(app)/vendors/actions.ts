@@ -7,7 +7,6 @@ import * as parties from "@/lib/parties/service";
 /** Vendor server actions — thin wrappers over src/lib/parties/service.ts. */
 
 export type VendorInput = parties.CreateVendorInput;
-export type { ActionResult };
 
 export async function createVendor(input: VendorInput): Promise<ActionResult> {
   const r = await serviceAction("bookkeeper", async (ctx) => ({

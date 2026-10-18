@@ -85,16 +85,17 @@ const NAV: NavGroup[] = [
     label: "Agents & API",
     icon: Bot,
     items: [
-      { label: "Review Queue", href: "/review", soon: true },
-      { label: "Agents", href: "/settings/agents", soon: true },
-      { label: "API Keys", href: "/settings/api-keys", soon: true },
+      { label: "Review Queue", href: "/review" },
+      { label: "Agents", href: "/settings/agents" },
+      { label: "API Keys", href: "/settings/api-keys" },
+      { label: "Activity", href: "/activity" },
     ],
   },
   {
     label: "Settings",
     icon: Settings,
     items: [
-      { label: "Team", href: "/settings/team", soon: true },
+      { label: "Team", href: "/settings/team" },
       { label: "Approval Thresholds", href: "/settings/approval-thresholds" },
     ],
   },

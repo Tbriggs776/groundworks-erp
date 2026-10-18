@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db/client";
@@ -79,19 +80,21 @@ export const getUserMemberships = cache(
   }
 );
 
+/** Cookie holding the org the user last switched to (an org id). */
+export const ACTIVE_ORG_COOKIE = "gw_org";
+
 /**
- * Returns the currently active organization for the user.
- *
- * For v1 we pick "first active membership, ordered by created_at ASC". When
- * we add a multi-org switcher, this will read the active-org selection from
- * a cookie or URL segment.
+ * Returns the currently active organization for the user: the one named by
+ * the active-org cookie if the user still belongs to it, otherwise their
+ * first membership. The cookie is only a preference; membership is always
+ * re-checked here.
  */
 export const getCurrentOrg = cache(
   async (): Promise<MembershipWithOrg | null> => {
     const all = await getUserMemberships();
     if (all.length === 0) return null;
-    // Stable pick; assumes the DB returns rows in insert order for equal ranks.
-    return all[0];
+    const preferred = (await cookies()).get(ACTIVE_ORG_COOKIE)?.value;
+    return all.find((m) => m.organizationId === preferred) ?? all[0];
   }
 );
 

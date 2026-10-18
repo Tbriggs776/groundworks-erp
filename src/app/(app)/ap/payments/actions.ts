@@ -10,7 +10,6 @@ import * as billPayments from "@/lib/ap/bill-payments";
  */
 
 export type PaymentInput = Omit<billPayments.CreateBillPaymentInput, "post">;
-export type { ActionResult };
 
 function revalidate(paymentId?: string) {
   revalidatePath("/ap/payments");

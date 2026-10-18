@@ -1,11 +1,12 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db/client";
 import { memberships, organizations, profiles } from "@/lib/db/schema";
 import { writeAudit } from "@/lib/audit";
-import { requireUser } from "@/lib/auth";
+import { ACTIVE_ORG_COOKIE, requireUser } from "@/lib/auth";
 import { seedOrganizationDefaults } from "@/lib/seed/org-defaults";
 import { randomSuffix, slugify } from "@/lib/slug";
 
@@ -48,6 +49,7 @@ export async function createOrganization(
   const { name, fiscalYearStartMonth, seedDefaultCoa } = parsed.data;
   const baseSlug = slugify(name) || "org";
 
+  let createdOrgId: string | undefined;
   try {
     await db.transaction(async (tx) => {
       // Defensive profile insert — the signup trigger should have created
@@ -81,6 +83,7 @@ export async function createOrganization(
           "Could not assign a unique slug for the organization."
         );
       }
+      createdOrgId = orgId;
 
       await tx.insert(memberships).values({
         organizationId: orgId,
@@ -118,5 +121,15 @@ export async function createOrganization(
     };
   }
 
+  // Make the new org the active one (matters for people who already had one).
+  if (createdOrgId) {
+    (await cookies()).set(ACTIVE_ORG_COOKIE, createdOrgId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+  }
   redirect("/dashboard");
 }

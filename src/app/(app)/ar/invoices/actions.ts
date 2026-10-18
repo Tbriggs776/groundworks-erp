@@ -7,7 +7,6 @@ import * as invoices from "@/lib/ar/invoices";
 /** Invoice server actions — wrappers over src/lib/ar/invoices.ts. */
 
 export type InvoiceInput = Omit<invoices.CreateInvoiceInput, "post">;
-export type { ActionResult };
 
 function revalidate(invoiceId?: string) {
   revalidatePath("/ar/invoices");

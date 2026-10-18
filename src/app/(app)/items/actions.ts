@@ -7,7 +7,6 @@ import * as items from "@/lib/ar/items";
 /** Products & services server actions — wrappers over src/lib/ar/items.ts. */
 
 export type ItemInput = items.CreateItemInput;
-export type { ActionResult };
 
 export async function createItem(input: ItemInput): Promise<ActionResult> {
   const r = await serviceAction("bookkeeper", async (ctx) => ({

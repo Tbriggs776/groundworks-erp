@@ -3,16 +3,19 @@ import { getCurrentOrg, requireUser } from "@/lib/auth";
 import { OnboardingForm } from "./form";
 
 /**
- * First-login onboarding. The user is authenticated but has no active
- * membership — we ask them to create their first organization.
- *
- * If they already have an org, kick them straight to the dashboard; the
- * multi-org switcher will live in the app shell, not here.
+ * Create an organization. First login lands here (no membership yet);
+ * existing users come via the org switcher's "New organization" link
+ * (`?new=1`) to add another company.
  */
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ new?: string }>;
+}) {
   const user = await requireUser();
+  const { new: addAnother } = await searchParams;
   const current = await getCurrentOrg();
-  if (current) redirect("/dashboard");
+  if (current && !addAnother) redirect("/dashboard");
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6">

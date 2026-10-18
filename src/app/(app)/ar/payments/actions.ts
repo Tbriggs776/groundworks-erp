@@ -8,7 +8,6 @@ import * as payments from "@/lib/ar/payments";
 /** Customer payment server actions — wrappers over src/lib/ar/payments.ts. */
 
 export type ReceivePaymentInput = payments.CreateCustomerPaymentInput;
-export type { ActionResult };
 
 function revalidate(paymentId?: string) {
   revalidatePath("/ar/payments");

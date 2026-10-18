@@ -629,3 +629,26 @@ export async function loadBillsByIds(ctx: Ctx, ids: string[]): Promise<ApBill[]>
       and(eq(apBills.organizationId, ctx.actor.organizationId), inArray(apBills.id, ids))
     );
 }
+
+/** Discard a draft or rejected bill (no ledger impact yet). */
+export async function deleteDraftBill(ctx: Ctx, input: { id: string }): Promise<{ id: string }> {
+  requirePermission(ctx.actor, "write", "bookkeeper", "delete draft bills");
+  const { id: billId } = BillIdSchema.parse(input);
+  const bill = await loadBill(ctx, billId, true);
+  if (bill.status !== "draft" && bill.status !== "rejected") {
+    throw invalidState(`Only draft or rejected bills can be deleted (this one is ${bill.status}).`);
+  }
+  await ctx.tx.delete(apBills).where(eq(apBills.id, billId));
+  await writeAudit(
+    {
+      organizationId: ctx.actor.organizationId,
+      ...auditFields(ctx.actor),
+      event: "ap.bill.deleted",
+      entityType: "ap_bill",
+      entityId: billId,
+      metadata: { billNumber: bill.billNumber },
+    },
+    ctx.tx
+  );
+  return { id: billId };
+}

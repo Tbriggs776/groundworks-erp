@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const redirectTo = url.searchParams.get("redirectTo") ?? "/dashboard";
+  const redirectTo = safeRedirectPath(url.searchParams.get("redirectTo"));
 
   if (code) {
     const supabase = await createClient();
@@ -21,4 +21,15 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.redirect(new URL(redirectTo, url.origin));
+}
+
+/**
+ * Only same-origin paths. Without this, `?redirectTo=https://evil.example`
+ * (or `//evil.example`) would bounce a freshly signed-in user offsite.
+ */
+function safeRedirectPath(value: string | null): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
+    return "/dashboard";
+  }
+  return value;
 }
