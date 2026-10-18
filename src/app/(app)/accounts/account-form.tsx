@@ -147,7 +147,7 @@ export function AccountForm({ open, onOpenChange, initial }: Props) {
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                 Category
@@ -216,7 +216,7 @@ export function AccountForm({ open, onOpenChange, initial }: Props) {
             </Select>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-border">
             <FlagCheckbox
               name="isActive"
               label="Active"

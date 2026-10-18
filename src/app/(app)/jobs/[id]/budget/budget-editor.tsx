@@ -148,7 +148,7 @@ export function BudgetEditor({
   return (
     <div className="space-y-5">
       {/* Roll-up tiles */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Tile label="Total budget" value={totalBudget} />
         <Tile label="Committed" value={totalCommitted} muted />
         <Tile label="Actual to date" value={totalActual} accent />

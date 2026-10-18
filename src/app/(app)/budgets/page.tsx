@@ -33,7 +33,7 @@ export default async function BudgetsPage() {
       userEmail={user?.email}
     >
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-muted-foreground">
             Named budgets per fiscal year. Compare against actuals in the
             Variance report (coming in Chunk E).

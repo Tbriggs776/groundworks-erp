@@ -174,7 +174,7 @@ export function RecurringForm({
 
   return (
     <div className="space-y-5 max-w-5xl">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
             Code
@@ -220,7 +220,7 @@ export function RecurringForm({
         />
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
             Frequency

@@ -173,6 +173,21 @@
     letter-spacing: 0.08em;
   }
 
+  /* Stop iOS Safari zooming into form fields under 16px */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  /* Money columns line up and tap targets don't flash grey on mobile */
+  html {
+    -webkit-tap-highlight-color: transparent;
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Thin scrollbars matching the prototype */
   ::-webkit-scrollbar {
     width: 3px;

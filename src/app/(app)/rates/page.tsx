@@ -35,7 +35,7 @@ export default async function RatesPage() {
       userEmail={user?.email}
     >
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-muted-foreground">
             {rates.length} rate{rates.length === 1 ? "" : "s"} on file.
             Base currency: {organization.baseCurrency}.

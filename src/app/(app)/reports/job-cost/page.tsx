@@ -53,7 +53,7 @@ export default async function JobCostReportPage({
         </div>
 
         {/* Roll-up tiles */}
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <Tile label="Contract value" value={totalContract.toFixed(4)} />
           <Tile label="Total budget" value={totalBudget.toFixed(4)} />
           <Tile label="Committed" value={totalCommitted.toFixed(4)} muted />

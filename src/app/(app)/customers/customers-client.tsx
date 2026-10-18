@@ -226,7 +226,7 @@ function CustomerForm({
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Display name</Label>
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="ACME" />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Type</Label>
               <Select
@@ -250,7 +250,7 @@ function CustomerForm({
               <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} className="uppercase" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Credit limit (optional)</Label>
               <Input inputMode="decimal" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} className="font-mono text-right" />
@@ -260,7 +260,7 @@ function CustomerForm({
               <Input value={taxId} onChange={(e) => setTaxId(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 items-center pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center pt-1">
             <label className="flex items-center gap-2 text-xs cursor-pointer">
               <Checkbox checked={taxExempt} onCheckedChange={(c) => setTaxExempt(!!c)} />
               <span>Tax-exempt</span>

@@ -155,7 +155,7 @@ export default async function ChangeOrderDetailPage({
         )}
 
         {/* Header summary tiles */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Tile
             label="Contract adjustment"
             money={co.contractAdjustment}

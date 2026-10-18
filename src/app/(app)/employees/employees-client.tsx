@@ -279,7 +279,7 @@ function EmployeeForm({
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">
               Payroll
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Classification</Label>
                 <Select
@@ -316,7 +316,7 @@ function EmployeeForm({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Hire date</Label>
                 <Input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)} />
@@ -329,7 +329,7 @@ function EmployeeForm({
           </div>
 
           <div className="border-t border-border pt-3 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Email</Label>
                 <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />

@@ -214,7 +214,7 @@ function VendorForm({
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Display name</Label>
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="ABC Concrete" />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Type</Label>
               <Select
@@ -242,7 +242,7 @@ function VendorForm({
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">
               1099 / Tax
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="flex items-center gap-2 text-xs cursor-pointer">
                 <Checkbox checked={is1099Vendor} onCheckedChange={(c) => setIs1099Vendor(!!c)} />
                 <span>Requires 1099-NEC at year-end</span>

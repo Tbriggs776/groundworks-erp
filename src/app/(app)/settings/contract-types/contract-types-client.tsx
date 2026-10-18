@@ -41,7 +41,7 @@ export function ContractTypesClient({ types }: { types: ContractType[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs text-muted-foreground max-w-xl leading-relaxed">
           Classify how jobs recognize revenue and bill work. System defaults
           can be renamed and deactivated but not deleted. Custom types you
@@ -214,7 +214,7 @@ function ContractTypeForm({
               rows={2}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                 Sort order
