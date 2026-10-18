@@ -131,7 +131,7 @@ export default async function JobDetailPage({
         </div>
 
         {/* Change Orders summary strip */}
-        <div className="rounded-md border border-border bg-card p-4 flex items-center justify-between gap-4">
+        <div className="rounded-md border border-border bg-card p-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-6">
             <div>
               <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground font-semibold mb-1">
@@ -190,7 +190,7 @@ export default async function JobDetailPage({
         </div>
 
         {/* Commitments summary strip */}
-        <div className="rounded-md border border-border bg-card p-4 flex items-center justify-between gap-4">
+        <div className="rounded-md border border-border bg-card p-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-6">
             <div>
               <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground font-semibold mb-1">
@@ -256,7 +256,7 @@ export default async function JobDetailPage({
 
         {summary && (
           <div className="rounded-md border border-border bg-card p-5 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground font-semibold">
                 Job Cost — Budget vs Actual
               </div>
@@ -268,7 +268,7 @@ export default async function JobDetailPage({
               </Link>
             </div>
 
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <Tile label="Contract" value={summary.contractAmount} />
               <Tile label="Budget" value={summary.totalBudget} />
               <Tile

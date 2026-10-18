@@ -74,7 +74,7 @@ export default async function ChangeOrdersListPage({
         </div>
 
         {/* Summary tiles */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Tile label="Total COs" value={String(summary.totalCount)} />
           <Tile label="Executed" value={String(summary.executedCount)} accent />
           <Tile
@@ -89,7 +89,7 @@ export default async function ChangeOrdersListPage({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-muted-foreground">
             {rows.length} change order{rows.length === 1 ? "" : "s"} on this
             job.

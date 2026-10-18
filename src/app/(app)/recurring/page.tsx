@@ -30,7 +30,7 @@ export default async function RecurringPage() {
       userEmail={user?.email}
     >
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-muted-foreground">
             {rows.length} recurring entries. The daily cron runs at 06:00 UTC;
             you can also run them on-demand.

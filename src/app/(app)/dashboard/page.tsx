@@ -100,7 +100,7 @@ export default async function DashboardPage() {
           <div className="text-[10px] tracking-[0.28em] uppercase text-primary mb-2">
             Groundworks · Live
           </div>
-          <h1 className="font-heading text-4xl tracking-[0.08em] text-foreground mb-2">
+          <h1 className="font-heading text-3xl sm:text-4xl tracking-[0.08em] text-foreground mb-2">
             {organization.name.toUpperCase()}
           </h1>
           <div className="text-xs text-muted-foreground mb-6">
@@ -109,7 +109,7 @@ export default async function DashboardPage() {
             <span className="text-primary">{role}</span>
           </div>
 
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {stats.map((stat) => (
               <Link
                 key={stat.label}
@@ -127,7 +127,7 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <QuickAction
             title="Post a Journal Entry"
             description="Manual GL entry with multi-line, balance check, dimensions, and audit trail."

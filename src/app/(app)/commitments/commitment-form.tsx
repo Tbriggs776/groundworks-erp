@@ -162,7 +162,7 @@ export function CommitmentForm({
           Header
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
               Type
@@ -237,7 +237,7 @@ export function CommitmentForm({
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
               External reference
@@ -271,7 +271,7 @@ export function CommitmentForm({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
               Currency
@@ -293,7 +293,7 @@ export function CommitmentForm({
       </div>
 
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground font-semibold">
             Lines
           </div>

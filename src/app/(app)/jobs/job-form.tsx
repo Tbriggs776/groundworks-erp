@@ -121,7 +121,7 @@ export function JobForm({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
             Customer
@@ -171,7 +171,7 @@ export function JobForm({
         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">
           Contract
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
               Contract type
@@ -238,7 +238,7 @@ export function JobForm({
         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">
           Schedule
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
               Start date

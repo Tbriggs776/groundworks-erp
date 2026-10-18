@@ -72,7 +72,7 @@ export default async function JobCommitmentsPage({
           </Link>
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Tile label="Issued" value={String(summary.issuedCount)} />
           <Tile label="Total committed" money={summary.totalCommitted} accent />
           <Tile label="Invoiced" money={summary.totalInvoiced} muted />
@@ -83,7 +83,7 @@ export default async function JobCommitmentsPage({
           />
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-muted-foreground">
             {rows.length} commitment{rows.length === 1 ? "" : "s"} on this job.
           </div>

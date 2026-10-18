@@ -221,7 +221,7 @@ export default async function CommitmentDetailPage({
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Tile label="Total" money={totalAmount.toFixed(4)} currency={c.currency} />
           <Tile label="Invoiced" money={invoiced.toFixed(4)} currency={c.currency} muted />
           <Tile

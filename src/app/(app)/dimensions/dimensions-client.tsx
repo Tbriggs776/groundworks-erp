@@ -57,7 +57,7 @@ export function DimensionsClient({ dimensions, values }: Props) {
   return (
     <div className="grid grid-cols-[280px_1fr] gap-4 min-h-[600px]">
       <aside className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             Dimensions
           </div>
@@ -376,7 +376,7 @@ function DimensionForm({
               rows={2}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                 Sort order
@@ -546,7 +546,7 @@ function DimensionValueForm({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-3 gap-3 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                 Sort order

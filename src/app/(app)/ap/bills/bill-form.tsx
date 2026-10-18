@@ -233,7 +233,7 @@ export function BillForm({
 
   return (
     <div className="space-y-5 max-w-5xl">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
             Vendor
@@ -263,7 +263,7 @@ export function BillForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
             Bill date
