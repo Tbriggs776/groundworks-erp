@@ -205,14 +205,14 @@ function CustomerForm({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="font-heading tracking-[0.12em]">
             {isEdit ? "EDIT CUSTOMER" : "NEW CUSTOMER"}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="grid grid-cols-[1fr_2fr] gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Code</Label>
               <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="CUST-001" />

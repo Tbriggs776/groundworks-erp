@@ -327,7 +327,7 @@ export function BudgetEditor({
           <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">
             Add cost code to budget
           </div>
-          <div className="grid grid-cols-[2fr_1fr_2fr_auto] gap-3 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_2fr_auto] gap-3 items-end">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                 Cost code

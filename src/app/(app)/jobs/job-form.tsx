@@ -86,7 +86,7 @@ export function JobForm({
 
   return (
     <div className="space-y-5 max-w-4xl">
-      <div className="grid grid-cols-[1fr_2fr] gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
             Job number
@@ -290,7 +290,7 @@ export function JobForm({
 
       {err && <p className="text-sm text-destructive">{err}</p>}
 
-      <div className="flex items-center gap-3 pt-3 border-t border-border">
+      <div className="gw-form-actions flex flex-wrap items-center gap-3 pt-3 border-t border-border">
         <Button
           onClick={submit}
           disabled={

@@ -55,7 +55,7 @@ export function DimensionsClient({ dimensions, values }: Props) {
   }, [values, selectedId]);
 
   return (
-    <div className="grid grid-cols-[280px_1fr] gap-4 min-h-[600px]">
+    <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4 md:min-h-[600px]">
       <aside className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
@@ -332,7 +332,7 @@ function DimensionForm({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-heading tracking-[0.12em]">
             {isEdit ? "EDIT DIMENSION" : "NEW DIMENSION"}
@@ -483,14 +483,14 @@ function DimensionValueForm({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-heading tracking-[0.12em]">
             {isEdit ? "EDIT VALUE" : "NEW VALUE"}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="grid grid-cols-[1fr_2fr] gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                 Code

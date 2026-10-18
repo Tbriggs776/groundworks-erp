@@ -223,7 +223,7 @@ function HardCloseDialog({
   const [reason, setReason] = useState("");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-heading tracking-[0.12em]">
             HARD CLOSE PERIOD
@@ -294,7 +294,7 @@ function GenerateYearDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-heading tracking-[0.12em]">
             GENERATE FISCAL YEAR

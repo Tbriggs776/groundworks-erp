@@ -170,7 +170,7 @@ function ContractTypeForm({
       open={open}
       onOpenChange={(o) => { if (!o) setErr(null); onOpenChange(o); }}
     >
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-heading tracking-[0.12em]">
             {isEdit ? "EDIT CONTRACT TYPE" : "NEW CONTRACT TYPE"}
