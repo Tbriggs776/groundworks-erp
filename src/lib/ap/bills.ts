@@ -25,14 +25,15 @@ import { money, sumMoney, toDbMoney } from "@/lib/money";
 import {
   amount,
   currency,
+  flag,
   id,
   isoDate,
   likePattern,
   optionalText,
+  type Page,
   pagination,
   positiveAmount,
   toPage,
-  type Page,
 } from "@/lib/schemas";
 import { canApproveAtRole, resolveApprovalRouting } from "./approval";
 import { billAppliedTotal } from "./payments";
@@ -95,7 +96,7 @@ export const ListBillsSchema = z.object({
     .optional(),
   vendorId: id.optional(),
   q: z.string().trim().optional().describe("Search bill #, vendor invoice #, or description."),
-  unpaidOnly: z.coerce.boolean().optional().describe("Only posted bills with an open balance."),
+  unpaidOnly: flag.optional().describe("Only posted bills with an open balance."),
   ...pagination,
 });
 
@@ -255,7 +256,12 @@ async function resolveBillFields(
 }
 
 /** Warn-level duplicate check: same vendor + vendor invoice # already live. */
-async function assertNotDuplicate(ctx: Ctx, vendorId: string, invoiceNo: string | null, exceptId?: string) {
+async function assertNotDuplicate(
+  ctx: Ctx,
+  vendorId: string,
+  invoiceNo: string | null | undefined,
+  exceptId?: string
+) {
   if (!invoiceNo) return;
   const [dup] = await ctx.tx
     .select({ id: apBills.id, billNumber: apBills.billNumber })

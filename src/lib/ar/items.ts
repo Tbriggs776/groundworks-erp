@@ -6,13 +6,14 @@ import { writeAudit } from "@/lib/audit";
 import { notFound, rethrowUnique } from "@/lib/errors";
 import { requireLineAccounts } from "@/lib/gl/lookups";
 import {
+  flag,
   id,
   likePattern,
   nonNegativeAmount,
   optionalText,
+  type Page,
   pagination,
   toPage,
-  type Page,
 } from "@/lib/schemas";
 
 /**
@@ -39,7 +40,7 @@ export type UpdateItemInput = z.input<typeof UpdateItemSchema>;
 
 export const ListItemsSchema = z.object({
   q: z.string().trim().optional().describe("Search name, SKU, or description."),
-  includeInactive: z.coerce.boolean().optional(),
+  includeInactive: flag.optional(),
   ...pagination,
 });
 

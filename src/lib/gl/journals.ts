@@ -20,6 +20,7 @@ import {
 import { writeAudit } from "@/lib/audit";
 import { AppError, invalidState, notFound } from "@/lib/errors";
 import { money, sumMoney } from "@/lib/money";
+import { postOrQueueForReview, type ReviewNotice } from "@/lib/review-policy";
 import {
   amount,
   currency,
@@ -249,12 +250,9 @@ async function postJournalDraft(ctx: Ctx, journalId: string, label: string) {
 export async function createJournalEntry(
   ctx: Ctx,
   input: CreateJournalEntryInput
-): Promise<JournalDetail> {
+): Promise<JournalDetail & Partial<ReviewNotice>> {
   requirePermission(ctx.actor, "write", "accountant", "create journal entries");
   const data = CreateJournalEntrySchema.parse(input);
-  if (data.post) {
-    requirePermission(ctx.actor, "post", "accountant", "post journal entries");
-  }
   const org = ctx.actor.organizationId;
 
   const debits = sumMoney(data.lines.map((l) => l.debit ?? "0"));
@@ -291,7 +289,15 @@ export async function createJournalEntry(
   });
 
   if (data.post) {
-    await postJournalDraft(ctx, draft.journalId, `Journal entry ${draft.journalNumber}`);
+    return postOrQueueForReview(
+      ctx,
+      async (c) => {
+        requirePermission(c.actor, "post", "accountant", "post journal entries");
+        await postJournalDraft(c, draft.journalId, `Journal entry ${draft.journalNumber}`);
+        return getJournal(c, { id: draft.journalId });
+      },
+      () => getJournal(ctx, { id: draft.journalId })
+    );
   } else {
     await writeAudit(
       {

@@ -23,6 +23,7 @@ import { nextNumber } from "@/lib/gl/number-series";
 import { requirePostingAccount } from "@/lib/gl/lookups";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { requireActiveCustomer } from "@/lib/parties/service";
+import { postOrQueueForReview, type ReviewNotice } from "@/lib/review-policy";
 import {
   amount,
   currency,
@@ -256,7 +257,7 @@ async function defaultDepositAccount(ctx: Ctx): Promise<string> {
 export async function createCustomerPayment(
   ctx: Ctx,
   input: CreateCustomerPaymentInput
-): Promise<CustomerPaymentDetail> {
+): Promise<CustomerPaymentDetail & Partial<ReviewNotice>> {
   requirePermission(ctx.actor, "write", "bookkeeper", "record customer payments");
   const d = CreateCustomerPaymentSchema.parse(input);
   const org = ctx.actor.organizationId;
@@ -337,7 +338,13 @@ export async function createCustomerPayment(
     ctx.tx
   );
 
-  if (d.post) return postCustomerPayment(ctx, { id: payment.id });
+  if (d.post) {
+    return postOrQueueForReview(
+      ctx,
+      (c) => postCustomerPayment(c, { id: payment.id }),
+      () => getCustomerPayment(ctx, { id: payment.id })
+    );
+  }
   return getCustomerPayment(ctx, { id: payment.id });
 }
 

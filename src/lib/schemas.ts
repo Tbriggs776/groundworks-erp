@@ -45,7 +45,10 @@ export const currency = z
   .length(3, "Use a 3-letter ISO currency code.")
   .transform((s) => s.toUpperCase());
 
-/** Optional free text: trims, and treats "" as absent. */
+/**
+ * Optional free text. Trims; "" or null means "clear it" (→ null); absent
+ * stays undefined, so partial updates leave the stored value alone.
+ */
 export const optionalText = (max = 2000) =>
   z
     .string()
@@ -53,7 +56,15 @@ export const optionalText = (max = 2000) =>
     .max(max)
     .optional()
     .nullable()
-    .transform((s) => (s ? s : null));
+    .transform((s) => (s === undefined ? undefined : s || null));
+
+/**
+ * Boolean that also accepts query-string spellings. Unlike z.coerce.boolean
+ * (where "false" is truthy), "false" and "0" mean false.
+ */
+export const flag = z
+  .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+  .transform((v) => v === true || v === "true" || v === "1");
 
 export const pagination = {
   limit: z.coerce

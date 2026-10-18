@@ -263,13 +263,13 @@ async function main() {
     assertEq(inv.status, "draft", "status");
     assertEq(inv.createdByAgentId, agent.id, "createdByAgentId");
     await expectError(() => t.run(actor, (ctx) => invoices.postInvoice(ctx, { id: inv.id })), "forbidden");
-    await expectError(
-      () =>
-        t.run(actor, (ctx) =>
-          invoices.createInvoice(ctx, { customerId, invoiceDate: "2026-04-01", lines: [{ itemId: consultingId }], post: true })
-        ),
-      "forbidden"
+    // Asking to post anyway keeps the draft and says it needs review.
+    const asked = await t.run(actor, (ctx) =>
+      invoices.createInvoice(ctx, { customerId, invoiceDate: "2026-04-01", lines: [{ itemId: consultingId }], post: true })
     );
+    assertEq(asked.status, "draft", "kept as draft");
+    assert(asked.review?.required, "review notice");
+    await t.run(owner, (ctx) => invoices.deleteDraftInvoice(ctx, { id: asked.id }));
     // A human posts it from the review queue.
     const posted = await t.run(bookkeeper, (ctx) => invoices.postInvoice(ctx, { id: inv.id }));
     assertEq(posted.status, "open", "posted by human");

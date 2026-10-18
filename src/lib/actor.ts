@@ -158,7 +158,7 @@ export function requirePostingWithinLimit(
   if (money(amount).gt(money(actor.maxPostAmount))) {
     throw new AppError(
       "approval_required",
-      `${documentLabel} is ${money(amount).toFixed(2)}, above this agent's posting limit of ${money(actor.maxPostAmount).toFixed(2)}. It has been left as a draft for a human to review and post.`,
+      `${documentLabel} is ${money(amount).toFixed(2)}, above this agent's posting limit of ${money(actor.maxPostAmount).toFixed(2)}. It was not posted; a human needs to review and post it.`,
       { amount: money(amount).toFixed(2), limit: money(actor.maxPostAmount).toFixed(2) }
     );
   }

@@ -27,16 +27,18 @@ import { nextNumber } from "@/lib/gl/number-series";
 import { requireLineAccounts } from "@/lib/gl/lookups";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { requireActiveCustomer } from "@/lib/parties/service";
+import { postOrQueueForReview, type ReviewNotice } from "@/lib/review-policy";
 import {
   amount,
   currency,
+  flag,
   id,
   isoDate,
   likePattern,
   optionalText,
+  type Page,
   pagination,
   toPage,
-  type Page,
 } from "@/lib/schemas";
 import {
   invoiceAppliedTotal,
@@ -97,7 +99,7 @@ export type UpdateInvoiceInput = z.input<typeof UpdateInvoiceSchema>;
 export const ListInvoicesSchema = z.object({
   status: z.enum(["draft", "open", "paid", "voided"]).optional(),
   customerId: id.optional(),
-  overdueOnly: z.coerce.boolean().optional().describe("Open invoices past their due date."),
+  overdueOnly: flag.optional().describe("Open invoices past their due date."),
   from: isoDate.optional(),
   to: isoDate.optional(),
   q: z.string().trim().optional().describe("Search invoice #, PO #, memo, or customer name."),
@@ -337,7 +339,10 @@ async function insertLines(
   );
 }
 
-export async function createInvoice(ctx: Ctx, input: CreateInvoiceInput): Promise<InvoiceDetail> {
+export async function createInvoice(
+  ctx: Ctx,
+  input: CreateInvoiceInput
+): Promise<InvoiceDetail & Partial<ReviewNotice>> {
   requirePermission(ctx.actor, "write", "bookkeeper", "create invoices");
   const data = CreateInvoiceSchema.parse(input);
   const org = ctx.actor.organizationId;
@@ -362,7 +367,13 @@ export async function createInvoice(ctx: Ctx, input: CreateInvoiceInput): Promis
     ctx.tx
   );
 
-  if (data.post) return postInvoice(ctx, { id: inv.id });
+  if (data.post) {
+    return postOrQueueForReview(
+      ctx,
+      (c) => postInvoice(c, { id: inv.id }),
+      () => getInvoice(ctx, { id: inv.id })
+    );
+  }
   return getInvoice(ctx, { id: inv.id });
 }
 

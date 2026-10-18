@@ -14,9 +14,11 @@ export const config = {
   matcher: [
     /*
      * Run on everything except:
+     *   - api/ (REST, MCP, cron) — those authenticate per request with API
+     *     keys or the cron secret; a session redirect would break them
      *   - _next/static, _next/image (bundles, images)
      *   - favicon / public assets
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

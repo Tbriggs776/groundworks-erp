@@ -21,13 +21,14 @@ import { writeAudit } from "@/lib/audit";
 import { AppError, notFound, rethrowUnique } from "@/lib/errors";
 import {
   currency,
+  flag,
   id,
   likePattern,
   nonNegativeAmount,
   optionalText,
+  type Page,
   pagination,
   toPage,
-  type Page,
 } from "@/lib/schemas";
 
 /**
@@ -108,7 +109,7 @@ export type UpdateVendorInput = z.input<typeof UpdateVendorSchema>;
 
 export const ListPartiesSchema = z.object({
   q: z.string().trim().optional().describe("Search code, name, or email."),
-  includeInactive: z.coerce.boolean().optional(),
+  includeInactive: flag.optional(),
   ...pagination,
 });
 

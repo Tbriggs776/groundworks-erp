@@ -21,6 +21,7 @@ import { AppError, invalidState, notFound } from "@/lib/errors";
 import { nextNumber } from "@/lib/gl/number-series";
 import { requirePostingAccount } from "@/lib/gl/lookups";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
+import { postOrQueueForReview, type ReviewNotice } from "@/lib/review-policy";
 import {
   amount,
   currency,
@@ -209,7 +210,7 @@ async function assertApplicationsFit(
 export async function createBillPayment(
   ctx: Ctx,
   input: CreateBillPaymentInput
-): Promise<BillPaymentDetail> {
+): Promise<BillPaymentDetail & Partial<ReviewNotice>> {
   requirePermission(ctx.actor, "write", "bookkeeper", "create bill payments");
   const data = CreateBillPaymentSchema.parse(input);
   const org = ctx.actor.organizationId;
@@ -286,7 +287,13 @@ export async function createBillPayment(
     ctx.tx
   );
 
-  if (data.post) return postBillPayment(ctx, { id: payment.id });
+  if (data.post) {
+    return postOrQueueForReview(
+      ctx,
+      (c) => postBillPayment(c, { id: payment.id }),
+      () => getBillPayment(ctx, { id: payment.id })
+    );
+  }
   return getBillPayment(ctx, { id: payment.id });
 }
 
