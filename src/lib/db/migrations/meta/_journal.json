@@ -120,6 +120,13 @@
       "when": 1777663604387,
       "tag": "0016_mysterious_frank_castle",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792353953568,
+      "tag": "0017_strip_construction",
+      "breakpoints": true
     }
   ]
 }

@@ -4,15 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  Banknote,
-  Building2,
+  BookOpen,
+  Bot,
   FileBarChart,
-  Hammer,
-  HardHat,
-  LineChart,
+  LayoutDashboard,
   Receipt,
   Settings,
-  Truck,
   Wallet,
 } from "lucide-react";
 
@@ -29,110 +26,73 @@ type NavGroup = {
 };
 
 /**
- * The eight mega-modules. Most routes don't exist yet — items render with a
- * "soon" pill. As each module is built the pill is removed.
+ * Navigation, grouped the way QuickBooks users already think about their
+ * books. Items flagged `soon` render with a pill until the route ships.
  */
 const NAV: NavGroup[] = [
   {
-    label: "Financials",
-    icon: Banknote,
+    label: "Overview",
+    icon: LayoutDashboard,
+    items: [{ label: "Dashboard", href: "/dashboard" }],
+  },
+  {
+    label: "Sales",
+    icon: Receipt,
     items: [
-      { label: "Dashboard", href: "/dashboard" },
+      { label: "Customers", href: "/customers" },
+      { label: "Invoices", href: "/ar/invoices", soon: true },
+      { label: "Payments Received", href: "/ar/payments", soon: true },
+      { label: "Products & Services", href: "/items", soon: true },
+    ],
+  },
+  {
+    label: "Expenses",
+    icon: Wallet,
+    items: [
+      { label: "Vendors", href: "/vendors" },
+      { label: "Bills", href: "/ap/bills" },
+      { label: "Bill Payments", href: "/ap/payments" },
+    ],
+  },
+  {
+    label: "Accounting",
+    icon: BookOpen,
+    items: [
       { label: "Chart of Accounts", href: "/accounts" },
-      { label: "Dimensions", href: "/dimensions" },
-      { label: "General Ledger", href: "/gl" },
+      { label: "Journal Entries", href: "/gl" },
       { label: "Recurring", href: "/recurring" },
       { label: "Allocations", href: "/allocations" },
       { label: "Budgets", href: "/budgets" },
+      { label: "Classes & Locations", href: "/dimensions" },
       { label: "Period Close", href: "/periods" },
       { label: "Exchange Rates", href: "/rates" },
       { label: "FX Revaluation", href: "/rates/revaluation" },
-      { label: "Audit Trail", href: "/audit", soon: true },
     ],
   },
   {
     label: "Reports",
     icon: FileBarChart,
     items: [
-      { label: "Trial Balance", href: "/reports/trial-balance" },
+      { label: "Profit & Loss", href: "/reports/income-statement" },
       { label: "Balance Sheet", href: "/reports/balance-sheet" },
-      { label: "Income Statement", href: "/reports/income-statement" },
+      { label: "Trial Balance", href: "/reports/trial-balance" },
       { label: "GL Detail", href: "/reports/gl-detail" },
-      { label: "Job Cost", href: "/reports/job-cost" },
     ],
   },
   {
-    label: "Projects",
-    icon: HardHat,
+    label: "Agents & API",
+    icon: Bot,
     items: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Cost Codes", href: "/cost-codes" },
-      { label: "Job Cost Report", href: "/reports/job-cost" },
-      { label: "Change Orders", href: "/change-orders" },
-      { label: "Commitments", href: "/commitments" },
-    ],
-  },
-  {
-    label: "Billing",
-    icon: Receipt,
-    items: [
-      { label: "Customers", href: "/customers" },
-      { label: "AR", href: "/ar", soon: true },
-      { label: "AIA / SOV", href: "/ar/aia", soon: true },
-      { label: "Retainage", href: "/ar/retainage", soon: true },
-    ],
-  },
-  {
-    label: "Procurement",
-    icon: Wallet,
-    items: [
-      { label: "Vendors", href: "/vendors" },
-      { label: "AP Bills", href: "/ap/bills" },
-      { label: "AP Payments", href: "/ap/payments" },
-      { label: "Commitments", href: "/commitments" },
-    ],
-  },
-  {
-    label: "People",
-    icon: Building2,
-    items: [
-      { label: "Employees", href: "/employees" },
-      { label: "Payroll", href: "/payroll", soon: true },
-      { label: "Time & Expense", href: "/time", soon: true },
-    ],
-  },
-  {
-    label: "Field Ops",
-    icon: Truck,
-    items: [
-      { label: "Dispatch", href: "/dispatch", soon: true },
-      { label: "Equipment", href: "/equipment", soon: true },
-      { label: "Documents", href: "/documents", soon: true },
-    ],
-  },
-  {
-    label: "Finance & Risk",
-    icon: LineChart,
-    items: [
-      { label: "Cash Flow", href: "/cashflow", soon: true },
-      { label: "Fixed Assets", href: "/assets", soon: true },
-      { label: "Surety", href: "/surety", soon: true },
-    ],
-  },
-  {
-    label: "Growth",
-    icon: Hammer,
-    items: [
-      { label: "CRM", href: "/crm", soon: true },
-      { label: "Estimating", href: "/estimating", soon: true },
-      { label: "BI", href: "/bi", soon: true },
+      { label: "Review Queue", href: "/review", soon: true },
+      { label: "Agents", href: "/settings/agents", soon: true },
+      { label: "API Keys", href: "/settings/api-keys", soon: true },
     ],
   },
   {
     label: "Settings",
     icon: Settings,
     items: [
-      { label: "Contract Types", href: "/settings/contract-types" },
+      { label: "Team", href: "/settings/team", soon: true },
       { label: "Approval Thresholds", href: "/settings/approval-thresholds" },
     ],
   },
@@ -150,7 +110,7 @@ export function Brand() {
           GROUNDWORKS
         </div>
         <div className="text-[9px] tracking-[0.3em] text-muted-foreground uppercase mt-0.5">
-          ERP · Platform
+          Accounting · API
         </div>
       </div>
     </Link>

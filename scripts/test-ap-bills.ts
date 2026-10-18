@@ -18,7 +18,6 @@ import {
   customers,
   glJournals,
   glLines,
-  jobs,
   memberships,
   organizations,
   profiles,
@@ -26,7 +25,6 @@ import {
 } from "../src/lib/db/schema";
 import { generateFiscalYear } from "../src/lib/gl/fiscal-calendar";
 import { seedOrganizationDefaults } from "../src/lib/seed/org-defaults";
-import { syncJobDimensionValue } from "../src/lib/projects/dimension-sync";
 import {
   canApproveAtRole,
   resolveApprovalRouting,
@@ -70,8 +68,7 @@ async function main() {
       role: "owner",
     });
     await seedOrganizationDefaults(tx, org.id, {
-      includeContractorCoa: true,
-      includeCsiCostCodes: true,
+      includeDefaultCoa: true,
     });
     await generateFiscalYear(tx, {
       organizationId: org.id,
@@ -84,7 +81,7 @@ async function main() {
       .values({
         organizationId: org.id,
         code: "VEND-001",
-        name: "ABC Concrete Supply",
+        name: "ABC Office Supply",
         vendorType: "supplier",
       })
       .returning();
@@ -99,23 +96,6 @@ async function main() {
       })
       .returning();
 
-    const dimValueId = await syncJobDimensionValue(tx, org.id, {
-      code: "J-001",
-      name: "Test Job",
-    });
-    const [job] = await tx
-      .insert(jobs)
-      .values({
-        organizationId: org.id,
-        code: "J-001",
-        name: "Test Job",
-        customerId: customer.id,
-        dimensionValueId: dimValueId,
-        contractAmount: "100000",
-        status: "active",
-      })
-      .returning();
-
     const acctRows = await tx
       .select()
       .from(accounts)
@@ -126,7 +106,6 @@ async function main() {
       org,
       vendor,
       customer,
-      job,
       apControl: byCode.get("2000")!, // AP Trade — isControl=true
       materials: byCode.get("5100")!, // COGS Materials
       rent: byCode.get("6600")!, // Rent (SG&A)
@@ -242,7 +221,7 @@ async function main() {
         subtotalAmount: "5000",
         totalAmount: "5000",
         status: "draft",
-        description: "Concrete for foundation",
+        description: "Supplies for March",
       })
       .returning();
 

@@ -11,7 +11,9 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:migrate": "tsx scripts/migrate.ts"
+    "db:migrate": "tsx scripts/migrate.ts",
+    "test:db:reset": "scripts/dev/reset-test-db.sh",
+    "test:e2e": "scripts/dev/run-e2e.sh"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

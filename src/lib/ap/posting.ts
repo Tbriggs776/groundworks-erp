@@ -1,10 +1,8 @@
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   accounts,
   apBillLines,
-  costCodes,
-  jobs,
   sourceCodes,
   type ApBill,
 } from "@/lib/db/schema";
@@ -14,11 +12,7 @@ import {
   reverseJournal,
   type JournalLineInput,
 } from "@/lib/gl/posting";
-import { money, sumMoney, toDbMoney } from "@/lib/money";
-import {
-  consumeCommitmentLineForBill,
-  releaseCommitmentLineFromBill,
-} from "@/lib/projects/commitments";
+import { sumMoney, toDbMoney } from "@/lib/money";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -27,12 +21,6 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *   - Debits each line's expense account by line.amount
  *   - Credits the AP control account (the one flagged isControl and
  *     matching subcategory=payables, typically code 2000) for the total
- *
- * Job + cost code on each line flow two places:
- *   1. gl_lines.jobId / cost_code_id (direct FKs)
- *   2. gl_line_dimensions with the matching JOB / COST_CODE system
- *      dimension values — so existing GL reports slice by job/code
- *      without knowing anything about AP
  *
  * Runs inside the caller's transaction so a post failure rolls back
  * everything (bill status update, audit row, GL journal).
@@ -61,7 +49,7 @@ export async function postBillToGl(
     .limit(1);
   if (!apControl) {
     throw new Error(
-      "No AP control account found. Seed the contractor CoA or flag a payables account as isControl=true."
+      "No AP control account found. Seed the default CoA or flag a payables account as isControl=true."
     );
   }
 
@@ -79,16 +67,9 @@ export async function postBillToGl(
     throw new Error("PJ source code missing. Re-run org seeding.");
   }
 
-  // Pull lines with enough context for dimension sync
   const lines = await tx
-    .select({
-      line: apBillLines,
-      job: jobs,
-      costCode: costCodes,
-    })
+    .select()
     .from(apBillLines)
-    .leftJoin(jobs, eq(jobs.id, apBillLines.jobId))
-    .leftJoin(costCodes, eq(costCodes.id, apBillLines.costCodeId))
     .where(eq(apBillLines.billId, bill.id))
     .orderBy(apBillLines.lineNumber);
 
@@ -96,50 +77,15 @@ export async function postBillToGl(
     throw new Error("Bill has no lines to post.");
   }
 
-  // Build JE lines
-  const jeLines: JournalLineInput[] = [];
-  for (const { line, job, costCode } of lines) {
-    const dims: Array<{ dimensionId: string; valueId: string }> = [];
-    if (job?.dimensionValueId) {
-      // Look up the JOB dimension id from the value
-      const [dv] = await tx.execute<{ dim_id: string }>(sql`
-        SELECT dimension_id AS dim_id
-          FROM public.dimension_values
-         WHERE id = ${job.dimensionValueId}
-         LIMIT 1
-      `);
-      if (dv) {
-        dims.push({ dimensionId: dv.dim_id, valueId: job.dimensionValueId });
-      }
-    }
-    if (costCode?.dimensionValueId) {
-      const [dv] = await tx.execute<{ dim_id: string }>(sql`
-        SELECT dimension_id AS dim_id
-          FROM public.dimension_values
-         WHERE id = ${costCode.dimensionValueId}
-         LIMIT 1
-      `);
-      if (dv) {
-        dims.push({
-          dimensionId: dv.dim_id,
-          valueId: costCode.dimensionValueId,
-        });
-      }
-    }
-
-    jeLines.push({
-      accountId: line.accountId,
-      debit: toDbMoney(line.amount),
-      memo: line.description ?? undefined,
-      jobId: line.jobId ?? undefined,
-      costCodeId: line.costCodeId ?? undefined,
-      vendorId: bill.vendorId,
-      dimensions: dims.length > 0 ? dims : undefined,
-    });
-  }
+  const jeLines: JournalLineInput[] = lines.map((line) => ({
+    accountId: line.accountId,
+    debit: toDbMoney(line.amount),
+    memo: line.description ?? undefined,
+    vendorId: bill.vendorId,
+  }));
 
   // Credit AP control for the total
-  const total = sumMoney(lines.map((l) => l.line.amount));
+  const total = sumMoney(lines.map((l) => l.amount));
   jeLines.push({
     accountId: apControl.id,
     credit: toDbMoney(total),
@@ -172,24 +118,6 @@ export async function postBillToGl(
     throw new Error(`GL posting failed: ${result.code}: ${result.error}`);
   }
 
-  // Consume commitments — for any bill line that referenced a
-  // commitment_line, increment commitment_lines.invoiced_amount and
-  // (if commitment is still issued) drop committed_amount on the
-  // matching job_cost_code. The math:
-  //   committed -= line.amount   (it's no longer "future spend")
-  //   actual    += line.amount   (already in GL via the post above)
-  // Net effect on open_budget = budget - committed - actual: zero.
-  // Bills not linked to a commitment leave committed alone (no
-  // commitment to consume).
-  for (const { line } of lines) {
-    if (!line.commitmentLineId) continue;
-    await consumeCommitmentLineForBill(tx, {
-      commitmentLineId: line.commitmentLineId,
-      organizationId,
-      amount: toDbMoney(line.amount),
-    });
-  }
-
   await writeAudit(
     {
       organizationId,
@@ -201,7 +129,6 @@ export async function postBillToGl(
         billNumber: bill.billNumber,
         journalId: result.journalId,
         totalAmount: toDbMoney(total),
-        commitmentLineLinks: lines.filter((l) => l.line.commitmentLineId).length,
       },
     },
     tx
@@ -237,33 +164,6 @@ export async function voidBillFromGl(
     throw new Error(`GL reversal failed: ${result.error}`);
   }
 
-  // Release commitments — undo the invoiced_amount bumps and (if the
-  // commitment is still issued) restore committed_amount. If the
-  // commitment has been closed/voided since this bill was posted, we
-  // still decrement invoiced for audit accuracy but skip the committed
-  // restore — committed already settled at zero remaining on close.
-  const linkedLines = await tx
-    .select({
-      id: apBillLines.id,
-      amount: apBillLines.amount,
-      commitmentLineId: apBillLines.commitmentLineId,
-    })
-    .from(apBillLines)
-    .where(
-      and(
-        eq(apBillLines.billId, opts.bill.id),
-        isNotNull(apBillLines.commitmentLineId)
-      )
-    );
-  for (const ll of linkedLines) {
-    if (!ll.commitmentLineId) continue;
-    await releaseCommitmentLineFromBill(tx, {
-      commitmentLineId: ll.commitmentLineId,
-      organizationId: opts.organizationId,
-      amount: toDbMoney(ll.amount),
-    });
-  }
-
   await writeAudit(
     {
       organizationId: opts.organizationId,
@@ -275,7 +175,6 @@ export async function voidBillFromGl(
         billNumber: opts.bill.billNumber,
         reason: opts.reason,
         reversalJournalId: result.journalId,
-        commitmentLineLinksReleased: linkedLines.length,
       },
     },
     tx
@@ -283,6 +182,3 @@ export async function voidBillFromGl(
 
   return { journalId: result.journalId };
 }
-
-// unused-import guard
-void money;

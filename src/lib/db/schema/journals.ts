@@ -248,13 +248,10 @@ export const glLines = pgTable(
     memo: text("memo"),
     reference: text("reference"),
 
-    // Forward refs — these tables land with Projects / AP / AR / etc.
-    // Plain UUID columns (no FK constraint) until those modules ship.
-    jobId: uuid("job_id"),
-    costCodeId: uuid("cost_code_id"),
+    // Subledger tags. Plain UUID columns (no FK constraint) so the GL
+    // never blocks a master-data delete; reports join when they need names.
     customerId: uuid("customer_id"),
     vendorId: uuid("vendor_id"),
-    employeeId: uuid("employee_id"),
     fixedAssetId: uuid("fixed_asset_id"),
     bankAccountId: uuid("bank_account_id"),
 

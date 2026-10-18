@@ -23,7 +23,7 @@ export default async function VendorsPage() {
   return (
     <AppShell
       title="Vendors"
-      crumb={`${organization.name} · Procurement`}
+      crumb={`${organization.name} · Expenses`}
       userEmail={user?.email}
     >
       <VendorsClient vendors={rows} />

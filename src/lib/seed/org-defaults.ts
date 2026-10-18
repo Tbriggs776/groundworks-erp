@@ -2,16 +2,12 @@ import type { db } from "@/lib/db/client";
 import {
   accounts,
   approvalThresholds,
-  contractTypes,
-  costCodes,
   dimensions,
   numberSeries,
   reasonCodes,
   sourceCodes,
 } from "@/lib/db/schema";
-import { CONTRACTOR_COA } from "./contractor-coa";
-import { CSI_DIVISIONS } from "./csi-masterformat";
-import { DEFAULT_CONTRACT_TYPES } from "./contract-types";
+import { DEFAULT_COA } from "./default-coa";
 
 /**
  * Tenant defaults seeded on org creation. Called inside the onboarding
@@ -22,20 +18,19 @@ import { DEFAULT_CONTRACT_TYPES } from "./contract-types";
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
- * Seed the six system dimensions every org gets. `code` is fixed; `name` is
- * tenant-editable. Sort order controls UI display.
+ * Seed the system dimensions every org gets — QuickBooks' Class and
+ * Location plus Department and a lightweight Project tag. `code` is
+ * fixed; `name` is tenant-editable. Sort order controls UI display.
  */
 export const SYSTEM_DIMENSIONS: Array<{
   code: string;
   name: string;
   description: string;
 }> = [
-  { code: "JOB", name: "Job", description: "Project / job. Primary construction dimension." },
-  { code: "COST_CODE", name: "Cost Code", description: "WBS / phase code (CSI MasterFormat or custom)." },
+  { code: "CLASS", name: "Class", description: "Business segment, product line, or service line." },
+  { code: "LOCATION", name: "Location", description: "Store, office, region, or other location." },
   { code: "DEPARTMENT", name: "Department", description: "Organizational department." },
-  { code: "LOCATION", name: "Location", description: "Yard, office, or geographic location." },
-  { code: "EQUIPMENT", name: "Equipment", description: "Specific piece of equipment for cost/revenue tagging." },
-  { code: "PROJECT_MANAGER", name: "Project Manager", description: "Responsible PM — for performance reporting." },
+  { code: "PROJECT", name: "Project", description: "Customer project or engagement, for profitability by project." },
 ];
 
 /**
@@ -76,23 +71,17 @@ export const DEFAULT_NUMBER_SERIES: Array<{
   { code: "REV", description: "Reversing Entries", prefix: "REV-", width: 6 },
   { code: "REC", description: "Recurring-Generated Entries", prefix: "REC-", width: 6 },
   { code: "ALLOC", description: "Allocation Entries", prefix: "ALLOC-", width: 6 },
-  { code: "AP", description: "AP Bills", prefix: "AP-", width: 6 },
-  { code: "APPAY", description: "AP Payments", prefix: "APPAY-", width: 6 },
-  { code: "CO", description: "Change Orders", prefix: "CO-", width: 6 },
-  { code: "PO", description: "Purchase Orders", prefix: "PO-", width: 6 },
-  { code: "SUB", description: "Subcontracts", prefix: "SUB-", width: 6 },
+  { code: "AP", description: "Bills", prefix: "BILL-", width: 6 },
+  { code: "APPAY", description: "Bill Payments", prefix: "BPAY-", width: 6 },
+  { code: "INV", description: "Invoices", prefix: "INV-", width: 6 },
+  { code: "ARPAY", description: "Customer Payments", prefix: "PMT-", width: 6 },
 ];
 
 export async function seedOrganizationDefaults(
   tx: Tx,
   organizationId: string,
-  opts: {
-    includeContractorCoa: boolean;
-    /** Seed the 50 CSI MasterFormat divisions (opt-in, default true). */
-    includeCsiCostCodes?: boolean;
-  }
+  opts: { includeDefaultCoa: boolean }
 ): Promise<void> {
-  const includeCsi = opts.includeCsiCostCodes ?? true;
   // Dimensions — system, code-stable, name-editable
   await tx
     .insert(dimensions)
@@ -147,76 +136,27 @@ export async function seedOrganizationDefaults(
     )
     .onConflictDoNothing();
 
-  // Contractor CoA (optional)
-  if (opts.includeContractorCoa) {
+  // Default CoA (optional — migrating orgs import their own)
+  if (opts.includeDefaultCoa) {
     await tx
       .insert(accounts)
-      .values(
-        CONTRACTOR_COA.map((a) => ({
-          ...a,
-          organizationId,
-        }))
-      )
+      .values(DEFAULT_COA.map((a) => ({ ...a, organizationId })))
       .onConflictDoNothing();
   }
 
-  // Default contract types (always seeded; flagged isSystem so admins
-  // can't delete them, only rename / deactivate).
-  await tx
-    .insert(contractTypes)
-    .values(
-      DEFAULT_CONTRACT_TYPES.map((t) => ({
-        organizationId,
-        code: t.code,
-        name: t.name,
-        description: t.description,
-        isSystem: true,
-        sortOrder: t.sortOrder,
-      }))
-    )
-    .onConflictDoNothing();
-
-  // CSI MasterFormat top-level divisions (opt-in, default true).
-  if (includeCsi) {
-    await tx
-      .insert(costCodes)
-      .values(
-        CSI_DIVISIONS.map((d) => ({
-          organizationId,
-          code: d.code,
-          name: d.name,
-          description: d.description,
-          costType: d.costType,
-          sortOrder: d.sortOrder,
-        }))
-      )
-      .onConflictDoNothing();
-  }
-
-  // Default approval thresholds — one tier per scope spanning all amounts,
-  // admin role required. Admins can add more tiers via
+  // Default approval threshold — one tier spanning all amounts, admin
+  // role required. Admins can add more tiers via
   // /settings/approval-thresholds.
   await tx
     .insert(approvalThresholds)
-    .values([
-      {
-        organizationId,
-        scope: "ap_bill",
-        tierName: "Default",
-        minAmount: "0",
-        maxAmount: null,
-        requiredRole: "admin",
-        sortOrder: 0,
-      },
-      {
-        organizationId,
-        scope: "change_order",
-        tierName: "Default",
-        minAmount: "0",
-        maxAmount: null,
-        requiredRole: "admin",
-        sortOrder: 0,
-      },
-    ])
+    .values({
+      organizationId,
+      scope: "ap_bill",
+      tierName: "Default",
+      minAmount: "0",
+      maxAmount: null,
+      requiredRole: "admin",
+      sortOrder: 0,
+    })
     .onConflictDoNothing();
 }

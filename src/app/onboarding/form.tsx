@@ -32,7 +32,7 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
           required
           defaultValue={defaultName}
           autoFocus
-          placeholder="Veritas Ridge Construction"
+          placeholder="Bright Harbor Studio LLC"
           className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
         {nameErrors && (
@@ -56,7 +56,7 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
           ))}
         </select>
         <p className="text-[11px] text-muted-foreground mt-1">
-          Most contractors use calendar year (January). Change later in settings.
+          Most small businesses use the calendar year (January). Change later in settings.
         </p>
         {fyErrors && (
           <p className="text-xs text-destructive mt-1">{fyErrors[0]}</p>
@@ -65,18 +65,19 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
 
       <label className="flex items-start gap-2 cursor-pointer group">
         <input
-          name="seedContractorCoa"
+          name="seedDefaultCoa"
           type="checkbox"
           defaultChecked
           className="mt-0.5 h-4 w-4 rounded border-border bg-background accent-[var(--gw-gold)]"
         />
         <span>
           <span className="block text-xs font-medium text-foreground">
-            Seed the standard contractor Chart of Accounts
+            Start with the standard small-business Chart of Accounts
           </span>
           <span className="block text-[11px] text-muted-foreground mt-0.5 leading-snug">
-            ~70 accounts covering cash, AR/retainage, WIP, AP, labor + materials +
-            sub COGS, overhead, SG&amp;A. You can edit or replace any of it.
+            ~65 accounts laid out like QuickBooks: bank, AR, AP, credit card,
+            income, COGS, and common expenses. Uncheck if you&apos;re importing
+            your own chart. You can edit or replace any of it.
           </span>
         </span>
       </label>

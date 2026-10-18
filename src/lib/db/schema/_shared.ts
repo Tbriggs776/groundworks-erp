@@ -20,22 +20,20 @@ export const timestamps = {
 // ---------------------------------------------------------------------------
 
 /**
- * Organization-level role. Drives authorization throughout the app.
+ * Organization-level role. Drives authorization throughout the app, for
+ * humans (memberships) and AI agents alike (agents carry a role too).
  *   owner       — full control, billing, can delete the org
- *   admin       — full app access, no billing
- *   accountant  — GL / AP / AR / close
- *   pm          — project/job management, no posting to GL
- *   foreman     — field ops (time, daily reports), read-only on financials
- *   viewer      — read-only
- * Roles are intentionally coarse at this layer; fine-grained permissions live
- * in a separate `permissions` layer later.
+ *   admin       — full app access: team, agents, API keys, settings
+ *   accountant  — everything in the books: manual JEs, period close, approvals
+ *   bookkeeper  — day-to-day: invoices, bills, payments, customers, vendors
+ *   viewer      — read-only (reports, lists)
+ * API keys narrow a role further with scopes (see src/lib/actor.ts).
  */
 export const membershipRole = pgEnum("membership_role", [
   "owner",
   "admin",
   "accountant",
-  "pm",
-  "foreman",
+  "bookkeeper",
   "viewer",
 ]);
 
@@ -71,7 +69,8 @@ export const accountCategory = pgEnum("account_category", [
 
 /**
  * Full subcategory taxonomy — drives default normal balance and financial
- * statement ordering. 25 values covering mid-market contractor needs.
+ * statement ordering. 25 values; the COGS split mirrors the detail types
+ * small businesses already know from QuickBooks.
  */
 export const accountSubcategory = pgEnum("account_subcategory", [
   // Assets
@@ -93,7 +92,7 @@ export const accountSubcategory = pgEnum("account_subcategory", [
   // Revenue
   "operating_revenue",
   "other_revenue",
-  // Cost of goods (construction COGS breakdown)
+  // Cost of goods sold
   "cogs_labor",
   "cogs_materials",
   "cogs_equipment",
@@ -296,43 +295,6 @@ export const allocationType = pgEnum("allocation_type", [
 ]);
 
 // ---------------------------------------------------------------------------
-// Projects / Jobs / Cost Codes
-// ---------------------------------------------------------------------------
-
-/**
- * Cost code classification — drives reporting (e.g., "Labor burden as % of
- * labor cost") and default GL mapping when AP bills or time entries post to
- * a cost code.
- *   overhead — indirect construction cost, not tied to a single job
- *   statistical — non-monetary (hours, sqft) for allocation or KPIs
- */
-export const costType = pgEnum("cost_type", [
-  "labor",
-  "material",
-  "equipment",
-  "subcontractor",
-  "other",
-  "overhead",
-  "statistical",
-]);
-
-/**
- * Job state machine. Transitions are strict (enforced in server actions):
- *   bid → awarded | closed
- *   awarded → active | closed
- *   active → on_hold | closed
- *   on_hold → active | closed
- *   closed → (terminal; reopen requires admin + audit)
- */
-export const jobStatus = pgEnum("job_status", [
-  "bid",
-  "awarded",
-  "active",
-  "on_hold",
-  "closed",
-]);
-
-// ---------------------------------------------------------------------------
 // AP (Accounts Payable)
 // ---------------------------------------------------------------------------
 
@@ -357,15 +319,11 @@ export const apBillStatus = pgEnum("ap_bill_status", [
 ]);
 
 /**
- * What an approval threshold applies to. Starts with `ap_bill` and
- * `change_order`; future domains (manual JE, AP payment, etc.) slot in
- * here without a breaking migration. The Postgres enum is append-only
- * so order matters — never reorder existing values.
+ * What an approval threshold applies to. Future domains (manual JE, AP
+ * payment, etc.) slot in here without a breaking migration. The Postgres
+ * enum is append-only so order matters — never reorder existing values.
  */
-export const approvalScope = pgEnum("approval_scope", [
-  "ap_bill",
-  "change_order",
-]);
+export const approvalScope = pgEnum("approval_scope", ["ap_bill"]);
 
 /**
  * AP payment method. `other` catches weird one-offs; everything common
@@ -387,51 +345,5 @@ export const paymentMethod = pgEnum("payment_method", [
 export const apPaymentStatus = pgEnum("ap_payment_status", [
   "draft",
   "posted",
-  "voided",
-]);
-
-/**
- * Change Order lifecycle:
- *   draft             — being built, lines editable
- *   pending_approval  — submitted, lines locked, awaiting qualified approver
- *   rejected          — approver kicked it back; can be re-submitted (returns to draft)
- *   approved          — approved, ready to execute (apply to contract + budget)
- *   executed          — applied to job: contractAmount bumped + per-line budget bumps
- *                       persisted to job_cost_codes
- *   voided            — reversed (admin only). Reverts the contract bump and the
- *                       budget bumps. Terminal.
- */
-export const changeOrderStatus = pgEnum("change_order_status", [
-  "draft",
-  "pending_approval",
-  "rejected",
-  "approved",
-  "executed",
-  "voided",
-]);
-
-/**
- * Commitment type. POs are general purchase orders for materials/equipment;
- * subcontracts are agreements with subs covering scope on a job. Both share
- * the same lifecycle and consume budget the same way; the type distinction
- * drives reporting and number prefix only.
- */
-export const commitmentType = pgEnum("commitment_type", ["po", "subcontract"]);
-
-/**
- * Commitment lifecycle:
- *   draft   — being built; lines editable; no impact on job cost
- *   issued  — committed_amount on each (job, cost_code) bumped by line amount;
- *             AP bills can be billed against the commitment lines
- *   closed  — no further bills; remaining un-invoiced amount drops off
- *             committed_amount (we admit we won't spend it)
- *   voided  — reversed (admin only). Like close but explicit "this commitment
- *             never happened" + audit reason. Bills already billed against
- *             it stay billed (with the linkage preserved for history).
- */
-export const commitmentStatus = pgEnum("commitment_status", [
-  "draft",
-  "issued",
-  "closed",
   "voided",
 ]);

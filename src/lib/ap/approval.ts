@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { approvalThresholds, type ApprovalThreshold } from "@/lib/db/schema";
 import { ROLE_RANK, type Role } from "@/lib/auth";
@@ -26,7 +26,7 @@ export type ApprovalRouting = {
 
 export async function resolveApprovalRouting(
   organizationId: string,
-  scope: "ap_bill" | "change_order",
+  scope: ApprovalThreshold["scope"],
   amount: string | number
 ): Promise<ApprovalRouting> {
   const amt = money(amount);
@@ -79,5 +79,3 @@ export function canApproveAtRole(userRole: Role, requiredRole: Role): boolean {
   return ROLE_RANK[userRole] >= ROLE_RANK[requiredRole];
 }
 
-// unused-import guard for some tooling paths
-void sql;

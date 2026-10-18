@@ -80,7 +80,7 @@ async function main() {
       role: "owner",
     });
 
-    await seedOrganizationDefaults(tx, org.id, { includeContractorCoa: true });
+    await seedOrganizationDefaults(tx, org.id, { includeDefaultCoa: true });
 
     await generateFiscalYear(tx, {
       organizationId: org.id,

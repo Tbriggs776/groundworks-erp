@@ -18,13 +18,13 @@ import { accounts } from "./accounts";
 import { organizations } from "./identity";
 
 /**
- * DIMENSIONS — analytical slices applied to journal lines. Seeded with
- * system dimensions (JOB, COST_CODE, DEPARTMENT, LOCATION, EQUIPMENT,
- * PROJECT_MANAGER) on org creation; admins may add more.
+ * DIMENSIONS — analytical slices applied to journal lines (QuickBooks
+ * calls these Classes and Locations). Seeded with system dimensions
+ * (CLASS, LOCATION, DEPARTMENT, PROJECT) on org creation; admins may add more.
  *
  * System dimensions:
  *   - `code` is FIXED (subledger modules reference it reliably)
- *   - `name` is tenant-editable (rename "Project Manager" -> "Superintendent")
+ *   - `name` is tenant-editable (rename "Class" -> "Division")
  *   - `isSystem=true` blocks deletion but not renaming
  */
 export const dimensions = pgTable(
@@ -47,8 +47,8 @@ export const dimensions = pgTable(
 
 /**
  * DIMENSION VALUES — the atomic values within a dimension. Supports
- * hierarchy via `parentValueId` for rollups (e.g. CSI cost code
- * 03-30-00 -> 03-30-10).
+ * hierarchy via `parentValueId` for rollups (e.g. Location
+ * "West" -> "Portland").
  *
  * `isTotal=true` marks a rollup-only value (no direct posting, children
  * aggregate into it).

@@ -12,7 +12,7 @@ import { randomSuffix, slugify } from "@/lib/slug";
 const CreateOrgSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
   fiscalYearStartMonth: z.coerce.number().int().min(1).max(12),
-  seedContractorCoa: z
+  seedDefaultCoa: z
     .union([z.literal("on"), z.literal("off"), z.null(), z.undefined()])
     .transform((v) => v === "on"),
 });
@@ -35,7 +35,7 @@ export async function createOrganization(
   const parsed = CreateOrgSchema.safeParse({
     name: formData.get("name"),
     fiscalYearStartMonth: formData.get("fiscalYearStartMonth"),
-    seedContractorCoa: formData.get("seedContractorCoa"),
+    seedDefaultCoa: formData.get("seedDefaultCoa"),
   });
   if (!parsed.success) {
     return {
@@ -45,7 +45,7 @@ export async function createOrganization(
     };
   }
 
-  const { name, fiscalYearStartMonth, seedContractorCoa } = parsed.data;
+  const { name, fiscalYearStartMonth, seedDefaultCoa } = parsed.data;
   const baseSlug = slugify(name) || "org";
 
   try {
@@ -89,7 +89,7 @@ export async function createOrganization(
       });
 
       await seedOrganizationDefaults(tx, orgId, {
-        includeContractorCoa: seedContractorCoa,
+        includeDefaultCoa: seedDefaultCoa,
       });
 
       await writeAudit(
@@ -103,7 +103,7 @@ export async function createOrganization(
             name,
             slug,
             fiscalYearStartMonth,
-            seededCoa: seedContractorCoa,
+            seededCoa: seedDefaultCoa,
           },
         },
         tx

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db/client";
-import { approvalThresholds } from "@/lib/db/schema";
+import { approvalThresholds, membershipRole } from "@/lib/db/schema";
 import { writeAudit } from "@/lib/audit";
 import { getUser, requireRole } from "@/lib/auth";
 
@@ -13,14 +13,7 @@ const ThresholdSchema = z.object({
   tierName: z.string().trim().min(1).max(100),
   minAmount: z.string().trim(),
   maxAmount: z.string().optional().or(z.literal("")),
-  requiredRole: z.enum([
-    "owner",
-    "admin",
-    "accountant",
-    "pm",
-    "foreman",
-    "viewer",
-  ]),
+  requiredRole: z.enum(membershipRole.enumValues),
   isActive: z.coerce.boolean().default(true),
   sortOrder: z.coerce.number().int().default(0),
 });

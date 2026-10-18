@@ -2,7 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { memberships, organizations } from "@/lib/db/schema";
+import { membershipRole, memberships, organizations } from "@/lib/db/schema";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -43,7 +43,7 @@ export async function requireUser(): Promise<SessionUser> {
 export type MembershipWithOrg = {
   membershipId: string;
   organizationId: string;
-  role: "owner" | "admin" | "accountant" | "pm" | "foreman" | "viewer";
+  role: (typeof membershipRole.enumValues)[number];
   organization: typeof organizations.$inferSelect;
 };
 
@@ -113,8 +113,7 @@ export const ROLE_RANK = {
   owner: 5,
   admin: 4,
   accountant: 3,
-  pm: 2,
-  foreman: 1,
+  bookkeeper: 2,
   viewer: 0,
 } as const satisfies Record<MembershipWithOrg["role"], number>;
 

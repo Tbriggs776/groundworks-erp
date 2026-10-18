@@ -18,7 +18,7 @@ import { organizations } from "./identity";
  * for amounts 0..4999.99. Max NULL means unbounded (the top tier).
  *
  * The required_role is a MINIMUM — anyone with a higher rank can also
- * approve (owner > admin > accountant > pm > foreman > viewer). That
+ * approve (owner > admin > accountant > bookkeeper > viewer). That
  * matches how most real approval chains work: a senior signatory can
  * always step in for a junior one.
  *

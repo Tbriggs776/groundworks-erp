@@ -60,7 +60,7 @@ function LoginForm() {
                 GROUNDWORKS
               </div>
               <div className="text-[10px] tracking-[0.3em] text-muted-foreground uppercase">
-                Construction ERP
+                Accounting · API · MCP
               </div>
             </div>
           </div>

@@ -25,16 +25,6 @@ const LineSchema = z.object({
   accountId: z.string().uuid(),
   amount: z.string().trim().min(1),
   description: z.string().optional().or(z.literal("")),
-  jobId: z.string().uuid().optional().nullable(),
-  costCodeId: z.string().uuid().optional().nullable(),
-  /**
-   * Optional link to a commitment line. When set, posting this bill
-   * will: (1) increment commitment_lines.invoiced_amount, (2) drop
-   * job_cost_codes.committed_amount on the matching (job, cost_code) by
-   * the bill amount (only if the parent commitment is still 'issued').
-   * On void, both are reversed.
-   */
-  commitmentLineId: z.string().uuid().optional().nullable(),
 });
 
 const BillSchema = z.object({
@@ -106,9 +96,6 @@ export async function createBill(input: BillInput): Promise<ActionResult> {
           accountId: l.accountId,
           amount: toDbMoney(l.amount),
           description: l.description || null,
-          jobId: l.jobId || null,
-          costCodeId: l.costCodeId || null,
-          commitmentLineId: l.commitmentLineId || null,
         }))
       );
 
@@ -204,9 +191,6 @@ export async function updateBill(
           accountId: l.accountId,
           amount: toDbMoney(l.amount),
           description: l.description || null,
-          jobId: l.jobId || null,
-          costCodeId: l.costCodeId || null,
-          commitmentLineId: l.commitmentLineId || null,
         }))
       );
 

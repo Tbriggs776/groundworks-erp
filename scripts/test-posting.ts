@@ -77,7 +77,7 @@ async function main() {
     });
 
     await seedOrganizationDefaults(tx, org.id, {
-      includeContractorCoa: true,
+      includeDefaultCoa: true,
     });
 
     const { periodIds } = await generateFiscalYear(tx, {

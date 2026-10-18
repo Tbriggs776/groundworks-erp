@@ -35,8 +35,7 @@ const ROLE_LABEL: Record<string, string> = {
   owner: "Owner",
   admin: "Admin",
   accountant: "Accountant",
-  pm: "PM",
-  foreman: "Foreman",
+  bookkeeper: "Bookkeeper",
   viewer: "Viewer",
 };
 

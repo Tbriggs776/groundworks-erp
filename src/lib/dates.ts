@@ -10,7 +10,7 @@ import {
 /**
  * Date and fiscal-period helpers for Groundworks.
  *
- * Construction accounting runs on monthly periods. An organization's fiscal
+ * Accounting runs on monthly periods. An organization's fiscal
  * year starts on a configurable month (1–12). All period math lives here so
  * the GL, billing, and reporting modules agree on what "Period 3" means.
  */

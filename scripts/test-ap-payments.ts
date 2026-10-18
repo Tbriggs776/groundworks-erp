@@ -9,7 +9,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-import { and, eq, like, sql } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import {
   accounts,
@@ -74,8 +74,7 @@ async function main() {
       role: "owner",
     });
     await seedOrganizationDefaults(tx, org.id, {
-      includeContractorCoa: true,
-      includeCsiCostCodes: false,
+      includeDefaultCoa: true,
     });
     await generateFiscalYear(tx, {
       organizationId: org.id,

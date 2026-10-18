@@ -56,7 +56,7 @@ export default async function PaymentDetailPage({
   return (
     <AppShell
       title={`Payment ${p.paymentNumber}`}
-      crumb={`${organization.name} · Procurement · AP Payments`}
+      crumb={`${organization.name} · Expenses · Bill Payments`}
       userEmail={user?.email}
     >
       <div className="space-y-5 max-w-5xl">

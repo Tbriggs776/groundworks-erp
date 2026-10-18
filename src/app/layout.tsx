@@ -21,9 +21,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Groundworks ERP",
+  title: "Groundworks",
   description:
-    "Construction ERP for middle-market contractors and subcontractors.",
+    "Small-business accounting with a first-class API and MCP server, built for teams of humans and AI agents.",
 };
 
 export const viewport: Viewport = {

@@ -23,7 +23,7 @@ export default async function CustomersPage() {
   return (
     <AppShell
       title="Customers"
-      crumb={`${organization.name} · Billing`}
+      crumb={`${organization.name} · Sales`}
       userEmail={user?.email}
     >
       <CustomersClient customers={rows} />

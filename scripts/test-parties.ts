@@ -1,7 +1,6 @@
 /**
- * End-to-end verification of master-data CRUD: customers, vendors, employees.
- * Validates tenant isolation (code uniqueness per org), 1099 handling, and
- * user-link integrity (can't link to non-member, can't double-link a user).
+ * End-to-end verification of master-data CRUD: customers and vendors.
+ * Validates tenant isolation (code uniqueness per org) and 1099 handling.
  *
  *   npx tsx scripts/test-parties.ts
  */
@@ -9,11 +8,10 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-import { and, eq, like, sql } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import {
   customers,
-  employees,
   memberships,
   organizations,
   profiles,
@@ -108,50 +106,6 @@ async function main() {
     });
   });
 
-  console.log("\nEmployees (user link)");
-  let empId: string | null = null;
-  await check("insert employee linked to logged-in user", async () => {
-    const [row] = await db
-      .insert(employees)
-      .values({
-        organizationId: org.id,
-        code: "EMP-001",
-        firstName: "Mike",
-        lastName: "Johnson",
-        classification: "salary",
-        userId: actor.id,
-        hireDate: "2024-01-15",
-      })
-      .returning({ id: employees.id });
-    empId = row.id;
-  });
-  await check("second employee linking to SAME user is rejected", async () => {
-    try {
-      await db.insert(employees).values({
-        organizationId: org.id,
-        code: "EMP-002",
-        firstName: "Dup",
-        lastName: "User",
-        classification: "hourly",
-        userId: actor.id,
-      });
-      throw new Error("expected unique violation on user_id");
-    } catch (e) {
-      if ((e as { cause?: { code?: string } }).cause?.code !== "23505")
-        throw new Error(`wrong error: ${(e as Error).message}`);
-    }
-  });
-  await check("unlinked field-crew employee (no userId) OK", async () => {
-    await db.insert(employees).values({
-      organizationId: org.id,
-      code: "EMP-FIELD-01",
-      firstName: "Sam",
-      lastName: "Carpenter",
-      classification: "hourly",
-      defaultRate: "32.50",
-    });
-  });
-
   console.log("\nTenant isolation");
   await check("second org can reuse the same customer code", async () => {
     const [org2] = await db
@@ -170,20 +124,6 @@ async function main() {
     });
     // cleanup
     await db.delete(organizations).where(eq(organizations.id, org2.id));
-  });
-
-  console.log("\nRelations");
-  await check("employee joined back to profile resolves", async () => {
-    const [row] = await db
-      .select({
-        employee: employees,
-        user: profiles,
-      })
-      .from(employees)
-      .innerJoin(profiles, eq(profiles.id, employees.userId))
-      .where(and(eq(employees.id, empId!), eq(employees.organizationId, org.id)));
-    if (!row || !row.user) throw new Error("expected joined user row");
-    if (row.user.id !== actor.id) throw new Error("joined to wrong profile");
   });
 
   // Cleanup

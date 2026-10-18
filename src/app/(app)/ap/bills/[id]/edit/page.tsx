@@ -6,14 +6,10 @@ import {
   accounts,
   apBillLines,
   apBills,
-  commitmentLines,
-  commitments,
-  costCodes,
-  jobs,
   vendors,
 } from "@/lib/db/schema";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
-import { BillForm, type CommitmentLineOption } from "../../bill-form";
+import { BillForm } from "../../bill-form";
 
 export default async function EditBillPage({
   params,
@@ -35,7 +31,7 @@ export default async function EditBillPage({
     return (
       <AppShell
         title="Edit not allowed"
-        crumb={`${organization.name} · Procurement · AP`}
+        crumb={`${organization.name} · Expenses · Bills`}
         userEmail={user?.email}
       >
         <p className="text-sm text-muted-foreground">
@@ -46,7 +42,7 @@ export default async function EditBillPage({
     );
   }
 
-  const [lineRows, vendorRows, acctRows, jobRows, costCodeRows, coLineRows] =
+  const [lineRows, vendorRows, acctRows] =
     await Promise.all([
       db
         .select()
@@ -63,69 +59,17 @@ export default async function EditBillPage({
         .from(accounts)
         .where(eq(accounts.organizationId, organization.id))
         .orderBy(asc(accounts.code)),
-      db
-        .select()
-        .from(jobs)
-        .where(eq(jobs.organizationId, organization.id))
-        .orderBy(asc(jobs.code)),
-      db
-        .select()
-        .from(costCodes)
-        .where(eq(costCodes.organizationId, organization.id))
-        .orderBy(asc(costCodes.code)),
-      db
-        .select({
-          id: commitmentLines.id,
-          commitmentId: commitments.id,
-          commitmentNumber: commitments.commitmentNumber,
-          type: commitments.type,
-          vendorId: commitments.vendorId,
-          jobId: commitments.jobId,
-          costCodeId: commitmentLines.costCodeId,
-          accountId: commitmentLines.accountId,
-          amount: commitmentLines.amount,
-          invoicedAmount: commitmentLines.invoicedAmount,
-          description: commitmentLines.description,
-        })
-        .from(commitmentLines)
-        .innerJoin(
-          commitments,
-          eq(commitments.id, commitmentLines.commitmentId)
-        )
-        .where(
-          and(
-            eq(commitments.organizationId, organization.id),
-            eq(commitments.status, "issued")
-          )
-        ),
     ]);
-
-  const coLines: CommitmentLineOption[] = coLineRows.map((r) => ({
-    id: r.id,
-    commitmentId: r.commitmentId,
-    commitmentNumber: r.commitmentNumber,
-    type: r.type,
-    vendorId: r.vendorId,
-    jobId: r.jobId,
-    costCodeId: r.costCodeId,
-    accountId: r.accountId,
-    amount: r.amount,
-    invoicedAmount: r.invoicedAmount,
-    description: r.description,
-  }));
 
   return (
     <AppShell
       title={`Edit ${bill.billNumber}`}
-      crumb={`${organization.name} · Procurement · AP Bills`}
+      crumb={`${organization.name} · Expenses · Bills`}
       userEmail={user?.email}
     >
       <BillForm
         vendors={vendorRows}
         accounts={acctRows}
-        jobs={jobRows}
-        costCodes={costCodeRows}
-        commitmentLines={coLines}
         initial={bill}
         initialLines={lineRows}
       />

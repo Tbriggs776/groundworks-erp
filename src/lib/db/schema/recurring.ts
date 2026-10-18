@@ -112,12 +112,9 @@ export const recurringJournalLines = pgTable(
     memo: text("memo"),
     reference: text("reference"),
 
-    // Forward refs
-    jobId: uuid("job_id"),
-    costCodeId: uuid("cost_code_id"),
+    // Subledger tags (see gl_lines)
     customerId: uuid("customer_id"),
     vendorId: uuid("vendor_id"),
-    employeeId: uuid("employee_id"),
     fixedAssetId: uuid("fixed_asset_id"),
     bankAccountId: uuid("bank_account_id"),
 

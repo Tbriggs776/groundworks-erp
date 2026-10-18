@@ -28,11 +28,8 @@ export type JournalLineInput = {
   credit?: string | number;
   memo?: string;
   reference?: string;
-  jobId?: string;
-  costCodeId?: string;
   customerId?: string;
   vendorId?: string;
-  employeeId?: string;
   fixedAssetId?: string;
   bankAccountId?: string;
   dimensions?: Array<{ dimensionId: string; valueId: string }>;
@@ -168,11 +165,8 @@ export async function createDraftJournal(
         creditLocal,
         memo: ln.memo,
         reference: ln.reference,
-        jobId: ln.jobId,
-        costCodeId: ln.costCodeId,
         customerId: ln.customerId,
         vendorId: ln.vendorId,
-        employeeId: ln.employeeId,
         fixedAssetId: ln.fixedAssetId,
         bankAccountId: ln.bankAccountId,
       })
@@ -341,11 +335,8 @@ export async function reverseJournal(
         credit: glLines.credit,
         memo: glLines.memo,
         reference: glLines.reference,
-        jobId: glLines.jobId,
-        costCodeId: glLines.costCodeId,
         customerId: glLines.customerId,
         vendorId: glLines.vendorId,
-        employeeId: glLines.employeeId,
         fixedAssetId: glLines.fixedAssetId,
         bankAccountId: glLines.bankAccountId,
       })
@@ -399,11 +390,8 @@ export async function reverseJournal(
       credit: l.debit, // swap
       memo: l.memo ?? undefined,
       reference: l.reference ?? undefined,
-      jobId: l.jobId ?? undefined,
-      costCodeId: l.costCodeId ?? undefined,
       customerId: l.customerId ?? undefined,
       vendorId: l.vendorId ?? undefined,
-      employeeId: l.employeeId ?? undefined,
       fixedAssetId: l.fixedAssetId ?? undefined,
       bankAccountId: l.bankAccountId ?? undefined,
       dimensions: dimsByLine.get(l.id),

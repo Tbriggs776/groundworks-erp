@@ -69,7 +69,7 @@ async function main() {
       userId: actor.id,
       role: "owner",
     });
-    await seedOrganizationDefaults(tx, org.id, { includeContractorCoa: true });
+    await seedOrganizationDefaults(tx, org.id, { includeDefaultCoa: true });
     await generateFiscalYear(tx, {
       organizationId: org.id,
       startDate: "2026-01-01",
