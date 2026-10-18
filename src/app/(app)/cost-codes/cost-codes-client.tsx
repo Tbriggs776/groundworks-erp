@@ -156,7 +156,7 @@ export function CostCodesClient({ costCodes }: { costCodes: CostCode[] }) {
         </div>
       </div>
 
-      <div className="rounded-md border border-border overflow-hidden">
+      <div className="gw-table-wrap rounded-md border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
             <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
