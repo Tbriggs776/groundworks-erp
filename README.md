@@ -22,9 +22,26 @@ receive payment (explicit or auto-applied oldest first), early-pay discounts
 **Expenses**: vendors (1099 flags), bills with amount-tiered approval routing,
 bill payments with discounts
 
+**Workspaces: one sign-in, many companies**
+- Sign up in a minute: name, work email, company. No password; a sign-in
+  link by email (or Google / Microsoft / SAML SSO when enabled)
+- A workspace holds any number of companies, each with its own books
+- Invite people once and choose their role in each company; invites go by
+  email and work once, for that address
+- Switch companies from the top bar
+
+**Security (built for SOC 2)**
+- Two-step verification (authenticator app); a workspace can require it
+- Idle sign-out and maximum session length, set per workspace; "sign out
+  everywhere else"
+- Allowed email domains for invitations; API key lifetime limits
+- Quarterly access reviews with a frozen record of who had what
+- Workspace audit log of every sign-in and change, with IP and device,
+  exportable to CSV
+- See [docs/compliance/soc2.md](./docs/compliance/soc2.md)
+
 **People and agents**
-- Roles: owner, admin, accountant, bookkeeper, viewer; invite links;
-  multiple organizations per person with a switcher
+- Company roles: owner, admin, accountant, bookkeeper, viewer
 - **Agents**: AI teammates with their own identity, role, API keys, and an
   autonomy level:
   - *Read only*: look things up, run reports
@@ -79,6 +96,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
 | Errors | `{ error: { code, message, details, requestId } }`; in MCP, `isError` results starting `Error (<code>)` |
+| Rate limit | 600 requests a minute per key (`API_RATE_LIMIT_PER_MINUTE`); over it: `429` with `Retry-After` |
 | Review | `post: true` on a create posts when allowed, otherwise keeps the draft and returns a `review` notice |
 
 The REST routes, MCP tools, and OpenAPI spec are all generated from one
@@ -93,8 +111,16 @@ npm run db:migrate             # apply migrations
 npm run dev
 ```
 
-You need a Supabase project for auth (magic links). In **Authentication → URL
-Configuration** add `http://localhost:3000/**` to the redirect URLs.
+You need a Supabase project for auth. In the Supabase dashboard:
+
+- **Authentication → URL Configuration**: add `http://localhost:3000/**` to
+  the redirect URLs
+- **Authentication → Multi-Factor**: enable TOTP (authenticator apps)
+- Optional: enable Google / Azure providers and set
+  `NEXT_PUBLIC_AUTH_PROVIDERS=google,azure`; SAML SSO with
+  `NEXT_PUBLIC_AUTH_SSO=1`
+
+Open `/signup` to create your workspace and first company.
 
 ### Tests
 
@@ -107,12 +133,16 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-12 suites: posting engine, recurring/allocations/budgets, reports, FX,
-parties, bills, bill payments, sales, agents + keys, REST + MCP, team, RLS.
+13 suites: posting engine, recurring/allocations/budgets, reports, FX,
+parties, bills, bill payments, sales, agents + keys, REST + MCP, RLS,
+workspaces (sign-up, invites, access, policy, access reviews), and session
+security (timeouts, MFA, revocation, rate limits). CI runs them all on every
+pull request (`.github/workflows/ci.yml`).
 
-`scripts/dev/seed-demo.ts` creates a demo org and prints owner and agent keys
-for poking at the API. `scripts/dev/ui-smoke.mjs` drives every page in
-Chromium (see the file header).
+`scripts/dev/seed-demo.ts` creates a demo workspace and company and prints
+owner and agent keys for poking at the API. `scripts/dev/ui-smoke.mjs`
+drives every page and the main flows in Chromium, including two-step
+verification, against a fake Supabase Auth (see the file headers).
 
 ## Production (Vercel + Supabase)
 
@@ -124,11 +154,14 @@ Environment variables (Production + Preview):
 | `SUPABASE_SERVICE_ROLE_KEY` | mark Sensitive |
 | `DATABASE_URL` | **pooled** connection (port 6543); the client uses `prepare: false` |
 | `NEXT_PUBLIC_APP_URL` | public URL; used in invite links and connection snippets |
-| `CRON_SECRET` | required for the daily job (recurring entries, auto-reversals, key pruning) |
+| `CRON_SECRET` | required for the daily job (recurring entries, auto-reversals, pruning) |
+| `RESEND_API_KEY`, `EMAIL_FROM` | invitation emails; without them, invites show a link to copy |
+| `NEXT_PUBLIC_AUTH_PROVIDERS`, `NEXT_PUBLIC_AUTH_SSO` | optional extra sign-in methods |
+| `API_RATE_LIMIT_PER_MINUTE` | optional, default 600 |
 
 Migrations run from your machine against the direct (port 5432) connection:
 `DATABASE_URL_MIGRATE=… npm run db:migrate`. Add your production URL to
-Supabase's redirect URLs.
+Supabase's redirect URLs. Point an uptime monitor at `/api/health`.
 
 ## Roadmap to QuickBooks parity
 
@@ -145,7 +178,9 @@ Supabase's redirect URLs.
   open invoices and bills, opening balances)
 - **Agent platform**: OAuth for MCP (so claude.ai connectors work without
   pasting a key), webhooks / events (`invoice.paid`…), per-type approval
-  policies, attachments, per-key rate limits, emailed invites
+  policies, attachments
+- **Accounts**: billing and plans, SSO enforcement and SCIM, IP allowlists,
+  company data export and deletion, consolidated reports across companies
 
 See [CLAUDE.md](./CLAUDE.md) for architecture and conventions.
 
