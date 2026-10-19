@@ -8,7 +8,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import {
   accounts,
@@ -40,6 +40,7 @@ import { generateFiscalYear } from "../src/lib/gl/fiscal-calendar";
 import { createAndPostJournal } from "../src/lib/gl/posting";
 import { runRecurringForOrg } from "../src/lib/gl/recurring";
 import { seedOrganizationDefaults } from "../src/lib/seed/org-defaults";
+import { deleteFixtures, testWorkspace } from "./lib/workspace";
 
 const PASS = "\x1b[32m✓\x1b[0m";
 const FAIL = "\x1b[31m✗\x1b[0m";
@@ -62,7 +63,7 @@ async function main() {
   // Cleanup prior test orgs (bypass posted-journal delete block).
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
-    await tx.delete(organizations).where(like(organizations.slug, "chunkc-test-%"));
+    await deleteFixtures(tx, "chunkc-test-");
   });
 
   const [actor] = await db.select().from(profiles).limit(1);
@@ -71,7 +72,7 @@ async function main() {
   const fixtures = await db.transaction(async (tx) => {
     const [org] = await tx
       .insert(organizations)
-      .values({ name: "Chunk C Test Org", slug: testSlug, baseCurrency: "USD" })
+      .values({ workspaceId: await testWorkspace(tx, testSlug), name: "Chunk C Test Org", slug: testSlug, baseCurrency: "USD" })
       .returning();
 
     await tx.insert(memberships).values({
@@ -80,7 +81,7 @@ async function main() {
       role: "owner",
     });
 
-    await seedOrganizationDefaults(tx, org.id, { includeContractorCoa: true });
+    await seedOrganizationDefaults(tx, org.id, { includeDefaultCoa: true });
 
     await generateFiscalYear(tx, {
       organizationId: org.id,

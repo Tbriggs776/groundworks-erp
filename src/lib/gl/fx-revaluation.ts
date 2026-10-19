@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/schema";
 import { money, sumMoney } from "@/lib/money";
 import { createAndPostJournal, type PostResult } from "./posting";
+import { inLedger } from "./ledger";
 import { foreignCurrenciesWithActivity, getEffectiveRate } from "./fx";
 
 /**
@@ -107,7 +108,7 @@ export async function computeFxAdjustments(
     .where(
       and(
         eq(glLines.organizationId, organizationId),
-        eq(glJournals.status, "posted"),
+        inLedger(),
         lte(glJournals.journalDate, asOfDate),
         sql`${glJournals.currency} <> ${baseCurrency}`
       )

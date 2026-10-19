@@ -40,7 +40,7 @@ export default async function BillsPage() {
   return (
     <AppShell
       title="AP Bills"
-      crumb={`${organization.name} · Procurement`}
+      crumb={`${organization.name} · Expenses`}
       userEmail={user?.email}
     >
       <div className="space-y-4">

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Bebas_Neue, Epilogue, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -21,9 +22,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Groundworks ERP",
+  title: "Groundworks",
   description:
-    "Construction ERP for middle-market contractors and subcontractors.",
+    "Small-business accounting with a first-class API and MCP server, built for teams of humans and AI agents.",
 };
 
 export const viewport: Viewport = {
@@ -34,9 +35,12 @@ export const viewport: Viewport = {
   colorScheme: "dark",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Reading the request makes every page dynamic, which the per-request
+  // CSP nonce (set by src/proxy.ts) requires: Next stamps it on its scripts.
+  await headers();
   return (
     <html
       lang="en"

@@ -1,32 +1,29 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
 import { AppShell } from "@/components/app-shell/shell";
-import { db } from "@/lib/db/client";
-import { customers } from "@/lib/db/schema";
-import { getUser, requireCurrentOrg } from "@/lib/auth";
+import { runAs } from "@/lib/actor";
+import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { listCustomers } from "@/lib/parties/service";
 import { CustomersClient } from "./customers-client";
 
-export default async function CustomersPage() {
+export default async function CustomersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
   const { organization } = await requireCurrentOrg();
   const user = await getUser();
-
-  const rows = await db
-    .select()
-    .from(customers)
-    .where(
-      and(
-        eq(customers.organizationId, organization.id),
-        isNull(customers.deletedAt)
-      )
-    )
-    .orderBy(asc(customers.code));
+  const actor = await requireActor();
+  const page = await runAs(actor, (ctx) =>
+    listCustomers(ctx, { q, includeInactive: true, limit: 200 })
+  );
 
   return (
     <AppShell
       title="Customers"
-      crumb={`${organization.name} · Billing`}
+      crumb={`${organization.name} · Sales`}
       userEmail={user?.email}
     >
-      <CustomersClient customers={rows} />
+      <CustomersClient customers={page.data} truncated={page.hasMore} />
     </AppShell>
   );
 }

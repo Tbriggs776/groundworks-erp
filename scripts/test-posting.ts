@@ -11,7 +11,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import {
   accounts,
@@ -25,6 +25,7 @@ import {
 import { generateFiscalYear } from "../src/lib/gl/fiscal-calendar";
 import { createAndPostJournal, reverseJournal } from "../src/lib/gl/posting";
 import { seedOrganizationDefaults } from "../src/lib/seed/org-defaults";
+import { deleteFixtures, testWorkspace } from "./lib/workspace";
 
 type Check = (name: string, fn: () => Promise<void>) => Promise<void>;
 
@@ -50,7 +51,7 @@ async function main() {
   // posting-immutability triggers allow the cascade delete.
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
-    await tx.delete(organizations).where(like(organizations.slug, "gl-test-%"));
+    await deleteFixtures(tx, "gl-test-");
   });
 
   // Find any existing profile to use as the test actor (Tyler's signed-in
@@ -67,7 +68,7 @@ async function main() {
   const fixtures = await db.transaction(async (tx) => {
     const [org] = await tx
       .insert(organizations)
-      .values({ name: "GL Test Org", slug: testSlug, baseCurrency: "USD" })
+      .values({ workspaceId: await testWorkspace(tx, testSlug), name: "GL Test Org", slug: testSlug, baseCurrency: "USD" })
       .returning();
 
     await tx.insert(memberships).values({
@@ -77,7 +78,7 @@ async function main() {
     });
 
     await seedOrganizationDefaults(tx, org.id, {
-      includeContractorCoa: true,
+      includeDefaultCoa: true,
     });
 
     const { periodIds } = await generateFiscalYear(tx, {
@@ -157,6 +158,53 @@ async function main() {
     if (r.ok) throw new Error("expected failure, got success");
     if (r.code !== "unbalanced_currency")
       throw new Error(`expected unbalanced_currency, got ${r.code}`);
+  });
+
+  await check("a failed post leaves no draft journal behind", async () => {
+    const [{ n }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(glJournals)
+      .where(
+        and(
+          eq(glJournals.organizationId, fixtures.org.id),
+          eq(glJournals.status, "draft")
+        )
+      );
+    if (n !== 0) throw new Error(`found ${n} orphan draft journal(s)`);
+  });
+
+  await check("another org's account is rejected (tenant integrity)", async () => {
+    const [otherOrg] = await db
+      .insert(organizations)
+      .values({ workspaceId: await testWorkspace(db, `${testSlug}-other`), name: "GL Test Other", slug: `${testSlug}-other` })
+      .returning();
+    const [foreign] = await db
+      .insert(accounts)
+      .values({
+        organizationId: otherOrg.id,
+        code: "9999",
+        name: "Someone else's cash",
+        category: "balance_sheet",
+        subcategory: "cash",
+        normalBalance: "debit",
+      })
+      .returning({ id: accounts.id });
+    const r = await createAndPostJournal({
+      organizationId: fixtures.org.id,
+      actorId: fixtures.actor.id,
+      journalDate: "2026-03-15",
+      sourceCodeId: fixtures.sourceCodeId,
+      source: "manual",
+      description: "Cross-tenant attempt",
+      lines: [
+        { accountId: foreign.id, debit: "10.00" },
+        { accountId: fixtures.cash.id, credit: "10.00" },
+      ],
+    });
+    await db.delete(organizations).where(eq(organizations.id, otherOrg.id));
+    if (r.ok) throw new Error("expected failure, got success");
+    if (r.code !== "account_missing")
+      throw new Error(`expected account_missing, got ${r.code}`);
   });
 
   await check("manual post to control account is rejected", async () => {

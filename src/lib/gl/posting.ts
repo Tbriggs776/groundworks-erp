@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   glJournals,
@@ -6,6 +6,7 @@ import {
   glLines,
   type NewGlJournal,
 } from "@/lib/db/schema";
+import { auditFields, type Actor, type Tx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
 import { toDbMoney } from "@/lib/money";
 import { nextNumber } from "./number-series";
@@ -15,8 +16,6 @@ import {
   validateJournalForPost,
   type ValidationResult,
 } from "./validations";
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // ---------------------------------------------------------------------------
 // Input shapes
@@ -28,11 +27,8 @@ export type JournalLineInput = {
   credit?: string | number;
   memo?: string;
   reference?: string;
-  jobId?: string;
-  costCodeId?: string;
   customerId?: string;
   vendorId?: string;
-  employeeId?: string;
   fixedAssetId?: string;
   bankAccountId?: string;
   dimensions?: Array<{ dimensionId: string; valueId: string }>;
@@ -43,6 +39,9 @@ export type CreateAndPostInput = {
   /** null = system-triggered (cron, recurring, auto-reverse). Audit row
    *  records actor_id=null which is fine; the event name tells the story. */
   actorId: string | null;
+  /** Full actor, when known — attributes agents / API keys in the audit
+   *  row and stamps created_by / created_by_agent_id on the journal. */
+  actor?: Actor;
   journalDate: string; // ISO date YYYY-MM-DD
   sourceCodeId: string;
   source: NewGlJournal["source"];
@@ -72,9 +71,40 @@ export type PostResult =
 // ---------------------------------------------------------------------------
 
 /**
+ * Thrown inside a posting transaction to roll it back while still handing
+ * the validation failure to the caller as a normal PostResult.
+ */
+class PostingRollback extends Error {
+  constructor(readonly result: Extract<PostResult, { ok: false }>) {
+    super(result.error);
+  }
+}
+
+/**
+ * Run `fn` in a transaction: a savepoint inside `outer` when the caller is
+ * already in one (subledger posts), otherwise a fresh transaction. Either
+ * way a failed post leaves nothing behind — not even the draft.
+ */
+async function inPostingTransaction(
+  outer: Tx | undefined,
+  fn: (tx: Tx) => Promise<PostResult>
+): Promise<PostResult> {
+  try {
+    return await (outer ? outer.transaction(fn) : db.transaction(fn));
+  } catch (err) {
+    if (err instanceof PostingRollback) return err.result;
+    throw err;
+  }
+}
+
+/**
  * Create a draft journal and post it atomically. All 11 validations run
  * inside the same transaction as the post; any failure rolls back every
  * write, including the draft itself.
+ *
+ * Pass `outerTx` when calling from inside another transaction (AP bill
+ * post, AR invoice post …) so the journal commits or rolls back together
+ * with the document that caused it.
  *
  * The usual entry point for:
  *   - Manual journal entry UI (Chunk D)
@@ -82,18 +112,22 @@ export type PostResult =
  *   - Reversing entries (via `reverseJournal`)
  */
 export async function createAndPostJournal(
-  input: CreateAndPostInput
+  input: CreateAndPostInput,
+  outerTx?: Tx
 ): Promise<PostResult> {
-  return db.transaction(async (tx) => {
+  return inPostingTransaction(outerTx, async (tx) => {
     const draft = await createDraftJournal(tx, input);
-    return postDraft(tx, {
+    const result = await postDraft(tx, {
       journalId: draft.journalId,
       journalNumber: draft.journalNumber,
       actorId: input.actorId,
+      actor: input.actor,
       organizationId: input.organizationId,
       overridePassword: input.overridePassword,
       overrideReason: input.overrideReason,
     });
+    if (!result.ok) throw new PostingRollback(result);
+    return result;
   });
 }
 
@@ -142,6 +176,8 @@ export async function createDraftJournal(
       autoReverseDate: input.autoReverseDate,
       currency,
       exchangeRate,
+      createdBy: input.actor ? input.actor.userId : input.actorId,
+      createdByAgentId: input.actor?.agentId ?? null,
     })
     .returning({ id: glJournals.id });
 
@@ -168,11 +204,8 @@ export async function createDraftJournal(
         creditLocal,
         memo: ln.memo,
         reference: ln.reference,
-        jobId: ln.jobId,
-        costCodeId: ln.costCodeId,
         customerId: ln.customerId,
         vendorId: ln.vendorId,
-        employeeId: ln.employeeId,
         fixedAssetId: ln.fixedAssetId,
         bankAccountId: ln.bankAccountId,
       })
@@ -205,6 +238,7 @@ export async function postDraft(
     journalId: string;
     journalNumber?: string;
     actorId: string | null;
+    actor?: Actor;
     organizationId: string;
     overridePassword?: string;
     overrideReason?: string;
@@ -262,7 +296,7 @@ export async function postDraft(
   await writeAudit(
     {
       organizationId: opts.organizationId,
-      actorId: opts.actorId,
+      ...(opts.actor ? auditFields(opts.actor) : { actorId: opts.actorId }),
       event: overrideUsed ? "gl.period.override_post" : "gl.journal.posted",
       entityType: "gl_journal",
       entityId: updated.id,
@@ -289,15 +323,17 @@ export async function reverseJournal(
   originalId: string,
   opts: {
     actorId: string | null;
+    actor?: Actor;
     organizationId: string;
     reversalDate?: string; // default: today
     description?: string; // default: "Reversal of <original number>"
     reasonCodeId?: string;
     overridePassword?: string;
     overrideReason?: string;
-  }
+  },
+  outerTx?: Tx
 ): Promise<PostResult> {
-  return db.transaction(async (tx) => {
+  return inPostingTransaction(outerTx, async (tx) => {
     const [orig] = await tx
       .select({
         id: glJournals.id,
@@ -309,7 +345,12 @@ export async function reverseJournal(
         source: glJournals.source,
       })
       .from(glJournals)
-      .where(eq(glJournals.id, originalId));
+      .where(
+        and(
+          eq(glJournals.id, originalId),
+          eq(glJournals.organizationId, opts.organizationId)
+        )
+      );
 
     if (!orig) {
       return { ok: false, code: "original_not_found", error: "Original journal not found." };
@@ -341,11 +382,8 @@ export async function reverseJournal(
         credit: glLines.credit,
         memo: glLines.memo,
         reference: glLines.reference,
-        jobId: glLines.jobId,
-        costCodeId: glLines.costCodeId,
         customerId: glLines.customerId,
         vendorId: glLines.vendorId,
-        employeeId: glLines.employeeId,
         fixedAssetId: glLines.fixedAssetId,
         bankAccountId: glLines.bankAccountId,
       })
@@ -399,11 +437,8 @@ export async function reverseJournal(
       credit: l.debit, // swap
       memo: l.memo ?? undefined,
       reference: l.reference ?? undefined,
-      jobId: l.jobId ?? undefined,
-      costCodeId: l.costCodeId ?? undefined,
       customerId: l.customerId ?? undefined,
       vendorId: l.vendorId ?? undefined,
-      employeeId: l.employeeId ?? undefined,
       fixedAssetId: l.fixedAssetId ?? undefined,
       bankAccountId: l.bankAccountId ?? undefined,
       dimensions: dimsByLine.get(l.id),
@@ -412,6 +447,7 @@ export async function reverseJournal(
     const draft = await createDraftJournal(tx, {
       organizationId: opts.organizationId,
       actorId: opts.actorId,
+      actor: opts.actor,
       journalDate,
       sourceCodeId: revSource.id,
       source: "reversing",
@@ -424,14 +460,17 @@ export async function reverseJournal(
       numberSeriesCode: "REV",
     });
 
-    return postDraft(tx, {
+    const result = await postDraft(tx, {
       journalId: draft.journalId,
       journalNumber: draft.journalNumber,
       actorId: opts.actorId,
+      actor: opts.actor,
       organizationId: opts.organizationId,
       overridePassword: opts.overridePassword,
       overrideReason: opts.overrideReason,
     });
+    if (!result.ok) throw new PostingRollback(result);
+    return result;
   });
 }
 

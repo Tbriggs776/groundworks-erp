@@ -4,15 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  Banknote,
+  BookOpen,
+  Bot,
   Building2,
   FileBarChart,
-  Hammer,
-  HardHat,
-  LineChart,
+  LayoutDashboard,
   Receipt,
   Settings,
-  Truck,
   Wallet,
 } from "lucide-react";
 
@@ -20,6 +18,10 @@ type NavItem = {
   label: string;
   href: string;
   soon?: boolean;
+  /** Highlight only on this exact path (not its children). */
+  exact?: boolean;
+  /** Workspace owners / admins only. */
+  adminOnly?: boolean;
 };
 
 type NavGroup = {
@@ -29,111 +31,88 @@ type NavGroup = {
 };
 
 /**
- * The eight mega-modules. Most routes don't exist yet — items render with a
- * "soon" pill. As each module is built the pill is removed.
+ * Navigation, grouped the way QuickBooks users already think about their
+ * books. Items flagged `soon` render with a pill until the route ships.
  */
 const NAV: NavGroup[] = [
   {
-    label: "Financials",
-    icon: Banknote,
+    label: "Overview",
+    icon: LayoutDashboard,
+    items: [{ label: "Dashboard", href: "/dashboard" }],
+  },
+  {
+    label: "Sales",
+    icon: Receipt,
     items: [
-      { label: "Dashboard", href: "/dashboard" },
+      { label: "Customers", href: "/customers" },
+      { label: "Invoices", href: "/ar/invoices" },
+      { label: "Payments Received", href: "/ar/payments" },
+      { label: "Products & Services", href: "/items" },
+    ],
+  },
+  {
+    label: "Expenses",
+    icon: Wallet,
+    items: [
+      { label: "Vendors", href: "/vendors" },
+      { label: "Bills", href: "/ap/bills" },
+      { label: "Bill Payments", href: "/ap/payments" },
+    ],
+  },
+  {
+    label: "Accounting",
+    icon: BookOpen,
+    items: [
       { label: "Chart of Accounts", href: "/accounts" },
-      { label: "Dimensions", href: "/dimensions" },
-      { label: "General Ledger", href: "/gl" },
+      { label: "Journal Entries", href: "/gl" },
       { label: "Recurring", href: "/recurring" },
       { label: "Allocations", href: "/allocations" },
       { label: "Budgets", href: "/budgets" },
+      { label: "Classes & Locations", href: "/dimensions" },
       { label: "Period Close", href: "/periods" },
       { label: "Exchange Rates", href: "/rates" },
       { label: "FX Revaluation", href: "/rates/revaluation" },
-      { label: "Audit Trail", href: "/audit", soon: true },
     ],
   },
   {
     label: "Reports",
     icon: FileBarChart,
     items: [
-      { label: "Trial Balance", href: "/reports/trial-balance" },
+      { label: "Profit & Loss", href: "/reports/income-statement" },
       { label: "Balance Sheet", href: "/reports/balance-sheet" },
-      { label: "Income Statement", href: "/reports/income-statement" },
+      { label: "AR Aging", href: "/reports/ar-aging" },
+      { label: "AP Aging", href: "/reports/ap-aging" },
+      { label: "Trial Balance", href: "/reports/trial-balance" },
       { label: "GL Detail", href: "/reports/gl-detail" },
-      { label: "Job Cost", href: "/reports/job-cost" },
     ],
   },
   {
-    label: "Projects",
-    icon: HardHat,
+    label: "Agents & API",
+    icon: Bot,
     items: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Cost Codes", href: "/cost-codes" },
-      { label: "Job Cost Report", href: "/reports/job-cost" },
-      { label: "Change Orders", href: "/change-orders" },
-      { label: "Commitments", href: "/commitments" },
+      { label: "Review Queue", href: "/review" },
+      { label: "Agents", href: "/settings/agents" },
+      { label: "API Keys", href: "/settings/api-keys" },
+      { label: "Activity", href: "/activity" },
     ],
   },
   {
-    label: "Billing",
-    icon: Receipt,
-    items: [
-      { label: "Customers", href: "/customers" },
-      { label: "AR", href: "/ar", soon: true },
-      { label: "AIA / SOV", href: "/ar/aia", soon: true },
-      { label: "Retainage", href: "/ar/retainage", soon: true },
-    ],
-  },
-  {
-    label: "Procurement",
-    icon: Wallet,
-    items: [
-      { label: "Vendors", href: "/vendors" },
-      { label: "AP Bills", href: "/ap/bills" },
-      { label: "AP Payments", href: "/ap/payments" },
-      { label: "Commitments", href: "/commitments" },
-    ],
-  },
-  {
-    label: "People",
+    label: "Workspace",
     icon: Building2,
     items: [
-      { label: "Employees", href: "/employees" },
-      { label: "Payroll", href: "/payroll", soon: true },
-      { label: "Time & Expense", href: "/time", soon: true },
-    ],
-  },
-  {
-    label: "Field Ops",
-    icon: Truck,
-    items: [
-      { label: "Dispatch", href: "/dispatch", soon: true },
-      { label: "Equipment", href: "/equipment", soon: true },
-      { label: "Documents", href: "/documents", soon: true },
-    ],
-  },
-  {
-    label: "Finance & Risk",
-    icon: LineChart,
-    items: [
-      { label: "Cash Flow", href: "/cashflow", soon: true },
-      { label: "Fixed Assets", href: "/assets", soon: true },
-      { label: "Surety", href: "/surety", soon: true },
-    ],
-  },
-  {
-    label: "Growth",
-    icon: Hammer,
-    items: [
-      { label: "CRM", href: "/crm", soon: true },
-      { label: "Estimating", href: "/estimating", soon: true },
-      { label: "BI", href: "/bi", soon: true },
+      { label: "Companies", href: "/workspace", exact: true },
+      { label: "People", href: "/workspace/people" },
+      { label: "Security Policy", href: "/workspace/security" },
+      { label: "Access Review", href: "/workspace/access-review", adminOnly: true },
+      { label: "Audit Log", href: "/workspace/audit", adminOnly: true },
     ],
   },
   {
     label: "Settings",
     icon: Settings,
     items: [
-      { label: "Contract Types", href: "/settings/contract-types" },
       { label: "Approval Thresholds", href: "/settings/approval-thresholds" },
+      { label: "My Security", href: "/account/security" },
     ],
   },
 ];
@@ -150,7 +129,7 @@ export function Brand() {
           GROUNDWORKS
         </div>
         <div className="text-[9px] tracking-[0.3em] text-muted-foreground uppercase mt-0.5">
-          ERP · Platform
+          Accounting · API
         </div>
       </div>
     </Link>
@@ -161,7 +140,13 @@ export function Brand() {
  * The nav list itself. Rendered inside the desktop sidebar and the mobile
  * drawer; `onNavigate` lets the drawer close itself after a tap.
  */
-export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarNav({
+  onNavigate,
+  workspaceAdmin,
+}: {
+  onNavigate?: () => void;
+  workspaceAdmin: boolean;
+}) {
   const pathname = usePathname();
 
   return (
@@ -174,9 +159,9 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
               {group.label}
             </span>
           </div>
-          {group.items.map((item) => {
+          {group.items.filter((item) => workspaceAdmin || !item.adminOnly).map((item) => {
             const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
+              pathname === item.href || (!item.exact && pathname.startsWith(`${item.href}/`));
             return (
               <Link
                 key={`${group.label}-${item.href}`}
@@ -208,14 +193,14 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 /** Desktop sidebar. Hidden below `md`; phones use the drawer in the topbar. */
-export function Sidebar() {
+export function Sidebar({ workspaceAdmin }: { workspaceAdmin: boolean }) {
   return (
     <aside className="hidden md:flex w-60 shrink-0 border-r border-border bg-sidebar flex-col relative">
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[var(--gw-gold)] via-[var(--gw-gold-bright)] to-[var(--gw-gold)]" />
       <div className="px-4 py-4 border-b border-border">
         <Brand />
       </div>
-      <SidebarNav />
+      <SidebarNav workspaceAdmin={workspaceAdmin} />
     </aside>
   );
 }

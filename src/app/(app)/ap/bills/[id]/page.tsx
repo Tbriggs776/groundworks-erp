@@ -8,8 +8,6 @@ import {
   accounts,
   apBillLines,
   apBills,
-  costCodes,
-  jobs,
   vendors,
 } from "@/lib/db/schema";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
@@ -41,13 +39,9 @@ export default async function BillDetailPage({
     .select({
       line: apBillLines,
       account: accounts,
-      job: jobs,
-      costCode: costCodes,
     })
     .from(apBillLines)
     .innerJoin(accounts, eq(accounts.id, apBillLines.accountId))
-    .leftJoin(jobs, eq(jobs.id, apBillLines.jobId))
-    .leftJoin(costCodes, eq(costCodes.id, apBillLines.costCodeId))
     .where(eq(apBillLines.billId, id))
     .orderBy(asc(apBillLines.lineNumber));
 
@@ -56,7 +50,7 @@ export default async function BillDetailPage({
   return (
     <AppShell
       title={`Bill ${bill.billNumber}`}
-      crumb={`${organization.name} · Procurement · AP Bills`}
+      crumb={`${organization.name} · Expenses · Bills`}
       userEmail={user?.email}
     >
       <div className="space-y-5 max-w-5xl">
@@ -145,13 +139,12 @@ export default async function BillDetailPage({
               <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 <th className="text-left font-medium px-3 py-2 w-12">#</th>
                 <th className="text-left font-medium px-3 py-2">Account</th>
-                <th className="text-left font-medium px-3 py-2">Job / Cost Code</th>
                 <th className="text-left font-medium px-3 py-2">Description</th>
                 <th className="text-right font-medium px-3 py-2 w-36">Amount</th>
               </tr>
             </thead>
             <tbody>
-              {lines.map(({ line, account, job, costCode }) => (
+              {lines.map(({ line, account }) => (
                 <tr key={line.id} className="border-t border-border">
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                     {line.lineNumber}
@@ -161,21 +154,6 @@ export default async function BillDetailPage({
                       {account.code}
                     </span>{" "}
                     <span className="text-sm">{account.name}</span>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">
-                    {job && (
-                      <>
-                        <span className="font-mono">{job.code}</span> {job.name}
-                      </>
-                    )}
-                    {job && costCode && <br />}
-                    {costCode && (
-                      <>
-                        <span className="font-mono">{costCode.code}</span>{" "}
-                        {costCode.name}
-                      </>
-                    )}
-                    {!job && !costCode && "—"}
                   </td>
                   <td className="px-3 py-2 text-xs">{line.description}</td>
                   <td className="px-3 py-2 text-right font-mono text-xs">

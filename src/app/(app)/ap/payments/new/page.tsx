@@ -95,7 +95,7 @@ export default async function NewPaymentPage() {
   return (
     <AppShell
       title="New AP Payment"
-      crumb={`${organization.name} · Procurement`}
+      crumb={`${organization.name} · Expenses`}
       userEmail={user?.email}
     >
       {vendorsWithBills.length === 0 ? (

@@ -22,6 +22,7 @@ import {
 } from "./_shared";
 import { accounts } from "./accounts";
 import { dimensions, dimensionValues } from "./dimensions";
+import { agents } from "./agents";
 import { organizations, profiles } from "./identity";
 import { fiscalPeriods } from "./periods";
 import { numberSeries, reasonCodes, sourceCodes } from "./journal_meta";
@@ -187,6 +188,15 @@ export const glJournals = pgTable(
     // Forward ref — recurring_journals table lands in Chunk C; kept nullable.
     recurringJournalId: uuid("recurring_journal_id"),
 
+    // Who created the document — a human or an agent (never both). Drives
+    // the review queue: agent-created drafts wait there for a human.
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
+
     ...timestamps,
   },
   (t) => [
@@ -202,6 +212,7 @@ export const glJournals = pgTable(
     index("gl_journals_org_date_idx").on(t.organizationId, t.journalDate),
     index("gl_journals_org_source_idx").on(t.organizationId, t.source),
     index("gl_journals_reverses_idx").on(t.reversesJournalId),
+    index("gl_journals_agent_idx").on(t.organizationId, t.createdByAgentId),
   ]
 );
 
@@ -248,13 +259,10 @@ export const glLines = pgTable(
     memo: text("memo"),
     reference: text("reference"),
 
-    // Forward refs — these tables land with Projects / AP / AR / etc.
-    // Plain UUID columns (no FK constraint) until those modules ship.
-    jobId: uuid("job_id"),
-    costCodeId: uuid("cost_code_id"),
+    // Subledger tags. Plain UUID columns (no FK constraint) so the GL
+    // never blocks a master-data delete; reports join when they need names.
     customerId: uuid("customer_id"),
     vendorId: uuid("vendor_id"),
-    employeeId: uuid("employee_id"),
     fixedAssetId: uuid("fixed_asset_id"),
     bankAccountId: uuid("bank_account_id"),
 

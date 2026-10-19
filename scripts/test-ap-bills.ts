@@ -1,297 +1,344 @@
 /**
- * End-to-end verification of Tier 2.2a — AP bill lifecycle, approval
- * routing against thresholds, GL posting through the AP control account,
- * and void reversal.
+ * End-to-end: bill lifecycle through the service layer (the same code the
+ * web UI, REST API, and MCP server call) — approval routing, role + scope
+ * gates, GL posting through AP control, duplicate detection, tenant
+ * isolation, agent rules, and void.
  *
  *   npx tsx scripts/test-ap-bills.ts
  */
-import dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
-dotenv.config({ path: ".env" });
-
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import {
-  accounts,
   apBills,
   approvalThresholds,
-  customers,
+  auditLog,
   glJournals,
   glLines,
-  jobs,
-  memberships,
-  organizations,
-  profiles,
   vendors,
 } from "../src/lib/db/schema";
-import { generateFiscalYear } from "../src/lib/gl/fiscal-calendar";
-import { seedOrganizationDefaults } from "../src/lib/seed/org-defaults";
-import { syncJobDimensionValue } from "../src/lib/projects/dimension-sync";
-import {
-  canApproveAtRole,
-  resolveApprovalRouting,
-} from "../src/lib/ap/approval";
+import type { Actor } from "../src/lib/actor";
+import { canApproveAtRole, resolveApprovalRouting } from "../src/lib/ap/approval";
+import * as bills from "../src/lib/ap/bills";
+import * as billPayments from "../src/lib/ap/bill-payments";
 import { money } from "../src/lib/money";
-
-const PASS = "\x1b[32m✓\x1b[0m";
-const FAIL = "\x1b[31m✗\x1b[0m";
-let failed = 0;
-
-async function check(name: string, fn: () => Promise<void>) {
-  try {
-    await fn();
-    console.log(`  ${PASS} ${name}`);
-  } catch (e) {
-    failed++;
-    console.log(`  ${FAIL} ${name}`);
-    console.log(`     ${(e as Error).message}`);
-  }
-}
+import {
+  account,
+  assert,
+  assertEq,
+  check,
+  createTestOrg,
+  deleteOrgs,
+  expectError,
+  finish,
+  section,
+} from "./lib/harness";
 
 async function main() {
-  const testSlug = `ap-test-${Date.now()}`;
+  const t = await createTestOrg("ap-test-");
+  const other = await createTestOrg("ap-other-");
+  console.log(`\nTest org: ${t.org.slug}`);
 
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
-    await tx.delete(organizations).where(like(organizations.slug, "ap-test-%"));
-  });
+  const [vendor] = await db
+    .insert(vendors)
+    .values({ organizationId: t.org.id, code: "VEND-001", name: "ABC Office Supply", defaultPaymentTermsDays: 30 })
+    .returning();
 
-  const [actor] = await db.select().from(profiles).limit(1);
-  if (!actor) throw new Error("No profiles. Log in first.");
+  const owner = t.as("owner");
+  const bookkeeper = t.as("bookkeeper");
+  const viewer = t.as("viewer");
+  const supplies = account(t, "6620");
+  const rent = account(t, "6600");
+  const apControl = account(t, "2000");
+  const checking = account(t, "1010");
 
-  const fixtures = await db.transaction(async (tx) => {
-    const [org] = await tx
-      .insert(organizations)
-      .values({ name: "AP Test", slug: testSlug, baseCurrency: "USD" })
-      .returning();
-    await tx.insert(memberships).values({
-      organizationId: org.id,
-      userId: actor.id,
-      role: "owner",
-    });
-    await seedOrganizationDefaults(tx, org.id, {
-      includeContractorCoa: true,
-      includeCsiCostCodes: true,
-    });
-    await generateFiscalYear(tx, {
-      organizationId: org.id,
-      startDate: "2026-01-01",
-      yearLabel: "FY2026",
-    });
+  const routing = (amount: string) =>
+    t.run(owner, ({ tx }) => resolveApprovalRouting(tx, t.org.id, "ap_bill", amount));
 
-    const [vendor] = await tx
-      .insert(vendors)
-      .values({
-        organizationId: org.id,
-        code: "VEND-001",
-        name: "ABC Concrete Supply",
-        vendorType: "supplier",
-      })
-      .returning();
-
-    const [customer] = await tx
-      .insert(customers)
-      .values({
-        organizationId: org.id,
-        code: "CUST-001",
-        name: "Test Customer",
-        customerType: "commercial",
-      })
-      .returning();
-
-    const dimValueId = await syncJobDimensionValue(tx, org.id, {
-      code: "J-001",
-      name: "Test Job",
-    });
-    const [job] = await tx
-      .insert(jobs)
-      .values({
-        organizationId: org.id,
-        code: "J-001",
-        name: "Test Job",
-        customerId: customer.id,
-        dimensionValueId: dimValueId,
-        contractAmount: "100000",
-        status: "active",
-      })
-      .returning();
-
-    const acctRows = await tx
-      .select()
-      .from(accounts)
-      .where(eq(accounts.organizationId, org.id));
-    const byCode = new Map(acctRows.map((a) => [a.code, a]));
-
-    return {
-      org,
-      vendor,
-      customer,
-      job,
-      apControl: byCode.get("2000")!, // AP Trade — isControl=true
-      materials: byCode.get("5100")!, // COGS Materials
-      rent: byCode.get("6600")!, // Rent (SG&A)
-    };
-  });
-
-  console.log(`\nTest org: ${fixtures.org.slug}\n`);
-
-  console.log("Approval thresholds");
+  section("Approval thresholds");
   await check("default threshold: admin required for any amount", async () => {
-    const r = await resolveApprovalRouting(fixtures.org.id, "ap_bill", "5000");
-    if (r.requiredRole !== "admin")
-      throw new Error(`expected admin, got ${r.requiredRole}`);
-    if (r.fallback)
-      throw new Error("should hit the seeded 'Default' tier, not fallback");
+    const r = await routing("5000");
+    assertEq(r.requiredRole, "admin", "requiredRole");
+    assert(!r.fallback, "should hit the seeded Default tier, not fallback");
   });
 
-  await check("add tiers: small<1000 accountant / med<50000 admin / large>=50000 owner", async () => {
-    await db.transaction(async (tx) => {
-      // Deactivate the single 'Default' tier
-      await tx
-        .update(approvalThresholds)
-        .set({ isActive: false })
-        .where(
-          and(
-            eq(approvalThresholds.organizationId, fixtures.org.id),
-            eq(approvalThresholds.tierName, "Default")
-          )
-        );
-      await tx.insert(approvalThresholds).values([
-        {
-          organizationId: fixtures.org.id,
-          scope: "ap_bill",
-          tierName: "Small",
-          minAmount: "0",
-          maxAmount: "1000",
-          requiredRole: "accountant",
-          sortOrder: 10,
-        },
-        {
-          organizationId: fixtures.org.id,
-          scope: "ap_bill",
-          tierName: "Medium",
-          minAmount: "1000",
-          maxAmount: "50000",
-          requiredRole: "admin",
-          sortOrder: 20,
-        },
-        {
-          organizationId: fixtures.org.id,
-          scope: "ap_bill",
-          tierName: "Large",
-          minAmount: "50000",
-          maxAmount: null,
-          requiredRole: "owner",
-          sortOrder: 30,
-        },
-      ]);
-    });
+  await check("tiers: small<1000 accountant / med<50000 admin / large owner", async () => {
+    await db
+      .update(approvalThresholds)
+      .set({ isActive: false })
+      .where(eq(approvalThresholds.organizationId, t.org.id));
+    await db.insert(approvalThresholds).values([
+      { organizationId: t.org.id, scope: "ap_bill", tierName: "Small", minAmount: "0", maxAmount: "1000", requiredRole: "accountant", sortOrder: 10 },
+      { organizationId: t.org.id, scope: "ap_bill", tierName: "Medium", minAmount: "1000", maxAmount: "50000", requiredRole: "admin", sortOrder: 20 },
+      { organizationId: t.org.id, scope: "ap_bill", tierName: "Large", minAmount: "50000", maxAmount: null, requiredRole: "owner", sortOrder: 30 },
+    ]);
+    assertEq((await routing("500")).threshold?.tierName, "Small", "500");
+    assertEq((await routing("25000")).threshold?.tierName, "Medium", "25000");
+    assertEq((await routing("75000")).requiredRole, "owner", "75000");
   });
 
-  await check("amount 500 routes to Small (accountant)", async () => {
-    const r = await resolveApprovalRouting(fixtures.org.id, "ap_bill", "500");
-    if (r.threshold?.tierName !== "Small" || r.requiredRole !== "accountant")
-      throw new Error(`got ${r.threshold?.tierName} / ${r.requiredRole}`);
-  });
-  await check("amount 25000 routes to Medium (admin)", async () => {
-    const r = await resolveApprovalRouting(fixtures.org.id, "ap_bill", "25000");
-    if (r.threshold?.tierName !== "Medium" || r.requiredRole !== "admin")
-      throw new Error(`got ${r.threshold?.tierName} / ${r.requiredRole}`);
-  });
-  await check("amount 75000 routes to Large (owner)", async () => {
-    const r = await resolveApprovalRouting(fixtures.org.id, "ap_bill", "75000");
-    if (r.threshold?.tierName !== "Large" || r.requiredRole !== "owner")
-      throw new Error(`got ${r.threshold?.tierName} / ${r.requiredRole}`);
-  });
-  await check("rank check: admin can approve what accountant owns", async () => {
-    if (!canApproveAtRole("admin", "accountant"))
-      throw new Error("admin should outrank accountant");
-  });
-  await check("rank check: accountant can't approve admin-level", async () => {
-    if (canApproveAtRole("accountant", "admin"))
-      throw new Error("accountant should NOT outrank admin");
-  });
-  await check("rank check: owner can approve everything", async () => {
-    if (!canApproveAtRole("owner", "owner"))
-      throw new Error("owner outranks owner");
-    if (!canApproveAtRole("owner", "admin"))
-      throw new Error("owner outranks admin");
+  await check("rank checks", async () => {
+    assert(canApproveAtRole("admin", "accountant"), "admin ≥ accountant");
+    assert(!canApproveAtRole("accountant", "admin"), "accountant < admin");
+    assert(canApproveAtRole("owner", "owner"), "owner ≥ owner");
   });
 
-  console.log("\nAP control account");
-  await check("AP control account exists with isControl=true + directPosting=false", async () => {
-    if (!fixtures.apControl)
-      throw new Error("CoA seed didn't create 2000 AP Trade");
-    if (!fixtures.apControl.isControl)
-      throw new Error("2000 should be isControl=true");
-    if (fixtures.apControl.directPosting)
-      throw new Error("2000 should have directPosting=false");
-  });
-
-  console.log("\nBill state machine fields");
-  await check("insert a draft bill + advance through states", async () => {
-    const [bill] = await db
-      .insert(apBills)
-      .values({
-        organizationId: fixtures.org.id,
-        billNumber: "AP-000001",
+  section("Create + gates");
+  let billId = "";
+  await check("bookkeeper creates a draft; due date defaults from vendor terms", async () => {
+    const b = await t.run(bookkeeper, (ctx) =>
+      bills.createBill(ctx, {
+        vendorId: vendor.id,
         vendorInvoiceNumber: "INV-12345",
-        vendorId: fixtures.vendor.id,
         billDate: "2026-03-15",
-        dueDate: "2026-04-14",
-        subtotalAmount: "5000",
-        totalAmount: "5000",
-        status: "draft",
-        description: "Concrete for foundation",
+        description: "Supplies for March",
+        lines: [
+          { accountId: supplies.id, amount: "600", description: "Paper" },
+          { accountId: rent.id, amount: 200 },
+        ],
       })
-      .returning();
-
-    // draft → pending_approval
-    await db
-      .update(apBills)
-      .set({ status: "pending_approval", submittedAt: sql`now()`, submittedBy: actor.id })
-      .where(eq(apBills.id, bill.id));
-    // pending_approval → approved
-    await db
-      .update(apBills)
-      .set({ status: "approved", approvedAt: sql`now()`, approvedBy: actor.id })
-      .where(eq(apBills.id, bill.id));
-
-    const [b] = await db.select().from(apBills).where(eq(apBills.id, bill.id));
-    if (b.status !== "approved") throw new Error(`status=${b.status}`);
-    if (!b.submittedAt) throw new Error("submittedAt missing");
-    if (!b.approvedAt) throw new Error("approvedAt missing");
+    );
+    billId = b.id;
+    assertEq(b.status, "draft", "status");
+    assertEq(b.dueDate, "2026-04-14", "dueDate");
+    assertEq(money(b.totalAmount).toFixed(2), "800.00", "total");
+    assertEq(b.lines.length, 2, "lines");
+    assert(b.billNumber.startsWith("BILL-"), `billNumber ${b.billNumber}`);
+    assertEq(b.createdBy, t.owner.id, "createdBy");
   });
 
-  console.log("\nControl-account guard (v3 validation, from Chunk B posting engine)");
-  await check("manual JE to AP control is rejected (posting engine v3)", async () => {
-    // Validate our earlier assumption: AP control can't be posted manually.
-    // This is enforced by validation v3 in the posting engine. We can't
-    // fully test without calling createAndPostJournal here, but the account
-    // flag ensures the UI won't let it happen either.
-    if (fixtures.apControl.directPosting) {
-      throw new Error("AP control must have directPosting=false");
-    }
+  await check("duplicate vendor invoice # is rejected", async () => {
+    await expectError(
+      () =>
+        t.run(bookkeeper, (ctx) =>
+          bills.createBill(ctx, {
+            vendorId: vendor.id,
+            vendorInvoiceNumber: "INV-12345",
+            billDate: "2026-03-16",
+            lines: [{ accountId: supplies.id, amount: "1" }],
+          })
+        ),
+      "conflict"
+    );
   });
 
-  // Cleanup
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
-    await tx.delete(organizations).where(eq(organizations.id, fixtures.org.id));
+  await check("viewer cannot create bills", async () => {
+    await expectError(
+      () =>
+        t.run(viewer, (ctx) =>
+          bills.createBill(ctx, {
+            vendorId: vendor.id,
+            billDate: "2026-03-16",
+            lines: [{ accountId: supplies.id, amount: "1" }],
+          })
+        ),
+      "forbidden"
+    );
   });
-  void money;
-  void glJournals;
-  void glLines;
 
-  console.log(
-    `\n${failed === 0 ? PASS : FAIL} ${
-      failed === 0 ? "all checks passed" : `${failed} check(s) failed`
-    }\n`
-  );
-  process.exit(failed === 0 ? 0 : 1);
+  await check("control account on a line is rejected", async () => {
+    await expectError(
+      () =>
+        t.run(bookkeeper, (ctx) =>
+          bills.createBill(ctx, {
+            vendorId: vendor.id,
+            billDate: "2026-03-16",
+            lines: [{ accountId: apControl.id, amount: "1" }],
+          })
+        ),
+      "invalid_input"
+    );
+  });
+
+  await check("another org's account id is rejected", async () => {
+    await expectError(
+      () =>
+        t.run(bookkeeper, (ctx) =>
+          bills.createBill(ctx, {
+            vendorId: vendor.id,
+            billDate: "2026-03-16",
+            lines: [{ accountId: account(other, "6620").id, amount: "1" }],
+          })
+        ),
+      "not_found"
+    );
+  });
+
+  await check("bad input reports the field", async () => {
+    const err = await expectError(
+      () =>
+        t.run(bookkeeper, (ctx) =>
+          bills.createBill(ctx, {
+            vendorId: vendor.id,
+            billDate: "2026-02-30",
+            lines: [{ accountId: supplies.id, amount: "1" }],
+          })
+        ),
+      "invalid_input"
+    );
+    assert(err.message.startsWith("billDate"), err.message);
+  });
+
+  section("Approve + post");
+  await check("submit → pending_approval", async () => {
+    const b = await t.run(bookkeeper, (ctx) => bills.submitBill(ctx, { id: billId }));
+    assertEq(b.status, "pending_approval", "status");
+  });
+
+  await check("bookkeeper cannot approve", async () => {
+    await expectError(
+      () => t.run(bookkeeper, (ctx) => bills.approveBill(ctx, { id: billId })),
+      "forbidden"
+    );
+  });
+
+  await check("accountant approves an 800 bill (Small tier)", async () => {
+    const b = await t.run(t.as("accountant"), (ctx) => bills.approveBill(ctx, { id: billId }));
+    assertEq(b.status, "approved", "status");
+  });
+
+  await check("post: Dr expenses / Cr AP control, balanced", async () => {
+    const b = await t.run(t.as("accountant"), (ctx) => bills.postBill(ctx, { id: billId }));
+    assertEq(b.status, "posted", "status");
+    assert(b.glJournalId, "glJournalId");
+    const lines = await db.select().from(glLines).where(eq(glLines.journalId, b.glJournalId!));
+    assertEq(lines.length, 3, "line count");
+    const ap = lines.find((l) => l.accountId === apControl.id)!;
+    assertEq(money(ap.credit).toFixed(2), "800.00", "AP credit");
+    const [j] = await db.select().from(glJournals).where(eq(glJournals.id, b.glJournalId!));
+    assertEq(j.source, "ap", "source");
+    assertEq(j.status, "posted", "journal status");
+  });
+
+  await check("open balance shows on the bill", async () => {
+    const b = await t.run(viewer, (ctx) => bills.getBill(ctx, { id: billId }));
+    assertEq(money(b.openBalance).toFixed(2), "800.00", "openBalance");
+  });
+
+  section("Void rules");
+  await check("cannot void a bill with posted payments", async () => {
+    await t.run(owner, (ctx) =>
+      billPayments.createBillPayment(ctx, {
+        vendorId: vendor.id,
+        paymentDate: "2026-03-20",
+        method: "ach",
+        bankAccountId: checking.id,
+        applications: [{ billId, amount: "100" }],
+        post: true,
+      })
+    );
+    await expectError(
+      () => t.run(owner, (ctx) => bills.voidBill(ctx, { id: billId, reason: "test" })),
+      "invalid_state"
+    );
+  });
+
+  await check("void a clean bill: reversal posted, status voided", async () => {
+    const b2 = await t.run(owner, async (ctx) => {
+      const b = await bills.createBill(ctx, {
+        vendorId: vendor.id,
+        billDate: "2026-03-18",
+        lines: [{ accountId: supplies.id, amount: "50" }],
+        submit: true,
+      });
+      await bills.approveBill(ctx, { id: b.id });
+      return bills.postBill(ctx, { id: b.id });
+    });
+    const v = await t.run(owner, (ctx) => bills.voidBill(ctx, { id: b2.id, reason: "entered twice" }));
+    assertEq(v.status, "voided", "status");
+    const [orig] = await db.select().from(glJournals).where(eq(glJournals.id, b2.glJournalId!));
+    assertEq(orig.status, "reversed", "original journal");
+  });
+
+  section("Reject + edit");
+  await check("reject → rejected; saving puts it back to draft", async () => {
+    const b = await t.run(bookkeeper, (ctx) =>
+      bills.createBill(ctx, {
+        vendorId: vendor.id,
+        billDate: "2026-03-19",
+        lines: [{ accountId: supplies.id, amount: "75" }],
+        submit: true,
+      })
+    );
+    const r = await t.run(owner, (ctx) => bills.rejectBill(ctx, { id: b.id, reason: "wrong account" }));
+    assertEq(r.status, "rejected", "rejected");
+    assertEq(r.rejectionReason, "wrong account", "reason");
+    const u = await t.run(bookkeeper, (ctx) =>
+      bills.updateBill(ctx, {
+        id: b.id,
+        vendorId: vendor.id,
+        billDate: "2026-03-19",
+        lines: [{ accountId: rent.id, amount: "75" }],
+      })
+    );
+    assertEq(u.status, "draft", "after edit");
+    assertEq(u.rejectionReason, null, "reason cleared");
+  });
+
+  section("Agents");
+  const agentActor: Actor = {
+    ...t.as("accountant"),
+    kind: "agent",
+    userId: null,
+    agentId: null, // set below
+    agentName: "Test agent",
+    scopes: ["read", "write", "post"],
+    channel: "api",
+    maxPostAmount: "100",
+  };
+  await check("an agent cannot approve a bill it created", async () => {
+    const [agentRow] = await db.execute<{ id: string }>(
+      sql`INSERT INTO agents (organization_id, name, role, autonomy) VALUES (${t.org.id}, 'AP bot', 'accountant', 'post') RETURNING id`
+    );
+    agentActor.agentId = agentRow.id;
+    const b = await t.run(agentActor, (ctx) =>
+      bills.createBill(ctx, {
+        vendorId: vendor.id,
+        billDate: "2026-03-21",
+        lines: [{ accountId: supplies.id, amount: "40" }],
+        submit: true,
+      })
+    );
+    assertEq(b.createdByAgentId, agentActor.agentId, "createdByAgentId");
+    await expectError(
+      () => t.run(agentActor, (ctx) => bills.approveBill(ctx, { id: b.id })),
+      "forbidden"
+    );
+  });
+
+  await check("agent posting above its limit is left for review", async () => {
+    const b = await t.run(owner, async (ctx) => {
+      const created = await bills.createBill(ctx, {
+        vendorId: vendor.id,
+        billDate: "2026-03-22",
+        lines: [{ accountId: supplies.id, amount: "500" }],
+        submit: true,
+      });
+      return bills.approveBill(ctx, { id: created.id });
+    });
+    const err = await expectError(
+      () => t.run(agentActor, (ctx) => bills.postBill(ctx, { id: b.id })),
+      "approval_required"
+    );
+    assert(/posting limit/.test(err.message), err.message);
+    const [after] = await db.select().from(apBills).where(eq(apBills.id, b.id));
+    assertEq(after.status, "approved", "still approved");
+  });
+
+  await check("agent actions are attributed in the audit log", async () => {
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.organizationId, t.org.id), eq(auditLog.agentId, agentActor.agentId!)));
+    assert(rows.length >= 2, `expected agent audit rows, got ${rows.length}`);
+    assert(rows.every((r) => r.actorType === "agent" && r.channel === "api"), "actorType/channel");
+  });
+
+  await deleteOrgs("ap-test-");
+  await deleteOrgs("ap-other-");
+  finish();
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((e) => {
+  console.error(e);
   process.exit(1);
 });

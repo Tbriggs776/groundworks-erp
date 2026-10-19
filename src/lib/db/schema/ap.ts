@@ -12,12 +12,10 @@ import {
 } from "drizzle-orm/pg-core";
 import { apBillStatus, timestamps } from "./_shared";
 import { accounts } from "./accounts";
+import { agents } from "./agents";
 import { approvalThresholds } from "./approvals";
-import { commitmentLines } from "./commitments";
-import { costCodes } from "./cost_codes";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
-import { jobs } from "./projects";
 import { vendors } from "./parties";
 
 /**
@@ -25,15 +23,14 @@ import { vendors } from "./parties";
  *   - External vendor invoice number (what the vendor calls it)
  *   - Internal bill number (our AP-NNNNNN, from the AP number series)
  *   - A header linking to the vendor, dates, totals
- *   - Line items with account + optional job + cost code + amount
+ *   - Line items with account + amount (+ optional customer for rebilling)
  *
  * Lifecycle (enforced in server actions, audit-logged on every transition):
  *   draft → pending_approval → approved | rejected → posted → paid | voided
  *
  * On `posted`: a GL journal is created via createAndPostJournal with
  * source='ap'. Expense accounts are debited; the AP control account (2000)
- * is credited. Job + cost code on lines flow onto gl_lines and into the
- * JOB / COST_CODE dimensions.
+ * is credited.
  */
 export const apBills = pgTable(
   "ap_bills",
@@ -117,6 +114,15 @@ export const apBills = pgTable(
     description: text("description"),
     notes: text("notes"),
 
+    // Who created the document — a human or an agent (never both). Drives
+    // the review queue: agent-created drafts wait there for a human.
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
+
     ...timestamps,
   },
   (t) => [
@@ -124,15 +130,12 @@ export const apBills = pgTable(
     index("ap_bills_org_status_idx").on(t.organizationId, t.status),
     index("ap_bills_vendor_idx").on(t.organizationId, t.vendorId),
     index("ap_bills_due_idx").on(t.organizationId, t.dueDate),
+    index("ap_bills_agent_idx").on(t.organizationId, t.createdByAgentId),
   ]
 );
 
 /**
- * AP BILL LINES — each line hits one expense/asset account plus optional
- * job + cost code tags. No separate dimension table in v1; when the bill
- * posts, job.dimension_value_id and cost_code.dimension_value_id are
- * looked up and written to gl_line_dimensions so the dimension
- * infrastructure carries the tags into GL reports.
+ * AP BILL LINES — each line hits one expense/asset account.
  */
 export const apBillLines = pgTable(
   "ap_bill_lines",
@@ -151,33 +154,12 @@ export const apBillLines = pgTable(
       .references(() => accounts.id, { onDelete: "restrict" }),
     amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
 
-    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
-    costCodeId: uuid("cost_code_id").references(() => costCodes.id, {
-      onDelete: "set null",
-    }),
-
-    /**
-     * Optional link to a commitment line. When set, posting this bill
-     * line increments commitment_lines.invoiced_amount and decrements
-     * job_cost_codes.committed_amount (if the parent commitment is still
-     * issued). Voiding the bill reverses both. See lib/ap/posting.ts.
-     */
-    commitmentLineId: uuid("commitment_line_id").references(
-      () => commitmentLines.id,
-      { onDelete: "set null" }
-    ),
-
     description: text("description"),
 
     ...timestamps,
   },
   (t) => [
     uniqueIndex("ap_bill_lines_bill_line_key").on(t.billId, t.lineNumber),
-    index("ap_bill_lines_job_idx").on(t.organizationId, t.jobId),
-    index("ap_bill_lines_commitment_idx").on(
-      t.organizationId,
-      t.commitmentLineId
-    ),
   ]
 );
 
@@ -218,15 +200,6 @@ export const apBillLinesRelations = relations(apBillLines, ({ one }) => ({
   account: one(accounts, {
     fields: [apBillLines.accountId],
     references: [accounts.id],
-  }),
-  job: one(jobs, { fields: [apBillLines.jobId], references: [jobs.id] }),
-  costCode: one(costCodes, {
-    fields: [apBillLines.costCodeId],
-    references: [costCodes.id],
-  }),
-  commitmentLine: one(commitmentLines, {
-    fields: [apBillLines.commitmentLineId],
-    references: [commitmentLines.id],
   }),
 }));
 

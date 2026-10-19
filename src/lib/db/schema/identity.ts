@@ -10,17 +10,81 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { membershipRole, timestamps } from "./_shared";
+import { membershipRole, timestamps, workspaceRole } from "./_shared";
 
 /**
- * ORGANIZATION — the tenant root. Every domain row in the system carries
- * `organization_id`. Row-level security policies (to be applied in a migration)
- * will enforce tenant isolation at the DB layer as a safety net.
+ * WORKSPACE — the account a business signs up for, above its companies.
+ * One sign-in reaches every company in every workspace the person belongs
+ * to. The workspace owns the people directory, invitations, and the
+ * security policy (MFA, session timeouts, key lifetime) that applies to
+ * everyone in it.
+ */
+export const workspaces = pgTable(
+  "workspaces",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+
+    // Security policy. A person in several workspaces gets the strictest.
+    /** Every member must sign in with a second factor (TOTP). */
+    requireMfa: boolean("require_mfa").notNull().default(false),
+    /** Sign out after this many minutes without activity. */
+    sessionIdleMinutes: integer("session_idle_minutes").notNull().default(60),
+    /** Sign in again after this many hours, active or not. */
+    sessionMaxHours: integer("session_max_hours").notNull().default(24),
+    /** Longest an API key may live; null = no limit. */
+    apiKeyMaxDays: integer("api_key_max_days"),
+    /** Invitations only to these email domains; null/empty = any. */
+    allowedEmailDomains: text("allowed_email_domains").array(),
+
+    createdBy: uuid("created_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("workspaces_slug_key").on(t.slug)]
+);
+
+/**
+ * WORKSPACE MEMBER — a person in a workspace. Company access is separate:
+ * one `memberships` row per company, each with its own role.
+ */
+export const workspaceMembers = pgTable(
+  "workspace_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    role: workspaceRole("role").notNull().default("member"),
+    isActive: boolean("is_active").notNull().default(true),
+    invitedBy: uuid("invited_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("workspace_members_ws_user_key").on(t.workspaceId, t.userId),
+    index("workspace_members_user_idx").on(t.userId),
+  ]
+);
+
+/**
+ * ORGANIZATION — a company: the tenant root for the books. Every domain row
+ * carries `organization_id`, and RLS enforces tenant isolation as a safety
+ * net. Each company belongs to exactly one workspace.
  */
 export const organizations = pgTable(
   "organizations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     baseCurrency: text("base_currency").notNull().default("USD"),
@@ -42,7 +106,10 @@ export const organizations = pgTable(
     settings: jsonb("settings").notNull().default({}),
     ...timestamps,
   },
-  (t) => [uniqueIndex("organizations_slug_key").on(t.slug)]
+  (t) => [
+    uniqueIndex("organizations_slug_key").on(t.slug),
+    index("organizations_workspace_idx").on(t.workspaceId),
+  ]
 );
 
 /**
@@ -85,18 +152,26 @@ export const memberships = pgTable(
 );
 
 /**
- * INVITATION — pending invite; consumed on accept. Tokens are opaque random
- * strings; `expiresAt` should be <= 7 days. One active invite per (org, email).
+ * INVITATION — a pending invite to a workspace, consumed on accept. It
+ * carries the workspace role plus the companies to open up, each with a
+ * role. Only the SHA-256 of the token is stored. One live invite per
+ * (workspace, email).
  */
+export type InvitationGrant = {
+  organizationId: string;
+  role: (typeof membershipRole.enumValues)[number];
+};
+
 export const invitations = pgTable(
   "invitations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    organizationId: uuid("organization_id")
+    workspaceId: uuid("workspace_id")
       .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     email: text("email").notNull(),
-    role: membershipRole("role").notNull().default("viewer"),
+    workspaceRole: workspaceRole("workspace_role").notNull().default("member"),
+    grants: jsonb("grants").$type<InvitationGrant[]>().notNull().default([]),
     token: text("token").notNull(),
     invitedBy: uuid("invited_by").references(() => profiles.id, {
       onDelete: "set null",
@@ -107,13 +182,22 @@ export const invitations = pgTable(
   },
   (t) => [
     uniqueIndex("invitations_token_key").on(t.token),
-    index("invitations_org_email_idx").on(t.organizationId, t.email),
+    index("invitations_ws_email_idx").on(t.workspaceId, t.email),
   ]
 );
 
-export const organizationsRelations = relations(organizations, ({ many }) => ({
-  memberships: many(memberships),
+export const workspacesRelations = relations(workspaces, ({ many }) => ({
+  organizations: many(organizations),
+  members: many(workspaceMembers),
   invitations: many(invitations),
+}));
+
+export const organizationsRelations = relations(organizations, ({ one, many }) => ({
+  workspace: one(workspaces, {
+    fields: [organizations.workspaceId],
+    references: [workspaces.id],
+  }),
+  memberships: many(memberships),
 }));
 
 export const profilesRelations = relations(profiles, ({ many }) => ({
@@ -135,6 +219,8 @@ export const membershipsRelations = relations(memberships, ({ one }) => ({
   }),
 }));
 
+export type Workspace = typeof workspaces.$inferSelect;
+export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
 export type Organization = typeof organizations.$inferSelect;
 export type NewOrganization = typeof organizations.$inferInsert;
 export type Profile = typeof profiles.$inferSelect;

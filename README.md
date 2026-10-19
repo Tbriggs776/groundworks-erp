@@ -1,181 +1,189 @@
-# Groundworks ERP
+# Groundworks
 
-Construction ERP for middle-market contractors and subcontractors. Combines
-construction accounting (GL, job cost, AP, AR, AIA billing, payroll) with
-field-service operations (dispatch, equipment, mobile) plus CRM, BI, and
-AI layers — in one platform.
+Small-business accounting (a QuickBooks Online replacement) built for teams of
+people **and AI agents**. Real double-entry books with an immutable ledger,
+plus a first-class REST API and MCP server so Claude, Cursor, or any agent can
+do the bookkeeping, with humans approving what posts.
 
-## Status
+## What's in it
 
-**Tier 1 complete.** The full accounting core ships: multi-tenant platform,
-BC-parity GL masters, 11-validation posting engine with DB-level
-immutability, recurring / allocation / budget with daily cron, all CRUD
-screens, Trial Balance / Balance Sheet / Income Statement / GL Detail
-reports, and FX revaluation. 44 e2e checks passing across 4 suites.
+**Books**
+- Chart of accounts (QuickBooks-shaped default), classes / locations /
+  departments / projects, fiscal periods with soft and hard close
+- Journal entries: 12-check posting engine, DB-enforced immutability,
+  reversals, recurring entries, allocations, budgets, multi-currency + FX
+  revaluation
+- Reports: profit & loss, balance sheet, trial balance, GL detail, AR aging,
+  AP aging
 
-- **Tier 0 — Platform slab:** ✅
-- **Tier 1.1 — Identity hardening + onboarding:** ✅
-- **Tier 1.2 — GL masters (BC parity):** ✅
-- **Tier 1.3 — Journals + posting engine (11/11 e2e):** ✅
-- **Tier 1.4 — Recurring / allocation / budget / cron (12/12 e2e):** ✅
-- **Tier 1.5 — UI: CoA / Periods / GL / Manual JE:** ✅
-- **Tier 1.6 — UI: Dimensions / Recurring / Allocations / Budgets:** ✅
-- **Tier 1.7 — Reports: TB / BS / IS / GL Detail (13/13 e2e):** ✅
-- **Tier 1.8 — FX revaluation (8/8 e2e):** ✅
-- **Tier 2 — Master data & wedge:** 🚧 next — customers, vendors, jobs,
-  cost codes, estimating → job cost.
+**Sales**: customers, products & services, invoices (draft → open → paid),
+receive payment (explicit or auto-applied oldest first), early-pay discounts
 
-See [CLAUDE.md](./CLAUDE.md) for architecture and conventions.
+**Expenses**: vendors (1099 flags), bills with amount-tiered approval routing,
+bill payments with discounts
+
+**Workspaces: one sign-in, many companies**
+- Sign up in a minute: name, work email, company. No password; a sign-in
+  link by email (or Google / Microsoft / SAML SSO when enabled)
+- A workspace holds any number of companies, each with its own books
+- Invite people once and choose their role in each company; invites go by
+  email and work once, for that address
+- Switch companies from the top bar
+
+**Security (built for SOC 2)**
+- Two-step verification (authenticator app); a workspace can require it
+- Idle sign-out and maximum session length, set per workspace; "sign out
+  everywhere else"
+- Allowed email domains for invitations; API key lifetime limits
+- Quarterly access reviews with a frozen record of who had what
+- Workspace audit log of every sign-in and change, with IP and device,
+  exportable to CSV
+- See [docs/compliance/soc2.md](./docs/compliance/soc2.md)
+
+**People and agents**
+- Company roles: owner, admin, accountant, bookkeeper, viewer
+- **Agents**: AI teammates with their own identity, role, API keys, and an
+  autonomy level:
+  - *Read only*: look things up, run reports
+  - *Draft for review*: create anything; nothing touches the ledger until a
+    person posts it from the **review queue**
+  - *Post*: post within its role, up to a per-document limit; bigger items
+    wait for review
+- Agents can never void, manage people, or mint keys; an agent can't approve
+  a bill it created
+- Every action is in the audit trail with who (person / agent / system), which
+  API key, and which channel (UI / API / MCP)
+
+## Connect an agent
+
+1. **Settings → Agents → New agent**, pick its autonomy, then **Create key**.
+   The key (`gwk_…`) is shown once with copy-paste setup.
+2. Connect it:
+
+```bash
+# Claude Code
+claude mcp add --transport http groundworks https://YOUR-APP/api/mcp \
+  --header "Authorization: Bearer gwk_…"
+```
+
+```jsonc
+// Any MCP client config (Cursor, Claude Desktop via mcp-remote)
+{
+  "mcpServers": {
+    "groundworks": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://YOUR-APP/api/mcp",
+               "--header", "Authorization: Bearer gwk_…"]
+    }
+  }
+}
+```
+
+```bash
+# Plain REST
+curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
+```
+
+### API and MCP at a glance
+
+| | |
+|---|---|
+| MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
+| REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
+| Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
+| Tools | 61 operations: accounts, journals, customers, items, invoices, payments, vendors, bills, bill payments, reports, review queue, activity |
+| Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
+| Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
+| Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
+| Errors | `{ error: { code, message, details, requestId } }`; in MCP, `isError` results starting `Error (<code>)` |
+| Rate limit | 600 requests a minute per key (`API_RATE_LIMIT_PER_MINUTE`); over it: `429` with `Retry-After` |
+| Review | `post: true` on a create posts when allowed, otherwise keeps the draft and returns a `review` notice |
+
+The REST routes, MCP tools, and OpenAPI spec are all generated from one
+registry: `src/lib/api/operations.ts`.
 
 ## Getting started (local dev)
 
-### 1. Install
-
 ```bash
 npm install
-```
-
-### 2. Supabase project
-
-1. Create a project at [supabase.com](https://supabase.com).
-2. From **Settings → API Keys**, copy:
-   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
-   - `anon` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
-3. Click the **Connect** button (top of dashboard) → copy:
-   - **Direct connection** URI → both `DATABASE_URL` and `DATABASE_URL_MIGRATE`
-     (local dev is fine with the direct URL; production uses pooled — see below)
-
-### 3. Environment
-
-```bash
-cp .env.example .env.local
-# fill in the values, replacing [YOUR-PASSWORD]
-```
-
-### 4. Database schema
-
-```bash
-npm run db:migrate     # applies migrations in src/lib/db/migrations/
-```
-
-### 5. Supabase auth URLs
-
-In the Supabase dashboard → **Authentication → URL Configuration**:
-- **Site URL:** `http://localhost:3000`
-- **Redirect URLs:** add `http://localhost:3000/**`
-
-(Magic links won't return you to the app without this.)
-
-### 6. Run
-
-```bash
+cp .env.example .env.local     # fill in Supabase + database values
+npm run db:migrate             # apply migrations
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). You'll be redirected to
-`/auth/login`. Enter your email, click the magic link, and land on the
-dashboard (or onboarding, if it's your first login).
+You need a Supabase project for auth. In the Supabase dashboard:
 
-## Production deploy — Vercel
+- **Authentication → URL Configuration**: add `http://localhost:3000/**` to
+  the redirect URLs
+- **Authentication → Multi-Factor**: enable TOTP (authenticator apps)
+- Optional: enable Google / Azure providers and set
+  `NEXT_PUBLIC_AUTH_PROVIDERS=google,azure`; SAML SSO with
+  `NEXT_PUBLIC_AUTH_SSO=1`
 
-The app is Vercel-ready; deploy is via GitHub → Vercel auto-build.
+Open `/signup` to create your workspace and first company.
 
-### 1. Environment variables
+### Tests
 
-In Vercel → **Settings → Environment Variables** set these for
-**Production + Preview + Development**:
+The e2e suites run against any Postgres. A Supabase auth stub is included, so
+a throwaway local database works:
+
+```bash
+export TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/gw_test
+npm run test:db:reset                         # drop, recreate, migrate
+DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
+```
+
+13 suites: posting engine, recurring/allocations/budgets, reports, FX,
+parties, bills, bill payments, sales, agents + keys, REST + MCP, RLS,
+workspaces (sign-up, invites, access, policy, access reviews), and session
+security (timeouts, MFA, revocation, rate limits). CI runs them all on every
+pull request (`.github/workflows/ci.yml`).
+
+`scripts/dev/seed-demo.ts` creates a demo workspace and company and prints
+owner and agent keys for poking at the API. `scripts/dev/ui-smoke.mjs`
+drives every page and the main flows in Chromium, including two-step
+verification, against a fake Supabase Auth (see the file headers).
+
+## Production (Vercel + Supabase)
+
+Environment variables (Production + Preview):
 
 | Key | Notes |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | same as local |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | same as local |
-| `SUPABASE_SERVICE_ROLE_KEY` | same as local — mark **Sensitive** |
-| `DATABASE_URL` | **MUST be pooled URL** (see below) |
-| `NEXT_PUBLIC_APP_URL` | `https://your-project.vercel.app` |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API |
+| `SUPABASE_SERVICE_ROLE_KEY` | mark Sensitive |
+| `DATABASE_URL` | **pooled** connection (port 6543); the client uses `prepare: false` |
+| `NEXT_PUBLIC_APP_URL` | public URL; used in invite links and connection snippets |
+| `CRON_SECRET` | required for the daily job (recurring entries, auto-reversals, pruning) |
+| `RESEND_API_KEY`, `EMAIL_FROM` | invitation emails; without them, invites show a link to copy |
+| `NEXT_PUBLIC_AUTH_PROVIDERS`, `NEXT_PUBLIC_AUTH_SSO` | optional extra sign-in methods |
+| `API_RATE_LIMIT_PER_MINUTE` | optional, default 600 |
 
-**Do NOT add `DATABASE_URL_MIGRATE` to Vercel** — migrations run locally,
-not on deploy.
+Migrations run from your machine against the direct (port 5432) connection:
+`DATABASE_URL_MIGRATE=… npm run db:migrate`. Add your production URL to
+Supabase's redirect URLs. Point an uptime monitor at `/api/health`.
 
-### 2. Pooled `DATABASE_URL` (production)
+## Roadmap to QuickBooks parity
 
-Direct connections will exhaust under serverless load. In Supabase →
-**Connect → Transaction pooler** (not Direct), copy that URI:
+- **Banking**: bank feeds (Plaid), CSV/OFX import, categorization rules that
+  agents can apply, reconciliation
+- **Sales**: sales tax, estimates, sales receipts, credit memos and refunds,
+  recurring invoices, invoice PDF + email, online payments, statements
+- **Expenses**: checks / card charges without a bill, receipt capture,
+  purchase orders, 1099 reporting
+- **Inventory**: quantity on hand and COGS
+- **Reports**: cash flow statement, P&L by class / location, sales by
+  customer / item, expenses by vendor
+- **Migration**: QuickBooks Online importer (chart, customers, vendors, items,
+  open invoices and bills, opening balances)
+- **Agent platform**: OAuth for MCP (so claude.ai connectors work without
+  pasting a key), webhooks / events (`invoice.paid`…), per-type approval
+  policies, attachments
+- **Accounts**: billing and plans, SSO enforcement and SCIM, IP allowlists,
+  company data export and deletion, consolidated reports across companies
 
-```
-postgresql://postgres.YOUR-REF:PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres
-```
-
-Port **6543**, user includes the project ref. Our Drizzle client is
-configured with `prepare: false` which is required for pgBouncer
-transaction-mode pooling.
-
-### 3. Supabase auth URLs (production)
-
-Supabase → **Authentication → URL Configuration**:
-- Add your Vercel URL to **Redirect URLs**: `https://your-project.vercel.app/**`
-- Optionally set **Site URL** to your production URL
-
-Without this, magic links sent from the production app redirect to localhost
-and break.
-
-### 4. Migrations on deploy?
-
-No — migrations stay a local concern. Run `npm run db:migrate` from your
-laptop after merging schema changes to `main`, before the Vercel build
-finishes deploying. (A future iteration may move this into a CI step once
-the schema stabilizes.)
-
-## Project layout
-
-```
-src/
-  app/              — routes (App Router), auth + (app) group + onboarding
-  components/       — UI (shadcn + app-shell)
-  lib/
-    db/             — Drizzle client, schema (19 tables), migrations
-    supabase/       — browser + server + middleware clients
-    seed/           — per-org defaults (system dimensions, contractor CoA)
-    auth/           — password hashing (bcryptjs) for secondary secrets
-    auth.ts         — user/org helpers, role gating
-    money.ts        — decimal.js wrapper for currency
-    dates.ts        — fiscal-period helpers
-  proxy.ts          — Next 16 "proxy" (was middleware): session + route gating
-scripts/            — DB migrate, inspect, status scripts (tsx)
-reference/          — 63k-line visual prototype (design spec, do not edit)
-```
-
-## Commands
-
-```
-npm run dev             Next.js dev server
-npm run build           Production build
-npm run typecheck       tsc --noEmit
-npm run lint            ESLint
-
-npm run db:generate     Generate a migration from schema diffs
-npm run db:migrate      Apply pending migrations (idempotent)
-npm run db:studio       Open Drizzle Studio (DB browser) — points at DATABASE_URL
-npm run db:push         Direct schema push (dev prototyping only — bypasses migrations)
-```
-
-## Roadmap
-
-- [x] **Tier 0 — Platform:** multi-tenant, auth, audit, money/dates, shell
-- [x] **Tier 1.1 — Hardening:** RLS, signup trigger, onboarding flow
-- [x] **Tier 1.2 — GL masters:** accounts, dimensions, fiscal periods, currency
-- [x] **Tier 1.3 — Journals + posting engine** (11 validations, 11/11 e2e)
-- [x] **Tier 1.4 — Recurring / allocation / budget / daily cron** (12/12 e2e)
-- [x] **Tier 1.5 — UI: CoA / Periods / GL list + detail / Manual JE**
-- [x] **Tier 1.6 — UI: Dimensions, Recurring, Allocation, Budget**
-- [x] **Tier 1.7 — Reports: Trial Balance, GL Detail, BS, IS** (13/13 e2e)
-- [x] **Tier 1.8 — FX revaluation** (8/8 e2e)
-- [ ] **Tier 2 — Master data:** customers, vendors, employees, cost codes, jobs
-- [ ] **Tier 3 — Preconstruction → Job Cost wedge:** estimating, commitments,
-  change orders, AP → job cost
-- [ ] **Tier 4 — Billing side:** AR, AIA/SOV, retainage, WIP reporting
-- [ ] **Tier 5+ —** payroll, dispatch, equipment, CRM, BI, mobile PWA, AI
+See [CLAUDE.md](./CLAUDE.md) for architecture and conventions.
 
 ## License
 
-Proprietary — all rights reserved.
+Proprietary. All rights reserved.

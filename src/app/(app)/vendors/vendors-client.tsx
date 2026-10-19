@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import { Plus, Search } from "lucide-react";
 import type { Vendor } from "@/lib/db/schema";
+import type { VendorRow } from "@/lib/parties/service";
+import { formatMoney, money } from "@/lib/money";
 import { createVendor, updateVendor, type VendorInput } from "./actions";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -34,7 +36,13 @@ const TYPE_LABEL: Record<string, string> = {
   other: "Other",
 };
 
-export function VendorsClient({ vendors }: { vendors: Vendor[] }) {
+export function VendorsClient({
+  vendors,
+  truncated,
+}: {
+  vendors: VendorRow[];
+  truncated: boolean;
+}) {
   const [q, setQ] = useState("");
   const [only1099, setOnly1099] = useState(false);
   const [open, setOpen] = useState(false);
@@ -48,7 +56,8 @@ export function VendorsClient({ vendors }: { vendors: Vendor[] }) {
       return (
         v.code.toLowerCase().includes(s) ||
         v.name.toLowerCase().includes(s) ||
-        (v.displayName ?? "").toLowerCase().includes(s)
+        (v.displayName ?? "").toLowerCase().includes(s) ||
+        (v.email ?? "").toLowerCase().includes(s)
       );
     });
   }, [vendors, q, only1099]);
@@ -85,13 +94,14 @@ export function VendorsClient({ vendors }: { vendors: Vendor[] }) {
               <th className="text-left font-medium px-3 py-2">Name</th>
               <th className="text-left font-medium px-3 py-2 w-36">Type</th>
               <th className="text-right font-medium px-3 py-2 w-24">Terms</th>
+              <th className="text-right font-medium px-3 py-2 w-32">Open balance</th>
               <th className="text-left font-medium px-3 py-2 w-40">Flags</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-10 text-center text-xs text-muted-foreground">
+                <td colSpan={6} className="px-3 py-10 text-center text-xs text-muted-foreground">
                   No vendors match.
                 </td>
               </tr>
@@ -105,13 +115,24 @@ export function VendorsClient({ vendors }: { vendors: Vendor[] }) {
                 <td className="px-3 py-2 font-mono text-xs text-primary">{v.code}</td>
                 <td className="px-3 py-2">
                   <div>{v.name}</div>
-                  {v.displayName && <div className="text-[11px] text-muted-foreground">{v.displayName}</div>}
+                  {(v.displayName || v.email) && (
+                    <div className="text-[11px] text-muted-foreground">
+                      {[v.displayName, v.email].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-xs text-muted-foreground">
                   {TYPE_LABEL[v.vendorType] ?? v.vendorType}
                 </td>
                 <td className="px-3 py-2 text-right text-xs text-muted-foreground">
                   Net {v.defaultPaymentTermsDays}
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-xs">
+                  {money(v.openBalance).isZero() ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    formatMoney(v.openBalance, { currency: v.currency })
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex gap-1 flex-wrap">
@@ -127,7 +148,8 @@ export function VendorsClient({ vendors }: { vendors: Vendor[] }) {
       </div>
 
       <div className="text-[11px] text-muted-foreground">
-        {filtered.length} of {vendors.length} vendors.
+        {filtered.length} of {vendors.length} vendors
+        {truncated && " (showing the first 200 — search to narrow)"}.
       </div>
 
       <VendorForm open={open} onOpenChange={setOpen} initial={editing} />
@@ -151,6 +173,8 @@ function VendorForm({
   const [code, setCode] = useState(initial?.code ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
+  const [email, setEmail] = useState(initial?.email ?? "");
+  const [phone, setPhone] = useState(initial?.phone ?? "");
   const [vendorType, setVendorType] = useState<VendorInput["vendorType"]>(
     (initial?.vendorType ?? "supplier") as VendorInput["vendorType"]
   );
@@ -166,9 +190,11 @@ function VendorForm({
     setErr(null);
     start(async () => {
       const payload: VendorInput = {
-        code: code.trim(),
+        code: code.trim() || undefined,
         name: name.trim(),
         displayName: displayName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
         vendorType,
         defaultPaymentTermsDays: Number(terms) || 30,
         currency: currency.toUpperCase(),
@@ -177,8 +203,6 @@ function VendorForm({
         w9OnFile,
         notes,
         isActive,
-        addresses: [],
-        contacts: [],
       };
       const r = isEdit
         ? await updateVendor(initial!.id, payload)
@@ -203,16 +227,26 @@ function VendorForm({
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Code</Label>
-              <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="VEND-001" />
+              <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="auto" />
             </div>
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Name</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ABC Concrete Supply" autoFocus />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ABC Office Supply" autoFocus />
             </div>
           </div>
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Display name</Label>
-            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="ABC Concrete" />
+            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="ABC Supply" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Email</Label>
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="billing@vendor.com" />
+            </div>
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Phone</Label>
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
@@ -274,7 +308,7 @@ function VendorForm({
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={pending || !code.trim() || !name.trim()} onClick={submit}>
+          <Button disabled={pending || !name.trim()} onClick={submit}>
             {pending ? "Saving…" : isEdit ? "Save changes" : "Create vendor"}
           </Button>
         </DialogFooter>

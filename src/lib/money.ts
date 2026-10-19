@@ -5,7 +5,7 @@ import Decimal from "decimal.js";
  * module — never do math with JavaScript `number` on currency values.
  *
  *   - DB column: numeric(20, 4)       — up to 4 decimal places (unit prices
- *                                       on construction line items commonly
+ *                                       on line items (qty × rate) commonly
  *                                       need 3–4)
  *   - Display precision: 2            — standard currency formatting
  *   - Internal arithmetic: Decimal    — avoids binary-float errors

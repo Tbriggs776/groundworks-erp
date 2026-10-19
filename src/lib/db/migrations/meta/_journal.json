@@ -120,6 +120,41 @@
       "when": 1777663604387,
       "tag": "0016_mysterious_frank_castle",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792353953568,
+      "tag": "0017_strip_construction",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792354567994,
+      "tag": "0018_agents_and_api_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792354589826,
+      "tag": "0019_rls_everywhere",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792355554231,
+      "tag": "0020_sales_ar",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792358899191,
+      "tag": "0021_workspaces_and_security",
+      "breakpoints": true
     }
   ]
 }

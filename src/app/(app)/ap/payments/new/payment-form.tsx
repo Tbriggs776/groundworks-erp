@@ -112,7 +112,7 @@ export function PaymentForm({
         memo,
         applications: selected.map((a) => ({
           billId: a.billId,
-          appliedAmount: a.appliedAmount || "0",
+          amount: a.appliedAmount || "0",
           discountAmount: a.discountAmount || "0",
         })),
       };

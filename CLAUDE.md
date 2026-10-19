@@ -1,102 +1,181 @@
 @AGENTS.md
 
-# Groundworks ERP — Project Conventions
+# Groundworks — Project Conventions
 
-A construction ERP for middle-market contractors and subcontractors.
-Positioning: Foundation Software + ServiceTitan replacement. Tyler is the
-domain expert (accounting + construction + software). Defer on domain
-semantics; focus on architecture, correctness, and execution.
+Small-business accounting (a QuickBooks Online replacement) for teams of
+people and AI agents. Everything a person can do in the UI, an agent can do
+through the REST API or MCP server, under its own identity, with autonomy
+limits and a human review queue. A business signs up for a **workspace**
+that holds one or more **companies** (`organizations`); one sign-in reaches
+all of them. Security controls are built for SOC 2 (see
+`docs/compliance/soc2.md`). Tyler is the domain expert (accounting +
+software). Defer on accounting semantics; focus on architecture, correctness,
+and execution.
 
-A 63k-line visual prototype lives at `reference/prototype.jsx`. Treat it as a
-UX/design spec — copy look-and-feel, rebuild every module cleanly.
+`reference/prototype.jsx` is a 63k-line visual prototype from the earlier
+construction-ERP direction. Use it for look-and-feel only.
 
 ## Stack
 
-- **Next.js 16 (App Router) + React 19** — Server Components by default
+- **Next.js 16 (App Router) + React 19**: Server Components by default
 - **TypeScript strict**
-- **Tailwind v4 + shadcn/ui (`base-nova`)** — design tokens in `src/app/globals.css`
-- **Supabase** — Postgres (managed), Auth (magic link), Storage, RLS
-- **Drizzle ORM** — schema in `src/lib/db/schema/`, snake_case
+- **Tailwind v4 + shadcn/ui (`base-nova`)**: design tokens in `src/app/globals.css`
+- **Supabase**: Postgres (managed), Auth (magic link), RLS
+- **Drizzle ORM**: schema in `src/lib/db/schema/`, snake_case
+- **zod 4** for every input; the same schemas generate the API's JSON Schema
 - **decimal.js** for money, **date-fns** for dates
 
 ## Architecture rules
 
-1. **Multi-tenant.** Every domain row carries `organization_id`. RLS policies
-   enforce tenant isolation as a safety net. App code still filters by org.
-2. **Money is Decimal, never `number`.** DB column = `numeric(20,4)`. Use
-   `money()`, `sumMoney()`, `toDbMoney()`, `formatMoney()` from `src/lib/money.ts`.
-3. **Period math goes through `src/lib/dates.ts`.** Fiscal year start is
-   per-organization; never hardcode calendar year.
-4. **Audit log is append-only.** Every mutating action emits a row in
-   `audit_log`. Never update or delete audit rows.
-5. **GL (when built) is append-only too.** Corrections happen via reversing
-   entries, not mutations. Period locks prevent posting to closed periods.
-6. **Auth = Supabase.** The Next.js 16 **proxy** (`src/proxy.ts`, formerly
-   `middleware.ts` in older Next versions) refreshes session cookies on every
-   request. Authenticated routes live under `(app)/`; the `(app)/layout.tsx`
-   double-checks the session server-side.
+1. **Multi-tenant, two levels.** A workspace (`workspaces`) owns companies
+   (`organizations.workspace_id`), people (`workspace_members`, role owner /
+   admin / member), invitations, and the security policy. Company access is
+   a separate `memberships` row per company with its own role. Removing a
+   workspace seat closes every company in it. Every domain row carries
+   `organization_id`. Services
+   always filter by `ctx.actor.organizationId`, and never trust an id from a
+   caller: look it up scoped to the org (`requireLineAccounts`,
+   `requirePostingAccount`, `loadX(ctx, id)`). The posting engine's v0 check
+   re-verifies tenancy of every account / dimension / code on a journal.
+2. **RLS on every table.** Supabase's REST API exposes `public` with the
+   anon key. Every new table needs `ENABLE ROW LEVEL SECURITY` plus a
+   member-only SELECT policy in its migration (secrets: no policy at all).
+   `scripts/test-rls.ts` fails if any table lacks RLS.
+3. **Money is Decimal, never `number`.** DB = `numeric(20,4)`. Use `money()`,
+   `sumMoney()`, `toDbMoney()`, `formatMoney()` from `src/lib/money.ts`.
+   Inputs use the `amount` schemas in `src/lib/schemas.ts`.
+4. **Period math goes through `src/lib/dates.ts`.** Fiscal year start is
+   per-organization.
+5. **Audit log is append-only.** Every mutation writes a row with
+   `...auditFields(ctx.actor)` (who: user / agent / system, which key, which
+   channel, IP, user agent) or `...workspaceAuditFields(ctx.actor)` for
+   workspace events. Rows carry `workspace_id` always (a trigger fills it
+   from `organization_id`) and `organization_id` for company events. Never
+   update or delete audit rows.
+6. **The ledger is append-only.** Posted journals are immutable (DB
+   triggers); corrections are reversals; voids reverse. Balances count
+   journals in `LEDGER_STATUSES` (`posted` + `reversed`, see
+   `src/lib/gl/ledger.ts`), never `status = 'posted'` alone, or reversals
+   double-count.
+7. **Subledgers post inside the caller's transaction.** Pass `ctx.tx` to
+   `createAndPostJournal(input, tx)` / `reverseJournal(id, opts, tx)`.
+8. **Auth.** Humans: Supabase session (verified with `getClaims`), refreshed
+   by `src/proxy.ts` (which skips `/api/*`). `requireUser` then applies
+   session policy on every request (`src/lib/security/sessions.ts`): not
+   revoked, idle and max-age limits, MFA (aal2) when the person enrolled a
+   factor or any of their workspaces requires it; the strictest workspace
+   wins. Only `/auth/*` pages may use `getUser` without `requireUser`.
+   Machines: API keys (`gwk_…`, SHA-256 stored) resolved per request by
+   `authenticateApiKey`, which also checks the workspace seat and spends
+   the per-key rate limit. Active company = `gw_org` cookie, active
+   workspace = `gw_ws`; both re-validated every request.
+9. **Security headers.** The proxy sets a per-request CSP with a nonce
+   (`src/lib/security/headers.ts`); no inline `<script>`. Static headers
+   (HSTS, frame denial, nosniff) come from `next.config.ts`.
+
+## The service layer (how everything works)
+
+```
+UI server action ─┐
+REST /api/v1  ────┼─> runAs(actor, ctx => service(ctx, input)) ─> Drizzle
+MCP /api/mcp  ────┘        one transaction per call; throw = roll back
+```
+
+- **Actor** (`src/lib/actor.ts`): who is acting, role, scopes
+  (`read`/`write`/`post`/`admin`), channel, agent posting limit.
+- **Service functions** take `(ctx: Ctx, input)`, parse input with their
+  exported zod schema, call `requirePermission(ctx.actor, scope, minRole,
+  "verb phrase")` first, then `requirePostingWithinLimit` before posting.
+  They throw `AppError(code, message)` for anything a caller should see.
+- **Server actions** are thin: `serviceAction(minRole, ctx => svc(ctx, input))`
+  then `revalidatePath`. Never put business logic in an action.
+- **Operation registry** (`src/lib/api/operations.ts`): one entry per
+  operation (name, method, path, scope, zod input, service call). REST
+  routes, MCP tools, and OpenAPI are generated from it. Descriptions are
+  read by AI agents: say what it does, when to use it, what to watch for.
+- **Creates with `post: true`** go through `postOrQueueForReview`: post if
+  allowed, otherwise keep the draft and return a `review` notice.
+- **Workspace services** (`src/lib/workspace/service.ts`: companies, people,
+  company access, invitations, security policy, access reviews, audit log)
+  take a `WsCtx` built from a `WorkspaceActor` (`runAsWorkspace`,
+  `requireWorkspaceRole`). Humans only: agents never act at workspace
+  level. UI actions use `workspaceAction(minRole, fn)`.
 
 ## Directory layout
 
 ```
 src/
   app/
-    (app)/          → authenticated routes (dashboard, gl, jobs, ap, …)
-    auth/           → login + OAuth callback
-    globals.css     → design tokens + shadcn theme
-    layout.tsx      → root (fonts, dark class)
-  components/
-    ui/             → shadcn primitives
-    app-shell/      → sidebar, topbar, shell wrapper
+    (app)/            authenticated UI: dashboard, ar/, ap/, items, gl,
+                      reports/, review, activity, settings/{agents,api-keys},
+                      workspace/{people,security,access-review,audit,companies},
+                      account/security (own MFA + sessions)
+    api/v1/[...path]  REST (generated)        api/mcp  MCP server
+    api/cron/daily    recurring, auto-reversal, pruning   api/health  uptime
+    signup, onboarding/{,team}   sign-up: workspace + first company, invites
+    invite/[token]    accept an invitation
+    auth/             login, callback, mfa (TOTP step), signout (route)
+  components/         ui/ (shadcn), app-shell/, shared badges + key reveal
   lib/
-    db/
-      client.ts     → Drizzle client (pooled connection)
-      schema/       → table definitions, one file per concern
-    supabase/       → browser + server + middleware clients
-    money.ts
-    dates.ts
-    utils.ts        → shadcn cn()
-  proxy.ts          → Next 16 proxy: Supabase session refresh + route gating
-reference/
-  prototype.jsx     → 63k-line design reference (do not edit)
-drizzle.config.ts
-.env.example
+    actor.ts action.ts errors.ts schemas.ts audit.ts audit-query.ts
+    review.ts review-policy.ts email.ts (Resend; no-op when unset)
+    workspace/        workspace service + invite-and-email
+    security/         sessions (policy, timeouts, revocation), mfa, headers
+    api/              registry, REST, MCP, OpenAPI, executor (dry run + idempotency)
+    agents/           key generation, authentication, agent + key service
+    ar/ ap/ gl/ parties/ reports/   domain services
+    db/schema/ db/migrations/   seed/   supabase/   ui/ (server-only page helpers)
+scripts/
+  test-*.ts           e2e suites (lib/harness.ts for shared setup)
+  dev/                test DB reset + Supabase stub, e2e runner, demo seed,
+                      UI smoke + fake Supabase Auth (incl. TOTP)
+.github/              CI (typecheck, lint, build, e2e, audit), Dependabot, CODEOWNERS
+docs/compliance/      SOC 2 control map and checklist
 ```
 
-## Adding a domain module (pattern)
+## Adding a domain feature (pattern)
 
-1. **Schema.** New file in `src/lib/db/schema/<concern>.ts`. Every table has
-   `organization_id` FK, `...timestamps`. Export types (`$inferSelect`).
-   Re-export from `src/lib/db/schema/index.ts`.
-2. **Migration.** `npm run db:generate` → review SQL → commit.
-3. **Routes.** Under `src/app/(app)/<module>/…` — Server Components by
-   default. Client components only for interactive UI.
-4. **Queries.** Server-side via the Drizzle `db` client, always filtering
-   `where eq(table.organizationId, orgId)`.
-5. **Mutations.** Server actions (`"use server"`) or route handlers. Emit an
-   `audit_log` row on every state change.
-6. **Nav.** Add the route to `src/components/app-shell/sidebar.tsx`; remove
-   the `soon` flag when it's usable.
+1. **Schema** in `src/lib/db/schema/<concern>.ts` with `organization_id`,
+   `...timestamps`, and (for documents) `createdBy` / `createdByAgentId`.
+   Re-export from `index.ts`.
+2. **Migration**: `npm run db:generate`, review the SQL, append RLS
+   (`ENABLE ROW LEVEL SECURITY` + `<table>_select_member` policy).
+3. **Service** in `src/lib/<domain>/`: zod schemas + `(ctx, input)` functions
+   with permission checks and audit rows.
+4. **Registry**: add operations to `src/lib/api/operations.ts`; REST, MCP,
+   and OpenAPI pick them up.
+5. **UI**: pages call services via `runAs(await requireActor(), …)`; actions
+   via `serviceAction`. Add nav to `src/components/app-shell/sidebar.tsx`.
+6. **Tests**: an e2e suite in `scripts/test-<domain>.ts` using
+   `scripts/lib/harness.ts`. Exercise the role / scope / agent rules too.
 
 ## Conventions
 
-- Server Components by default. `"use client"` only when you need state,
-  effects, or browser APIs.
-- No ORM abstractions on top of Drizzle. Write SQL-shaped queries; reports
-  will want raw SQL anyway.
-- No DTOs. Use Drizzle-inferred types end-to-end.
-- Don't `any`. Don't `@ts-ignore`.
-- Error handling at boundaries only — trust internal code.
-- Match existing code style; don't invent new patterns without reason.
+- Server Components by default; `"use client"` only for state, effects, or
+  browser APIs.
+- No ORM abstractions on top of Drizzle; SQL-shaped queries. In correlated
+  subqueries name the outer table literally (`"customers"."id"`): Drizzle
+  renders single-table selects unqualified and `${table.id}` silently binds
+  to the inner table.
+- Use `flag` (not `z.coerce.boolean`, where "false" is true) for booleans
+  that arrive as query strings; `optionalText` leaves absent fields
+  `undefined` so PATCHes don't wipe them.
+- `"use server"` files export only async functions and type *declarations*.
+  Never `export type { X }` re-exports (Next turns them into runtime
+  references); ESLint enforces this.
+- No DTOs: Drizzle-inferred types end-to-end. Don't `any`. Don't `@ts-ignore`.
+- Error handling at boundaries only (`toAppError`).
+- Never point a `<Link>` at a route handler with side effects (exports,
+  sign-out): Link prefetches. Use a plain `<a download>` or a POST form.
+- Test fixtures that create companies need a workspace:
+  `scripts/lib/workspace.ts` (`testWorkspace`, `deleteFixtures`).
 
 ## Commands
 
 ```
-npm run dev             # Next.js dev server
-npm run build           # production build
-npm run typecheck       # tsc --noEmit
-npm run lint            # eslint
-npm run db:generate     # drizzle: generate migration from schema diff
-npm run db:push         # drizzle: push schema directly (dev only)
-npm run db:studio       # drizzle studio (DB browser)
+npm run dev / build / typecheck / lint
+npm run db:generate     drizzle: migration from schema diff
+npm run db:migrate      apply migrations (DATABASE_URL_MIGRATE or DATABASE_URL)
+npm run test:db:reset   recreate TEST_DATABASE_URL with the Supabase stub + migrations
+npm run test:e2e        run every scripts/test-*.ts against DATABASE_URL
 ```

@@ -1,122 +1,36 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { z } from "zod";
+import { ACTIVE_ORG_COOKIE, ACTIVE_WORKSPACE_COOKIE, getRequestMeta, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { memberships, organizations, profiles } from "@/lib/db/schema";
-import { writeAudit } from "@/lib/audit";
-import { requireUser } from "@/lib/auth";
-import { seedOrganizationDefaults } from "@/lib/seed/org-defaults";
-import { randomSuffix, slugify } from "@/lib/slug";
+import { companyFields, formError, type FormState } from "@/lib/ui/form-state";
+import { createWorkspace } from "@/lib/workspace/service";
 
-const CreateOrgSchema = z.object({
-  name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
-  fiscalYearStartMonth: z.coerce.number().int().min(1).max(12),
-  seedContractorCoa: z
-    .union([z.literal("on"), z.literal("off"), z.null(), z.undefined()])
-    .transform((v) => v === "on"),
-});
-
-export type CreateOrgState =
-  | { status: "idle" }
-  | { status: "error"; message: string; fieldErrors?: Record<string, string[]> };
+const COOKIE = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+  path: "/",
+  maxAge: 60 * 60 * 24 * 365,
+};
 
 /**
- * Create the user's first organization, membership (owner), org defaults
- * (system dimensions, source codes, number series, optional CoA template),
- * and audit row — atomically. Redirects to /dashboard on success.
+ * Sign-up step 1: create the workspace and its first company (the user
+ * owns both), make them active, then go invite the team.
  */
-export async function createOrganization(
-  _prev: CreateOrgState,
-  formData: FormData
-): Promise<CreateOrgState> {
+export async function startWorkspace(_prev: FormState, data: FormData): Promise<FormState> {
   const user = await requireUser();
-
-  const parsed = CreateOrgSchema.safeParse({
-    name: formData.get("name"),
-    fiscalYearStartMonth: formData.get("fiscalYearStartMonth"),
-    seedContractorCoa: formData.get("seedContractorCoa"),
-  });
-  if (!parsed.success) {
-    return {
-      status: "error",
-      message: "Please fix the errors below.",
-      fieldErrors: parsed.error.flatten().fieldErrors,
-    };
-  }
-
-  const { name, fiscalYearStartMonth, seedContractorCoa } = parsed.data;
-  const baseSlug = slugify(name) || "org";
-
+  const meta = await getRequestMeta();
+  let ids: { workspaceId: string; organizationId: string };
   try {
-    await db.transaction(async (tx) => {
-      // Defensive profile insert — the signup trigger should have created
-      // this row already, but keep the onboarding atomic in case of race.
-      await tx
-        .insert(profiles)
-        .values({ id: user.id, email: user.email })
-        .onConflictDoNothing();
-
-      // Retry on slug collision.
-      let orgId: string | undefined;
-      let slug = baseSlug;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        try {
-          const [row] = await tx
-            .insert(organizations)
-            .values({ name, slug, fiscalYearStartMonth })
-            .returning({ id: organizations.id });
-          orgId = row.id;
-          break;
-        } catch (err) {
-          if ((err as { code?: string }).code === "23505") {
-            slug = `${baseSlug}-${randomSuffix()}`;
-            continue;
-          }
-          throw err;
-        }
-      }
-      if (!orgId) {
-        throw new Error(
-          "Could not assign a unique slug for the organization."
-        );
-      }
-
-      await tx.insert(memberships).values({
-        organizationId: orgId,
-        userId: user.id,
-        role: "owner",
-      });
-
-      await seedOrganizationDefaults(tx, orgId, {
-        includeContractorCoa: seedContractorCoa,
-      });
-
-      await writeAudit(
-        {
-          organizationId: orgId,
-          actorId: user.id,
-          event: "organization.created",
-          entityType: "organization",
-          entityId: orgId,
-          metadata: {
-            name,
-            slug,
-            fiscalYearStartMonth,
-            seededCoa: seedContractorCoa,
-          },
-        },
-        tx
-      );
-    });
+    ids = await db.transaction((tx) => createWorkspace(tx, user, companyFields(data), meta));
   } catch (err) {
-    console.error("[onboarding] createOrganization failed:", err);
-    return {
-      status: "error",
-      message:
-        "We couldn't create your organization. Try again in a moment — if it keeps failing, contact support.",
-    };
+    console.error("[onboarding] createWorkspace failed:", err);
+    return formError(err);
   }
-
-  redirect("/dashboard");
+  const jar = await cookies();
+  jar.set(ACTIVE_WORKSPACE_COOKIE, ids.workspaceId, COOKIE);
+  jar.set(ACTIVE_ORG_COOKIE, ids.organizationId, COOKIE);
+  redirect("/onboarding/team");
 }

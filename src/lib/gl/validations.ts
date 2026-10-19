@@ -13,6 +13,7 @@ import {
   postingDateRestrictions,
 } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
+import { AppError } from "@/lib/errors";
 import { money, sumMoney } from "@/lib/money";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -50,6 +51,90 @@ export async function v1JournalIsDraft(
       ok: false,
       code: "journal_not_draft",
       message: `Journal is "${j.status}", expected draft.`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * 0. Tenant integrity — every account, dimension, dimension value, source /
+ *    reason code, and reversal target referenced by the journal belongs to the journal's
+ *    organization, and every dimension value belongs to the dimension it is
+ *    filed under. IDs arrive from API callers and agents, so never assume.
+ *    Failures read as "not found" so foreign IDs aren't confirmed to exist.
+ */
+export async function v0TenantIntegrity(
+  tx: Tx,
+  journalId: string
+): Promise<ValidationResult> {
+  const [row] = await tx.execute<{
+    foreign_accounts: number;
+    foreign_dimensions: number;
+    foreign_reversal: number;
+    foreign_codes: number;
+  }>(sql`
+    WITH j AS (
+      SELECT id, organization_id, reverses_journal_id, source_code_id, reason_code_id
+        FROM public.gl_journals WHERE id = ${journalId}
+    )
+    SELECT
+      (SELECT count(*)::int
+         FROM public.gl_lines l
+         JOIN j ON j.id = l.journal_id
+         LEFT JOIN public.accounts a ON a.id = l.account_id
+        WHERE a.id IS NULL
+           OR a.organization_id <> j.organization_id
+           OR l.organization_id <> j.organization_id) AS foreign_accounts,
+      (SELECT count(*)::int
+         FROM public.gl_line_dimensions d
+         JOIN public.gl_lines l ON l.id = d.line_id
+         JOIN j ON j.id = l.journal_id
+         LEFT JOIN public.dimensions dm ON dm.id = d.dimension_id
+         LEFT JOIN public.dimension_values v ON v.id = d.value_id
+        WHERE dm.organization_id IS DISTINCT FROM j.organization_id
+           OR v.organization_id IS DISTINCT FROM j.organization_id
+           OR v.dimension_id IS DISTINCT FROM d.dimension_id) AS foreign_dimensions,
+      (SELECT count(*)::int
+         FROM j
+         JOIN public.gl_journals o ON o.id = j.reverses_journal_id
+        WHERE o.organization_id <> j.organization_id) AS foreign_reversal,
+      (SELECT count(*)::int
+         FROM j
+         LEFT JOIN public.source_codes sc ON sc.id = j.source_code_id
+         LEFT JOIN public.reason_codes rc ON rc.id = j.reason_code_id
+        WHERE sc.organization_id IS DISTINCT FROM j.organization_id
+           OR (j.reason_code_id IS NOT NULL
+               AND rc.organization_id IS DISTINCT FROM j.organization_id)) AS foreign_codes
+  `);
+  if (!row) {
+    return { ok: false, code: "journal_not_found", message: "Journal not found." };
+  }
+  if (row.foreign_accounts > 0) {
+    return {
+      ok: false,
+      code: "account_missing",
+      message: "A line references an account that does not exist in this organization.",
+    };
+  }
+  if (row.foreign_dimensions > 0) {
+    return {
+      ok: false,
+      code: "dimension_value_missing",
+      message: "A line references a dimension value that does not exist in this organization.",
+    };
+  }
+  if (row.foreign_codes > 0) {
+    return {
+      ok: false,
+      code: "source_code_missing",
+      message: "Source or reason code does not exist in this organization.",
+    };
+  }
+  if (row.foreign_reversal > 0) {
+    return {
+      ok: false,
+      code: "reversal_target_missing",
+      message: "Reversal target journal not found.",
     };
   }
   return { ok: true };
@@ -615,7 +700,8 @@ export async function v11ReversalIntegrity(
 }
 
 // ---------------------------------------------------------------------------
-// Orchestrator — runs all 11 in order, short-circuits on first failure.
+// Orchestrator — runs tenant integrity + all 11 in order, short-circuits on
+// first failure.
 // ---------------------------------------------------------------------------
 
 export type PostValidationOpts = {
@@ -630,6 +716,8 @@ export async function validateJournalForPost(
   journalId: string,
   opts: PostValidationOpts
 ): Promise<ValidationResult & { needsOverride?: boolean }> {
+  const r0 = await v0TenantIntegrity(tx, journalId);
+  if (!r0.ok) return r0;
   const r1 = await v1JournalIsDraft(tx, journalId);
   if (!r1.ok) return r1;
   const r2 = await v2AccountsActive(tx, journalId);
@@ -685,8 +773,10 @@ export async function resolvePeriodId(
     )
     .limit(1);
   if (!row) {
-    throw new Error(
-      `No fiscal period covers ${journalDate}. Generate the fiscal year first.`
+    throw new AppError(
+      "invalid_state",
+      `No fiscal period covers ${journalDate}. Generate that fiscal year under Period Close first.`,
+      { date: journalDate }
     );
   }
   return row.id;

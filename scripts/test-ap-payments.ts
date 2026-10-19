@@ -1,396 +1,233 @@
 /**
- * End-to-end verification of Tier 2.2b — AP payments against posted bills,
- * including early-pay discount treatment, bill paid-status recompute, and
- * void reversal.
+ * End-to-end: bill payments through the service layer — partial payment,
+ * early-pay discount treatment, paid-status recompute, over-application
+ * guards (at create AND at post), and void.
  *
  *   npx tsx scripts/test-ap-payments.ts
  */
-import dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
-dotenv.config({ path: ".env" });
-
-import { and, eq, like, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
-import {
-  accounts,
-  apBillLines,
-  apBills,
-  apPaymentApplications,
-  apPayments,
-  glLines,
-  memberships,
-  organizations,
-  profiles,
-  sourceCodes,
-  vendors,
-} from "../src/lib/db/schema";
-import { generateFiscalYear } from "../src/lib/gl/fiscal-calendar";
-import { createAndPostJournal } from "../src/lib/gl/posting";
-import { seedOrganizationDefaults } from "../src/lib/seed/org-defaults";
-import {
-  postPaymentToGl,
-  recomputeBillPaymentStatus,
-  voidPaymentFromGl,
-} from "../src/lib/ap/payments";
-import { postBillToGl } from "../src/lib/ap/posting";
+import { apBills, glJournals, glLines, vendors } from "../src/lib/db/schema";
+import * as bills from "../src/lib/ap/bills";
+import * as billPayments from "../src/lib/ap/bill-payments";
 import { money } from "../src/lib/money";
-
-const PASS = "\x1b[32m✓\x1b[0m";
-const FAIL = "\x1b[31m✗\x1b[0m";
-let failed = 0;
-
-async function check(name: string, fn: () => Promise<void>) {
-  try {
-    await fn();
-    console.log(`  ${PASS} ${name}`);
-  } catch (e) {
-    failed++;
-    console.log(`  ${FAIL} ${name}`);
-    console.log(`     ${(e as Error).message}`);
-  }
-}
+import {
+  account,
+  assert,
+  assertEq,
+  check,
+  createTestOrg,
+  deleteOrgs,
+  expectError,
+  finish,
+  section,
+} from "./lib/harness";
 
 async function main() {
-  const testSlug = `ap-pay-test-${Date.now()}`;
+  const t = await createTestOrg("appay-test-");
+  console.log(`\nTest org: ${t.org.slug}`);
+  const owner = t.as("owner");
 
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
-    await tx
-      .delete(organizations)
-      .where(like(organizations.slug, "ap-pay-test-%"));
+  const [vendor] = await db
+    .insert(vendors)
+    .values({ organizationId: t.org.id, code: "V-1", name: "Lumber Co" })
+    .returning();
+  const [vendor2] = await db
+    .insert(vendors)
+    .values({ organizationId: t.org.id, code: "V-2", name: "Other Co" })
+    .returning();
+
+  const cash = account(t, "1010");
+  const materials = account(t, "5100");
+  const apControl = account(t, "2000");
+  const discounts = account(t, "4940");
+
+  const linesOf = async (journalId: string) =>
+    db.select().from(glLines).where(eq(glLines.journalId, journalId));
+  const billStatus = async (id: string) =>
+    (await db.select().from(apBills).where(eq(apBills.id, id)))[0].status;
+
+  let billId = "";
+  section("Setup");
+  await check("post bill $1000 (Dr Materials / Cr AP)", async () => {
+    const b = await t.run(owner, async (ctx) => {
+      const created = await bills.createBill(ctx, {
+        vendorId: vendor.id,
+        billDate: "2026-03-01",
+        lines: [{ accountId: materials.id, amount: "1000" }],
+        submit: true,
+      });
+      await bills.approveBill(ctx, { id: created.id });
+      return bills.postBill(ctx, { id: created.id });
+    });
+    billId = b.id;
+    assertEq(b.status, "posted", "status");
   });
 
-  const [actor] = await db.select().from(profiles).limit(1);
-  if (!actor) throw new Error("No profiles. Log in first.");
-
-  const fixtures = await db.transaction(async (tx) => {
-    const [org] = await tx
-      .insert(organizations)
-      .values({ name: "AP Pay Test", slug: testSlug, baseCurrency: "USD" })
-      .returning();
-    await tx.insert(memberships).values({
-      organizationId: org.id,
-      userId: actor.id,
-      role: "owner",
-    });
-    await seedOrganizationDefaults(tx, org.id, {
-      includeContractorCoa: true,
-      includeCsiCostCodes: false,
-    });
-    await generateFiscalYear(tx, {
-      organizationId: org.id,
-      startDate: "2026-01-01",
-      yearLabel: "FY2026",
-    });
-
-    const [vendor] = await tx
-      .insert(vendors)
-      .values({
-        organizationId: org.id,
-        code: "V-001",
-        name: "ABC Supply",
-        vendorType: "supplier",
+  section("Partial payment");
+  let firstPaymentId = "";
+  await check("create + post $400: Dr AP 400 / Cr Bank 400", async () => {
+    const p = await t.run(owner, (ctx) =>
+      billPayments.createBillPayment(ctx, {
+        vendorId: vendor.id,
+        paymentDate: "2026-03-10",
+        method: "check",
+        reference: "1234",
+        bankAccountId: cash.id,
+        applications: [{ billId, amount: "400" }],
+        post: true,
       })
-      .returning();
-
-    const acctRows = await tx
-      .select()
-      .from(accounts)
-      .where(eq(accounts.organizationId, org.id));
-    const byCode = new Map(acctRows.map((a) => [a.code, a]));
-
-    return {
-      org,
-      vendor,
-      cash: byCode.get("1010")!,
-      materials: byCode.get("5100")!,
-      apControl: byCode.get("2000")!,
-      discounts: byCode.get("4940")!,
-    };
+    );
+    firstPaymentId = p.id;
+    assertEq(p.status, "posted", "status");
+    const lines = await linesOf(p.glJournalId!);
+    assertEq(money(lines.find((l) => l.accountId === apControl.id)!.debit).toFixed(2), "400.00", "AP debit");
+    assertEq(money(lines.find((l) => l.accountId === cash.id)!.credit).toFixed(2), "400.00", "Bank credit");
   });
 
-  console.log(`\nTest org: ${fixtures.org.slug}\n`);
-
-  console.log("Setup — post a bill");
-  let billId: string | null = null;
-  let billGlJournalId: string | null = null;
-
-  await check("post bill $1000 (Dr Materials / Cr AP Control)", async () => {
-    await db.transaction(async (tx) => {
-      // Build a bill
-      const [bill] = await tx
-        .insert(apBills)
-        .values({
-          organizationId: fixtures.org.id,
-          billNumber: "AP-000001",
-          vendorInvoiceNumber: "INV-1",
-          vendorId: fixtures.vendor.id,
-          billDate: "2026-03-01",
-          dueDate: "2026-03-31",
-          discountDate: "2026-03-11",
-          currency: "USD",
-          exchangeRate: "1",
-          subtotalAmount: "1000",
-          totalAmount: "1000",
-          status: "approved",
-        })
-        .returning();
-      billId = bill.id;
-
-      await tx.insert(apBillLines).values({
-        organizationId: fixtures.org.id,
-        billId: bill.id,
-        lineNumber: 1,
-        accountId: fixtures.materials.id,
-        amount: "1000",
-        description: "Concrete materials",
-      });
-
-      // Post via helper
-      const res = await postBillToGl(tx, {
-        bill,
-        actorId: actor.id,
-        organizationId: fixtures.org.id,
-      });
-      billGlJournalId = res.journalId;
-
-      await tx
-        .update(apBills)
-        .set({
-          status: "posted",
-          postedAt: sql`now()`,
-          postingDate: bill.billDate,
-          glJournalId: res.journalId,
-        })
-        .where(eq(apBills.id, bill.id));
-    });
+  await check("bill is still 'posted' with 600 open", async () => {
+    assertEq(await billStatus(billId), "posted", "status");
+    const b = await t.run(owner, (ctx) => bills.getBill(ctx, { id: billId }));
+    assertEq(money(b.openBalance).toFixed(2), "600.00", "open");
   });
 
-  await check("posted bill's GL journal has 2 lines, balanced", async () => {
-    const lines = await db
-      .select()
-      .from(glLines)
-      .where(eq(glLines.journalId, billGlJournalId!));
-    if (lines.length !== 2)
-      throw new Error(`expected 2 lines, got ${lines.length}`);
-    const totalDr = lines.reduce((a, l) => a.plus(money(l.debitLocal)), money(0));
-    const totalCr = lines.reduce((a, l) => a.plus(money(l.creditLocal)), money(0));
-    if (!totalDr.equals(totalCr)) throw new Error("unbalanced");
-    if (!totalDr.equals(1000))
-      throw new Error(`expected total=1000, got ${totalDr}`);
+  section("Guards");
+  await check("over-application is rejected at create", async () => {
+    await expectError(
+      () =>
+        t.run(owner, (ctx) =>
+          billPayments.createBillPayment(ctx, {
+            vendorId: vendor.id,
+            paymentDate: "2026-03-11",
+            method: "ach",
+            bankAccountId: cash.id,
+            applications: [{ billId, amount: "601" }],
+          })
+        ),
+      "invalid_input"
+    );
   });
 
-  console.log("\nPartial payment ($400, no discount)");
-  let paymentId: string | null = null;
-  await check("create + post payment $400", async () => {
-    await db.transaction(async (tx) => {
-      const [payment] = await tx
-        .insert(apPayments)
-        .values({
-          organizationId: fixtures.org.id,
-          paymentNumber: "APPAY-000001",
-          vendorId: fixtures.vendor.id,
-          paymentDate: "2026-03-15",
-          method: "check",
-          reference: "1234",
-          bankAccountId: fixtures.cash.id,
-          currency: "USD",
-          exchangeRate: "1",
-          appliedAmount: "400",
-          discountAmount: "0",
-          netAmount: "400",
-          status: "draft",
-        })
-        .returning();
-      paymentId = payment.id;
-
-      await tx.insert(apPaymentApplications).values({
-        organizationId: fixtures.org.id,
-        paymentId: payment.id,
-        billId: billId!,
-        appliedAmount: "400",
-        discountAmount: "0",
-      });
-
-      const res = await postPaymentToGl(tx, {
-        payment,
-        actorId: actor.id,
-        organizationId: fixtures.org.id,
-      });
-      await tx
-        .update(apPayments)
-        .set({
-          status: "posted",
-          postedAt: sql`now()`,
-          glJournalId: res.journalId,
-        })
-        .where(eq(apPayments.id, payment.id));
-      await recomputeBillPaymentStatus(tx, fixtures.org.id, billId!);
-    });
+  await check("paying a bill under the wrong vendor is rejected", async () => {
+    await expectError(
+      () =>
+        t.run(owner, (ctx) =>
+          billPayments.createBillPayment(ctx, {
+            vendorId: vendor2.id,
+            paymentDate: "2026-03-11",
+            method: "ach",
+            bankAccountId: cash.id,
+            applications: [{ billId, amount: "10" }],
+          })
+        ),
+      "invalid_input"
+    );
   });
 
-  await check("bill still 'posted' after partial payment", async () => {
-    const [b] = await db
-      .select()
-      .from(apBills)
-      .where(eq(apBills.id, billId!));
-    if (b.status !== "posted")
-      throw new Error(`expected posted, got ${b.status}`);
-    if (b.paidAt) throw new Error("paidAt should be null");
+  await check("non-cash 'bank' account is rejected", async () => {
+    await expectError(
+      () =>
+        t.run(owner, (ctx) =>
+          billPayments.createBillPayment(ctx, {
+            vendorId: vendor.id,
+            paymentDate: "2026-03-11",
+            method: "ach",
+            bankAccountId: materials.id,
+            applications: [{ billId, amount: "10" }],
+          })
+        ),
+      "invalid_input"
+    );
   });
 
-  await check("payment's GL journal: Dr AP $400, Cr Bank $400", async () => {
-    const [pm] = await db
-      .select()
-      .from(apPayments)
-      .where(eq(apPayments.id, paymentId!));
-    const lines = await db
-      .select()
-      .from(glLines)
-      .where(eq(glLines.journalId, pm.glJournalId!));
-    if (lines.length !== 2)
-      throw new Error(`expected 2 lines (no discount), got ${lines.length}`);
-    const apLine = lines.find((l) => l.accountId === fixtures.apControl.id);
-    const bankLine = lines.find((l) => l.accountId === fixtures.cash.id);
-    if (!apLine || !money(apLine.debitLocal).equals(400))
-      throw new Error("expected Dr AP 400");
-    if (!bankLine || !money(bankLine.creditLocal).equals(400))
-      throw new Error("expected Cr Bank 400");
+  await check("two drafts that together overpay: the second post is refused", async () => {
+    const [a, b] = await t.run(owner, async (ctx) => [
+      await billPayments.createBillPayment(ctx, {
+        vendorId: vendor.id,
+        paymentDate: "2026-03-12",
+        method: "ach",
+        bankAccountId: cash.id,
+        applications: [{ billId, amount: "500" }],
+      }),
+      await billPayments.createBillPayment(ctx, {
+        vendorId: vendor.id,
+        paymentDate: "2026-03-12",
+        method: "ach",
+        bankAccountId: cash.id,
+        applications: [{ billId, amount: "500" }],
+      }),
+    ]);
+    await t.run(owner, (ctx) => billPayments.postBillPayment(ctx, { id: a.id }));
+    await expectError(
+      () => t.run(owner, (ctx) => billPayments.postBillPayment(ctx, { id: b.id })),
+      "invalid_input"
+    );
+    // Undo the 500 so the discount scenario below starts from 600 open.
+    await t.run(owner, (ctx) => billPayments.voidBillPayment(ctx, { id: a.id, reason: "test" }));
+    await t.run(owner, (ctx) => billPayments.deleteDraftBillPayment(ctx, { id: b.id }));
   });
 
-  console.log("\nFinal payment ($600 applied + $20 discount = $580 net)");
-  let discountPaymentId: string | null = null;
-  await check("create + post payment closing the bill", async () => {
-    await db.transaction(async (tx) => {
-      // Bill had $1000; we applied $400 already. Remaining $600.
-      // Pay with $580 net + $20 discount → applies $600 (closes the bill).
-      const [payment] = await tx
-        .insert(apPayments)
-        .values({
-          organizationId: fixtures.org.id,
-          paymentNumber: "APPAY-000002",
-          vendorId: fixtures.vendor.id,
-          paymentDate: "2026-03-10", // within discount window (≤ 03-11)
-          method: "ach",
-          reference: "ACH-5678",
-          bankAccountId: fixtures.cash.id,
-          currency: "USD",
-          exchangeRate: "1",
-          appliedAmount: "600",
-          discountAmount: "20",
-          netAmount: "580",
-          status: "draft",
-        })
-        .returning();
-      discountPaymentId = payment.id;
-
-      await tx.insert(apPaymentApplications).values({
-        organizationId: fixtures.org.id,
-        paymentId: payment.id,
-        billId: billId!,
-        appliedAmount: "580",
-        discountAmount: "20",
-      });
-
-      const res = await postPaymentToGl(tx, {
-        payment,
-        actorId: actor.id,
-        organizationId: fixtures.org.id,
-      });
-      await tx
-        .update(apPayments)
-        .set({
-          status: "posted",
-          postedAt: sql`now()`,
-          glJournalId: res.journalId,
-        })
-        .where(eq(apPayments.id, payment.id));
-      await recomputeBillPaymentStatus(tx, fixtures.org.id, billId!);
-    });
+  section("Early-pay discount");
+  let discountPaymentId = "";
+  await check("pay 580 cash + 20 discount: Dr AP 600 / Cr Bank 580 / Cr Discount 20", async () => {
+    const p = await t.run(owner, (ctx) =>
+      billPayments.createBillPayment(ctx, {
+        vendorId: vendor.id,
+        paymentDate: "2026-03-15",
+        method: "ach",
+        bankAccountId: cash.id,
+        applications: [{ billId, amount: "580", discountAmount: "20" }],
+        post: true,
+      })
+    );
+    discountPaymentId = p.id;
+    assertEq(money(p.appliedAmount).toFixed(2), "600.00", "header gross");
+    assertEq(money(p.netAmount).toFixed(2), "580.00", "header net");
+    const lines = await linesOf(p.glJournalId!);
+    assertEq(lines.length, 3, "line count");
+    assertEq(money(lines.find((l) => l.accountId === apControl.id)!.debit).toFixed(2), "600.00", "AP");
+    assertEq(money(lines.find((l) => l.accountId === cash.id)!.credit).toFixed(2), "580.00", "Bank");
+    assertEq(money(lines.find((l) => l.accountId === discounts.id)!.credit).toFixed(2), "20.00", "Discount");
   });
 
-  await check("bill flips to 'paid' once total applied = total", async () => {
-    const [b] = await db
-      .select()
-      .from(apBills)
-      .where(eq(apBills.id, billId!));
-    if (b.status !== "paid")
-      throw new Error(`expected paid, got ${b.status}`);
-    if (!b.paidAt) throw new Error("paidAt should be set");
+  await check("bill flips to 'paid' once cash + discount covers it", async () => {
+    assertEq(await billStatus(billId), "paid", "status");
   });
 
-  await check("discount payment's GL: Dr AP 600, Cr Bank 580, Cr Discount 20", async () => {
-    const [pm] = await db
-      .select()
-      .from(apPayments)
-      .where(eq(apPayments.id, discountPaymentId!));
-    const lines = await db
-      .select()
-      .from(glLines)
-      .where(eq(glLines.journalId, pm.glJournalId!));
-    if (lines.length !== 3)
-      throw new Error(`expected 3 lines (with discount), got ${lines.length}`);
-    const ap = lines.find((l) => l.accountId === fixtures.apControl.id);
-    const bank = lines.find((l) => l.accountId === fixtures.cash.id);
-    const disc = lines.find((l) => l.accountId === fixtures.discounts.id);
-    if (!ap || !money(ap.debitLocal).equals(600))
-      throw new Error(`Dr AP expected 600, got ${ap?.debitLocal}`);
-    if (!bank || !money(bank.creditLocal).equals(580))
-      throw new Error(`Cr Bank expected 580, got ${bank?.creditLocal}`);
-    if (!disc || !money(disc.creditLocal).equals(20))
-      throw new Error(`Cr Discount expected 20, got ${disc?.creditLocal}`);
+  section("Void");
+  await check("void the discount payment: reversal posted, bill back to 'posted'", async () => {
+    const p = await t.run(owner, (ctx) =>
+      billPayments.voidBillPayment(ctx, { id: discountPaymentId, reason: "bounced" })
+    );
+    assertEq(p.status, "voided", "payment status");
+    const [orig] = await db.select().from(glJournals).where(eq(glJournals.id, p.glJournalId!));
+    assertEq(orig.status, "reversed", "original journal");
+    assertEq(await billStatus(billId), "posted", "bill status");
   });
 
-  console.log("\nVoid the discount payment");
-  await check("void payment → reverses GL, bill drops back to 'posted'", async () => {
-    await db.transaction(async (tx) => {
-      const [payment] = await tx
-        .select()
-        .from(apPayments)
-        .where(eq(apPayments.id, discountPaymentId!));
-      const res = await voidPaymentFromGl(tx, {
-        payment,
-        actorId: actor.id,
-        organizationId: fixtures.org.id,
-        reason: "Test void",
-      });
-      await tx
-        .update(apPayments)
-        .set({
-          status: "voided",
-          voidedAt: sql`now()`,
-          voidReason: "Test void",
-          voidGlJournalId: res.journalId,
-        })
-        .where(eq(apPayments.id, discountPaymentId!));
-      await recomputeBillPaymentStatus(tx, fixtures.org.id, billId!);
-    });
-    const [b] = await db
-      .select()
-      .from(apBills)
-      .where(eq(apBills.id, billId!));
-    if (b.status !== "posted")
-      throw new Error(`expected posted, got ${b.status}`);
-    if (b.paidAt) throw new Error("paidAt should be null after void");
+  await check("bookkeeper cannot void payments", async () => {
+    await expectError(
+      () =>
+        t.run(t.as("bookkeeper"), (ctx) =>
+          billPayments.voidBillPayment(ctx, { id: firstPaymentId, reason: "x" })
+        ),
+      "forbidden"
+    );
   });
 
-  // Cleanup
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL app.bypass_posting_locks = 'true'`);
-    await tx.delete(organizations).where(eq(organizations.id, fixtures.org.id));
+  await check("list shows vendor names and filters by status", async () => {
+    const page = await t.run(owner, (ctx) =>
+      billPayments.listBillPayments(ctx, { status: "voided" })
+    );
+    assert(page.data.length >= 1, "at least one voided");
+    assert(page.data.every((p) => p.status === "voided" && p.vendorName === "Lumber Co"), "rows");
   });
-  void createAndPostJournal;
-  void sourceCodes;
 
-  console.log(
-    `\n${failed === 0 ? PASS : FAIL} ${
-      failed === 0 ? "all checks passed" : `${failed} check(s) failed`
-    }\n`
-  );
-  process.exit(failed === 0 ? 0 : 1);
+  await deleteOrgs("appay-test-");
+  finish();
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((e) => {
+  console.error(e);
   process.exit(1);
 });
