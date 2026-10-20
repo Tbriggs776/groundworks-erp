@@ -10,6 +10,16 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Next's lint plugins (import, react, jsx-a11y) don't support ESLint 10 yet.
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
+      # typescript-eslint doesn't support TypeScript 7 yet.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # Node types follow the runtime (Vercel Node 24.x); bump them together.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule:
