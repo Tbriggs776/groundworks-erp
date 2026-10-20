@@ -2,8 +2,9 @@
  * UI smoke test: signs in through a fake Supabase session cookie, loads
  * every main page (fails on any 4xx/5xx, error boundary, or console
  * error, CSP violations included), and clicks through the main flows:
- * create + post an invoice, create an agent + key, approve from the
- * review queue, banking (record an expense, import a statement, match,
+ * create + post an invoice, sales tax (agency, rate, a taxed invoice, a
+ * credit memo, a sales receipt, a refund), create an agent + key, approve
+ * from the review queue, banking (record an expense, import a statement, match,
  * add, and rule its lines, reconcile, undo), invite someone, add a
  * company and switch to it, save the security policy, complete an access
  * review, export the audit log, set a password, sign out, sign back in
@@ -93,6 +94,9 @@ const pages = [
   ["/banking/transactions/new?type=expense", "bank-expense-new"], ["/banking/transactions/new?type=check", null],
   ["/banking/transactions/new?type=deposit", "bank-deposit-new"], ["/banking/transactions/new?type=transfer", null],
   ["/banking/rules", null], ["/banking/reconcile", "reconcile-start"], ["/banking/register", null],
+  ["/ar/sales-receipts", null], ["/ar/sales-receipts/new", "sales-receipt-new"], ["/ar/credit-memos", null],
+  ["/ar/credit-memos/new", null], ["/ar/refunds", null], ["/ar/refunds/new", null], ["/ar/refunds/new?kind=credit", "refund-credit-new"],
+  ["/sales-tax", "sales-tax"], ["/settings/sales", null],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -109,6 +113,65 @@ const invText = await page.locator("main").innerText();
 console.log(/open/i.test(invText) && invText.includes("$300.00") ? "✓ flow: invoice created + posted ($300.00, open)" : "✗ flow: invoice");
 if (!(/open/i.test(invText) && invText.includes("$300.00"))) problems.push("invoice flow: " + invText.slice(0, 300));
 await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
+
+// Flow S: sales tax, a taxed invoice, a credit memo that pays it down, a
+// sales receipt, and a refund.
+{
+  const stamp = Date.now();
+  await page.goto(BASE + "/sales-tax", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Add agency" }).click();
+  await page.getByPlaceholder("Arizona Department of Revenue").fill(`Smoke State ${stamp}`);
+  await page.getByRole("dialog").getByRole("button", { name: "Add agency" }).click();
+  await page.getByText(`Smoke State ${stamp}`).first().waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Add rate" }).click();
+  await page.getByRole("dialog").getByPlaceholder("Arizona state").fill(`Smoke 5% ${stamp}`);
+  const agencySelect = page.getByRole("dialog").locator("select").first();
+  await agencySelect.selectOption({ label: `Smoke State ${stamp}` });
+  await page.getByRole("dialog").getByPlaceholder("5.6").fill("5");
+  await page.getByRole("dialog").getByRole("button", { name: "Add rate" }).click();
+  await page.getByText(`Smoke 5% ${stamp}`).first().waitFor({ timeout: 10000 });
+  console.log("✓ flow: sales tax agency and rate added");
+
+  await page.goto(BASE + "/ar/invoices/new", { waitUntil: "networkidle" });
+  await page.locator("main select").nth(0).selectOption({ label: "Northwind Traders" });
+  await page.getByLabel("Sales tax rate").selectOption({ label: `Smoke 5% ${stamp} (5%)` });
+  await page.locator("tbody select").first().selectOption({ label: "Consulting" });
+  await page.getByRole("button", { name: "Save and post" }).click();
+  await page.waitForURL(/\/ar\/invoices\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.waitForLoadState("networkidle");
+  const taxed = await page.locator("main").innerText();
+  const taxOk = taxed.includes("$157.50") && taxed.toLowerCase().includes(`smoke state ${stamp}`);
+  console.log(taxOk ? "✓ flow: invoice with 5% sales tax ($150.00 + $7.50)" : "✗ flow: taxed invoice");
+  if (!taxOk) problems.push("taxed invoice: " + taxed.slice(0, 300));
+  await page.screenshot({ path: `${outDir}/invoice-taxed.png`, fullPage: true });
+
+  await page.goto(BASE + "/ar/credit-memos/new", { waitUntil: "networkidle" });
+  await page.locator("main select").nth(0).selectOption({ label: "Northwind Traders" });
+  await page.locator("tbody select").first().selectOption({ label: "Consulting" });
+  await page.locator('tbody input[inputmode="decimal"]').nth(1).fill("10");
+  await page.getByRole("button", { name: "Save and post" }).click();
+  await page.waitForURL(/\/ar\/credit-memos\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("Credit used").waitFor({ timeout: 10000 });
+  await page.screenshot({ path: `${outDir}/credit-memo.png`, fullPage: true });
+  console.log("✓ flow: credit memo posted and applied to the oldest open invoice");
+
+  await page.goto(BASE + "/ar/sales-receipts/new", { waitUntil: "networkidle" });
+  await page.locator("tbody select").first().selectOption({ label: "Consulting" });
+  await page.getByRole("button", { name: "Save and post" }).click();
+  await page.waitForURL(/\/ar\/sales-receipts\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("Posted to the ledger").waitFor({ timeout: 10000 });
+  console.log("✓ flow: sales receipt posted into Undeposited Funds");
+
+  await page.goto(BASE + "/ar/refunds/new", { waitUntil: "networkidle" });
+  await page.locator("main select").nth(0).selectOption({ label: "Northwind Traders" });
+  await page.locator("tbody select").first().selectOption({ label: "Consulting" });
+  await page.getByRole("button", { name: "Save and post" }).click();
+  await page.waitForURL(/\/ar\/refunds\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("Posted to the ledger").waitFor({ timeout: 10000 });
+  console.log("✓ flow: refund for returned items posted");
+
+  await visit("/sales-tax", "sales-tax-after");
+}
 
 // Flow 2: create an agent and mint a key.
 await page.goto(BASE + "/settings/agents", { waitUntil: "networkidle" });

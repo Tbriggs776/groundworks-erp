@@ -16,8 +16,18 @@ do the bookkeeping, with humans approving what posts.
 - Reports: profit & loss, balance sheet, trial balance, GL detail, AR aging,
   AP aging
 
-**Sales**: customers, products & services, invoices (draft → open → paid),
-receive payment (explicit or auto-applied oldest first), early-pay discounts
+**Sales**
+- Customers, products & services, invoices (draft → open → paid), sales
+  receipts for cash sales, early-pay discounts
+- Receive payment: explicit or auto-applied oldest first; an overpayment
+  stays as the customer's credit
+- Credit memos and customer credits: applied to open invoices
+  automatically (oldest first, a company setting) or by hand, or paid out
+  with a refund
+- Refunds for returned items, or out of a customer's credit
+- Sales tax with manual rates, like QuickBooks: agencies, single and
+  combined rates, taxable items, exempt customers, tax on the taxable total
+  (rounded once), a liability report by agency, and recording payments
 
 **Expenses**: vendors (1099 flags), bills with amount-tiered approval routing,
 bill payments with discounts
@@ -104,7 +114,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 93 operations: accounts, journals, customers, items, invoices, payments, vendors, bills, bill payments, banking (transactions, statement import, For review, rules, reconciliation), reports, review queue, activity |
+| Tools | 127 operations: accounts, journals, customers, items, invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, bills, bill payments, banking (transactions, statement import, For review, rules, reconciliation), reports, review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -151,8 +161,9 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-16 suites: posting engine, recurring/allocations/budgets, reports, FX,
-parties, bills, bill payments, sales, banking (transactions, statement
+17 suites: posting engine, recurring/allocations/budgets, reports, FX,
+parties, bills, bill payments, invoices and payments, sales (tax, receipts,
+credit memos, credits, refunds, the liability report), banking (transactions, statement
 import, For review, rules, reconciliation), agents + keys, REST + MCP, RLS,
 workspaces (sign-up, invites, access, policy, access reviews), session
 security (timeouts, MFA, revocation, rate limits), workspace isolation
@@ -201,8 +212,8 @@ Nobody at Groundworks can see inside a customer's workspace by default.
 
 - **Banking**: live bank feeds (Plaid), split a statement line across
   categories, attachments on bank transactions
-- **Sales**: sales tax, estimates, sales receipts, credit memos and refunds,
-  recurring invoices, invoice PDF + email, online payments, statements
+- **Sales**: estimates, recurring invoices, invoice and statement PDFs +
+  email, online payments, automated sales tax rates
 - **Expenses**: vendor credits, receipt capture, purchase orders, recurring
   bills, 1099 reporting
 - **Inventory**: quantity on hand and COGS

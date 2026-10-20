@@ -5,7 +5,7 @@ import { getInvoice } from "@/lib/ar/invoices";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { toAppError } from "@/lib/errors";
 import { salesFormData } from "@/lib/ui/form-data";
-import { InvoiceForm } from "../../invoice-form";
+import { SalesDocForm } from "../../../sales-doc-form";
 
 export default async function EditInvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -33,10 +33,12 @@ export default async function EditInvoicePage({ params }: { params: Promise<{ id
       crumb={`${organization.name} · Sales · Invoices`}
       userEmail={user?.email}
     >
-      <InvoiceForm
+      <SalesDocForm
+        kind="invoice"
         customers={data.customers}
         items={data.items}
         incomeAccounts={data.incomeAccounts}
+        taxRates={data.taxRates}
         initial={invoice}
         initialLines={invoice.lines}
       />

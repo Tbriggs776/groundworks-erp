@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/app-shell/shell";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { salesFormData } from "@/lib/ui/form-data";
-import { InvoiceForm } from "../invoice-form";
+import { SalesDocForm } from "../../sales-doc-form";
 
 export default async function NewInvoicePage({
   searchParams,
@@ -15,10 +15,12 @@ export default async function NewInvoicePage({
 
   return (
     <AppShell title="New Invoice" crumb={`${organization.name} · Sales`} userEmail={user?.email}>
-      <InvoiceForm
+      <SalesDocForm
+        kind="invoice"
         customers={data.customers}
         items={data.items}
         incomeAccounts={data.incomeAccounts}
+        taxRates={data.taxRates}
         defaultCustomerId={customerId}
       />
     </AppShell>

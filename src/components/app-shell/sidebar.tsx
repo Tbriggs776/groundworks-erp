@@ -51,8 +51,12 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Customers", href: "/customers" },
       { label: "Invoices", href: "/ar/invoices" },
+      { label: "Sales Receipts", href: "/ar/sales-receipts" },
       { label: "Payments Received", href: "/ar/payments" },
+      { label: "Credit Memos", href: "/ar/credit-memos" },
+      { label: "Refunds", href: "/ar/refunds" },
       { label: "Products & Services", href: "/items" },
+      { label: "Sales Tax", href: "/sales-tax" },
     ],
   },
   {
@@ -127,6 +131,7 @@ const NAV: NavGroup[] = [
     label: "Settings",
     icon: Settings,
     items: [
+      { label: "Sales Settings", href: "/settings/sales" },
       { label: "Approval Thresholds", href: "/settings/approval-thresholds" },
       { label: "My Security", href: "/account/security" },
     ],

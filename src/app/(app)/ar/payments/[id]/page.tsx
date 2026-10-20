@@ -12,6 +12,7 @@ import { accounts } from "@/lib/db/schema";
 import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
+import { CreditUses } from "../../credit-panels";
 import { PaymentActions } from "./payment-actions";
 
 export default async function CustomerPaymentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -102,6 +103,13 @@ export default async function CustomerPaymentPage({ params }: { params: Promise<
             </tbody>
           </table>
         </div>
+        {p.status === "posted" && money(p.unappliedAmount).gt(0) && (
+          <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+            {fmt(p.unappliedAmount)} isn&apos;t applied to an invoice. It stays as {p.customerName}&apos;s credit and pays down their next invoice, or{" "}
+            <Link href={`/ar/refunds/new?kind=credit&customerId=${p.customerId}&paymentId=${p.id}`} className="text-primary hover:underline">refund it</Link>.
+          </div>
+        )}
+        <CreditUses uses={p.creditUses} currency={p.currency} title="Credit used later" />
         {p.memo && <p className="text-xs text-muted-foreground">Memo: {p.memo}</p>}
       </div>
     </AppShell>
