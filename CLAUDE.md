@@ -37,6 +37,12 @@ construction-ERP direction. Use it for look-and-feel only.
    caller: look it up scoped to the org (`requireLineAccounts`,
    `requirePostingAccount`, `loadX(ctx, id)`). The posting engine's v0 check
    re-verifies tenancy of every account / dimension / code on a journal.
+   The database is the last wall: every company table has a `tenant_guard`
+   trigger (migration 0022) that refuses a reference to another company's
+   row and any change of `organization_id`. A migration that adds a company
+   table must call `SELECT public.install_tenant_guard('<table>')`;
+   `scripts/test-isolation.ts` fails otherwise and attacks every operation
+   in the registry from a second workspace.
 2. **RLS on every table.** Supabase's REST API exposes `public` with the
    anon key. Every new table needs `ENABLE ROW LEVEL SECURITY` plus a
    member-only SELECT policy in its migration (secrets: no policy at all).
@@ -69,6 +75,9 @@ construction-ERP direction. Use it for look-and-feel only.
    `authenticateApiKey`, which also checks the workspace seat and spends
    the per-key rate limit. Active company = `gw_org` cookie, active
    workspace = `gw_ws`; both re-validated every request.
+   Groundworks support (`GROUNDWORKS_SUPPORT_USER_IDS`, MFA in the session)
+   sees a workspace only while its owner's grant is live, as a read-only
+   viewer (`src/lib/security/support.ts`); each visit is audited.
 9. **Security headers.** The proxy sets a per-request CSP with a nonce
    (`src/lib/security/headers.ts`); no inline `<script>`. Static headers
    (HSTS, frame denial, nosniff) come from `next.config.ts`.
@@ -109,7 +118,8 @@ src/
     (app)/            authenticated UI: dashboard, ar/, ap/, items, gl,
                       reports/, review, activity, settings/{agents,api-keys},
                       workspace/{people,security,access-review,audit,companies},
-                      account/security (own MFA + sessions)
+                      account/security (own password, MFA, sessions),
+                      clients (every workspace + company), support (staff only)
     api/v1/[...path]  REST (generated)        api/mcp  MCP server
     api/cron/daily    recurring, auto-reversal, pruning   api/health  uptime
     signup, onboarding/{,team}   sign-up: workspace + first company, invites
@@ -120,7 +130,8 @@ src/
     actor.ts action.ts errors.ts schemas.ts audit.ts audit-query.ts
     review.ts review-policy.ts email.ts (Resend; no-op when unset)
     workspace/        workspace service + invite-and-email
-    security/         sessions (policy, timeouts, revocation), mfa, headers
+    security/         sessions (policy, timeouts, revocation), mfa, headers,
+                      password rules, support access
     api/              registry, REST, MCP, OpenAPI, executor (dry run + idempotency)
     agents/           key generation, authentication, agent + key service
     ar/ ap/ gl/ parties/ reports/   domain services
@@ -139,7 +150,8 @@ docs/compliance/      SOC 2 control map and checklist
    `...timestamps`, and (for documents) `createdBy` / `createdByAgentId`.
    Re-export from `index.ts`.
 2. **Migration**: `npm run db:generate`, review the SQL, append RLS
-   (`ENABLE ROW LEVEL SECURITY` + `<table>_select_member` policy).
+   (`ENABLE ROW LEVEL SECURITY` + `<table>_select_member` policy) and
+   `SELECT public.install_tenant_guard('<table>');`.
 3. **Service** in `src/lib/<domain>/`: zod schemas + `(ctx, input)` functions
    with permission checks and audit rows.
 4. **Registry**: add operations to `src/lib/api/operations.ts`; REST, MCP,

@@ -138,10 +138,12 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-13 suites: posting engine, recurring/allocations/budgets, reports, FX,
+15 suites: posting engine, recurring/allocations/budgets, reports, FX,
 parties, bills, bill payments, sales, agents + keys, REST + MCP, RLS,
-workspaces (sign-up, invites, access, policy, access reviews), and session
-security (timeouts, MFA, revocation, rate limits). CI runs them all on every
+workspaces (sign-up, invites, access, policy, access reviews), session
+security (timeouts, MFA, revocation, rate limits), workspace isolation
+(every API operation attacked from a second workspace, plus the database
+guards), and support access. CI runs them all on every
 pull request (`.github/workflows/ci.yml`).
 
 `scripts/dev/seed-demo.ts` creates a demo workspace and company and prints
@@ -163,10 +165,23 @@ Environment variables (Production + Preview):
 | `RESEND_API_KEY`, `EMAIL_FROM` | invitation emails; without them, invites show a link to copy |
 | `NEXT_PUBLIC_AUTH_PROVIDERS`, `NEXT_PUBLIC_AUTH_SSO` | optional extra sign-in methods |
 | `API_RATE_LIMIT_PER_MINUTE` | optional, default 600 |
+| `GROUNDWORKS_SUPPORT_USER_IDS` | optional; your support team's user ids (see Support access) |
 
 Migrations run from your machine against the direct (port 5432) connection:
 `DATABASE_URL_MIGRATE=… npm run db:migrate`. Add your production URL to
 Supabase's redirect URLs. Point an uptime monitor at `/api/health`.
+
+### Support access
+
+Nobody at Groundworks can see inside a customer's workspace by default.
+
+- A workspace owner turns it on under **Workspace → Security** for 1, 3, or
+  7 days; an owner or admin can turn it off at any time.
+- Your support team are the user ids in `GROUNDWORKS_SUPPORT_USER_IDS`.
+  They need two-step verification, then find granted workspaces at
+  `/support`. Access is read-only (viewer) and ends on expiry.
+- Every grant, revocation, and visit is in that workspace's audit log and
+  listed on its Security page.
 
 ## Roadmap to QuickBooks parity
 

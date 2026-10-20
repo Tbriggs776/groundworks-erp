@@ -9,6 +9,8 @@ export type SwitcherWorkspace = {
   id: string;
   name: string;
   isAdmin: boolean;
+  /** Opened through an owner's support grant (Groundworks staff only). */
+  support?: boolean;
   companies: Array<{ id: string; name: string }>;
 };
 
@@ -40,7 +42,8 @@ export function OrgSwitcher({
         disabled={pending}
         onChange={(e) => {
           const [kind, id] = e.target.value.split(":");
-          if (kind === "new-company") router.push("/workspace/companies/new");
+          if (kind === "all") router.push("/clients");
+          else if (kind === "new-company") router.push("/workspace/companies/new");
           else if (kind === "new-workspace") router.push("/onboarding?new=1");
           else if (kind === "org") start(() => switchOrganization(id));
           else if (kind === "ws") start(() => switchWorkspace(id));
@@ -60,11 +63,12 @@ export function OrgSwitcher({
                 </option>,
               ];
           return single ? options : (
-            <optgroup key={w.id} label={w.name}>
+            <optgroup key={w.id} label={w.support ? `${w.name} (support access)` : w.name}>
               {options}
             </optgroup>
           );
         })}
+        <option value="all:">All companies…</option>
         {currentWs?.isAdmin && <option value="new-company:">+ Add a company…</option>}
         <option value="new-workspace:">+ New workspace…</option>
       </select>

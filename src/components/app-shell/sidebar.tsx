@@ -39,7 +39,10 @@ const NAV: NavGroup[] = [
   {
     label: "Overview",
     icon: LayoutDashboard,
-    items: [{ label: "Dashboard", href: "/dashboard" }],
+    items: [
+      { label: "Dashboard", href: "/dashboard" },
+      { label: "All Companies", href: "/clients" },
+    ],
   },
   {
     label: "Sales",

@@ -1,18 +1,22 @@
 import { AppShell } from "@/components/app-shell/shell";
 import { hasWorkspaceRole, runAsWorkspace } from "@/lib/actor";
 import { getUser, requireWorkspace, requireWorkspaceActor } from "@/lib/auth";
+import { getSupportAccess } from "@/lib/security/support";
 import * as ws from "@/lib/workspace/service";
 import { PolicyForm } from "./policy-form";
+import { SupportAccess } from "./support-access";
 
 /** The workspace security policy. Everyone can read it; admins change it. */
 export default async function SecurityPolicyPage() {
   const { workspace, role } = await requireWorkspace();
   const actor = await requireWorkspaceActor();
   const user = await getUser();
-  const [policy, people] = await Promise.all([
+  const [policy, people, support] = await Promise.all([
     runAsWorkspace(actor, (ctx) => ws.getSecurityPolicy(ctx)),
     runAsWorkspace(actor, (ctx) => ws.listPeople(ctx)),
+    runAsWorkspace(actor, (ctx) => getSupportAccess(ctx)),
   ]);
+  const isAdmin = hasWorkspaceRole(role, "admin");
   const active = people.filter((p) => p.isActive);
   const withoutMfa = active.filter((p) => p.mfaEnabled === false);
 
@@ -29,7 +33,13 @@ export default async function SecurityPolicyPage() {
             {policy.requireMfa ? "; they'll be asked to set it up on their next click." : "."}
           </div>
         )}
-        <PolicyForm policy={policy} editable={hasWorkspaceRole(role, "admin")} />
+        <PolicyForm policy={policy} editable={isAdmin} />
+        <SupportAccess
+          active={support.active && { expiresAt: support.active.expiresAt.toISOString(), grantedBy: support.active.grantedBy }}
+          canGrant={role === "owner"}
+          canRevoke={isAdmin}
+          history={isAdmin ? support.history.map((h) => ({ event: h.event, at: h.at.toISOString(), who: h.who })) : null}
+        />
       </div>
     </AppShell>
   );

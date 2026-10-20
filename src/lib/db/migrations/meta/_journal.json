@@ -155,6 +155,20 @@
       "when": 1792358899191,
       "tag": "0021_workspaces_and_security",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792466976717,
+      "tag": "0022_tenant_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792467243055,
+      "tag": "0023_support_access",
+      "breakpoints": true
     }
   ]
 }
