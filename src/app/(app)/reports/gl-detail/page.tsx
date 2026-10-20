@@ -72,7 +72,7 @@ export default async function GlDetailPage({ searchParams }: { searchParams: SP 
           <>
             <div>
               <div className="font-heading text-2xl tracking-[0.1em]">
-                {selected.code} — {selected.name}
+                {selected.code} · {selected.name}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
                 {fromDate} to {toDate} · opening balance:{" "}

@@ -145,7 +145,7 @@ export function ApiKeysClient({
                   }
                 />
                 <span>
-                  <span className="font-semibold">{s}</span> — {SCOPE_INFO[s]}
+                  <span className="font-semibold">{s}</span>: {SCOPE_INFO[s]}
                 </span>
               </label>
             ))}

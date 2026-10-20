@@ -66,7 +66,7 @@ export function ThresholdsClient({
           <ul className="list-disc ml-4 mt-2 space-y-1">
             <li><code>min</code> is inclusive, <code>max</code> is exclusive.</li>
             <li><code>max</code> blank = unbounded (top tier).</li>
-            <li>Required role is a <strong>minimum</strong> — higher ranks always qualify.</li>
+            <li>Required role is a <strong>minimum</strong>: higher ranks always qualify.</li>
             <li>If no active tier matches a bill&apos;s amount, admin is required by default.</li>
           </ul>
         </div>

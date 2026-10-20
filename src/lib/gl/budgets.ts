@@ -50,7 +50,7 @@ export async function setBudgetEntry(
       .from(budgets)
       .where(eq(budgets.id, input.budgetId));
     if (!b) throw new Error("Budget not found.");
-    if (b.isLocked) throw new Error("Budget is locked — entry edits rejected.");
+    if (b.isLocked) throw new Error("Budget is locked; entry edits rejected.");
 
     // For simplicity v1: always INSERT a new entry + dimensions. Callers
     // that want strict upsert behavior can delete prior matches first.

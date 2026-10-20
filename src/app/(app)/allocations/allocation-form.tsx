@@ -190,7 +190,7 @@ export function AllocationForm({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="fixed">
-                Fixed — static percentages
+                Fixed: static percentages
               </SelectItem>
               <SelectItem value="statistical" disabled>
                 Statistical (coming soon)
@@ -216,7 +216,7 @@ export function AllocationForm({
                 <SelectItem value="__none__">—</SelectItem>
                 {statisticalAccounts.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
-                    {a.code} — {a.name}
+                    {a.code} · {a.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -258,10 +258,10 @@ export function AllocationForm({
                     }
                     className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5"
                   >
-                    <option value="">— choose account —</option>
+                    <option value="">Choose account…</option>
                     {postingAccounts.map((a) => (
                       <option key={a.id} value={a.id}>
-                        {a.code} — {a.name}
+                        {a.code} · {a.name}
                       </option>
                     ))}
                   </select>

@@ -50,7 +50,7 @@ import {
 const ApplicationSchema = z.object({
   billId: id,
   amount: positiveAmount.describe(
-    "Cash applied to this bill — what actually leaves the bank for it."
+    "Cash applied to this bill: what actually leaves the bank for it."
   ),
   discountAmount: nonNegativeAmount
     .optional()

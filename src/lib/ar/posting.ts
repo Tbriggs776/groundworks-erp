@@ -123,7 +123,7 @@ export async function voidInvoiceFromGl(
       actorId: actor.userId,
       actor,
       organizationId: actor.organizationId,
-      description: `Void of invoice ${invoice.invoiceNumber} — ${reason}`,
+      description: `Void of invoice ${invoice.invoiceNumber}: ${reason}`,
     },
     tx
   );
@@ -161,7 +161,7 @@ export async function postCustomerPaymentToGl(
     {
       accountId: payment.depositAccountId,
       debit: toDbMoney(cash),
-      memo: `Payment ${payment.paymentNumber} — ${payment.method}${
+      memo: `Payment ${payment.paymentNumber} · ${payment.method}${
         payment.reference ? ` ref ${payment.reference}` : ""
       }`,
       customerId: payment.customerId,
@@ -235,7 +235,7 @@ export async function voidCustomerPaymentFromGl(
       actorId: actor.userId,
       actor,
       organizationId: actor.organizationId,
-      description: `Void of customer payment ${payment.paymentNumber} — ${reason}`,
+      description: `Void of customer payment ${payment.paymentNumber}: ${reason}`,
     },
     tx
   );

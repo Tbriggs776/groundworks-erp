@@ -73,7 +73,7 @@ export function BudgetEditor({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-heading text-3xl tracking-[0.1em] text-foreground">
+            <h1 className="font-heading text-2xl sm:text-3xl tracking-[0.06em] text-foreground">
               {budget.name}
             </h1>
             {budget.isLocked ? (
@@ -264,7 +264,7 @@ function AddEntryDialog({
               <SelectContent>
                 {periods.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
-                    {p.periodCode} ({p.startDate} — {p.endDate})
+                    {p.periodCode} ({p.startDate} to {p.endDate})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -279,10 +279,10 @@ function AddEntryDialog({
               onChange={(e) => setAccountId(e.target.value)}
               className="w-full text-sm bg-background border border-border rounded-md px-2 py-2"
             >
-              <option value="">— choose account —</option>
+              <option value="">Choose account…</option>
               {postingAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.code} — {a.name}
+                  {a.code} · {a.name}
                 </option>
               ))}
             </select>

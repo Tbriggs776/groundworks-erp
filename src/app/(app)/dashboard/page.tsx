@@ -40,7 +40,7 @@ export default async function DashboardPage() {
       <div className="max-w-6xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-heading text-3xl tracking-[0.08em]">{organization.name.toUpperCase()}</h1>
+            <h1 className="font-heading text-2xl sm:text-3xl tracking-[0.06em]">{organization.name.toUpperCase()}</h1>
             <div className="text-xs text-muted-foreground mt-1">
               {currency} · You are <span className="text-primary">{role}</span>
             </div>
@@ -82,7 +82,7 @@ export default async function DashboardPage() {
             className="rounded-lg border border-border bg-card p-5 hover:border-ring transition-colors block"
           >
             <div className="text-[10px] tracking-[0.22em] uppercase text-muted-foreground">Review queue</div>
-            <div className="font-heading text-3xl tracking-wider mt-1">{review.length}</div>
+            <div className="text-3xl font-semibold tracking-tight mt-1">{review.length}</div>
             <p className="text-xs text-muted-foreground mt-1">
               {review.length === 0
                 ? "Nothing waiting on you."
@@ -158,9 +158,13 @@ function Stat({
   alert?: boolean;
 }) {
   return (
-    <Link href={href} className="rounded-md border border-border bg-card p-4 hover:border-ring transition-colors">
-      <div className="text-[9px] tracking-[0.22em] uppercase text-muted-foreground">{label}</div>
-      <div className="font-heading text-2xl tracking-wider mt-1 truncate">{value}</div>
+    <Link
+      href={href}
+      className="relative overflow-hidden rounded-lg border border-border bg-card p-4 shadow-[0_1px_2px_rgb(27_42_78/0.05)] hover:border-ring transition-colors"
+    >
+      <div className="absolute inset-y-0 left-0 w-[3px] bg-[var(--gw-gold)]" />
+      <div className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground">{label}</div>
+      <div className="text-2xl font-semibold tracking-tight mt-1 truncate">{value}</div>
       {hint && <div className={`text-[11px] mt-1 ${alert ? "text-destructive" : "text-muted-foreground"}`}>{hint}</div>}
     </Link>
   );

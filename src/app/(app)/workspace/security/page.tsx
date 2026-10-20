@@ -24,7 +24,7 @@ export default async function SecurityPolicyPage() {
           across all of them.
         </p>
         {withoutMfa.length > 0 && (
-          <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+          <div className="rounded-md border border-[var(--gw-amber-bright)]/25 bg-[var(--gw-amber)] p-3 text-xs text-[var(--gw-amber-bright)]">
             {withoutMfa.length} of {active.length} people haven&apos;t turned on two-step verification
             {policy.requireMfa ? "; they'll be asked to set it up on their next click." : "."}
           </div>

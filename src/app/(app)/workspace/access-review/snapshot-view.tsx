@@ -24,7 +24,7 @@ export function SnapshotView({ snapshot }: { snapshot: AccessSnapshot }) {
                   <td className={td}>{p.name ?? p.email}{p.name && <div className="text-[11px] text-muted-foreground">{p.email}</div>}{!p.active && <div className="text-[10px] text-muted-foreground">Removed</div>}</td>
                   <td className={`${td} capitalize text-xs`}>{p.workspaceRole}</td>
                   <td className={`${td} text-xs`}>{p.companies.length ? p.companies.map((c) => `${c.company}: ${c.role}`).join(" · ") : "None"}</td>
-                  <td className={`${td} text-xs`}>{p.mfa === null ? "Unknown" : p.mfa ? "On" : <span className="text-amber-500">Off</span>}</td>
+                  <td className={`${td} text-xs`}>{p.mfa === null ? "Unknown" : p.mfa ? "On" : <span className="text-[var(--gw-amber-bright)]">Off</span>}</td>
                   <td className={`${td} text-xs text-muted-foreground`}>{when(p.lastSeenAt)}</td>
                 </tr>
               ))}
@@ -70,7 +70,7 @@ export function SnapshotView({ snapshot }: { snapshot: AccessSnapshot }) {
                     <td className={`${td} text-xs`}>{k.company}</td>
                     <td className={`${td} text-xs`}>{k.owner}</td>
                     <td className={`${td} text-xs`}>{k.scopes.join(", ")}</td>
-                    <td className={`${td} text-xs`}>{k.expiresAt ? when(k.expiresAt) : <span className="text-amber-500">Never</span>}</td>
+                    <td className={`${td} text-xs`}>{k.expiresAt ? when(k.expiresAt) : <span className="text-[var(--gw-amber-bright)]">Never</span>}</td>
                     <td className={`${td} text-xs text-muted-foreground`}>{when(k.lastUsedAt)}</td>
                   </tr>
                 ))}

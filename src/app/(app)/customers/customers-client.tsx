@@ -154,7 +154,7 @@ export function CustomersClient({
 
       <div className="text-[11px] text-muted-foreground">
         {filtered.length} of {customers.length} customers
-        {truncated && " (showing the first 200 — search to narrow)"}.
+        {truncated && " (showing the first 200; search to narrow)"}.
       </div>
 
       <CustomerForm open={open} onOpenChange={setOpen} initial={editing} />

@@ -68,7 +68,7 @@ export function CompanyForm({
       </div>
 
       <label className="flex items-start gap-2 cursor-pointer">
-        <input name="seedDefaultCoa" type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 rounded border-border bg-background accent-[var(--gw-gold)]" />
+        <input name="seedDefaultCoa" type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 rounded border-border bg-background accent-[var(--gw-navy)]" />
         <span>
           <span className="block text-xs font-medium text-foreground">Start with the standard small-business chart of accounts</span>
           <span className="block text-[11px] text-muted-foreground mt-0.5 leading-snug">

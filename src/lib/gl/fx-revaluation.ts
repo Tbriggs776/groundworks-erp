@@ -256,7 +256,7 @@ export async function runFxRevaluation(
     lines.push({
       accountId: a.accountId,
       [side]: abs,
-      memo: `FX reval ${a.currency} @ ${a.currentRate.toFixed(6)} — ${a.foreignBalance.toFixed(2)} ${a.currency} → ${a.newLocalValue.toFixed(2)} ${summary.baseCurrency}`,
+      memo: `FX reval ${a.currency} @ ${a.currentRate.toFixed(6)} · ${a.foreignBalance.toFixed(2)} ${a.currency} → ${a.newLocalValue.toFixed(2)} ${summary.baseCurrency}`,
     });
   }
 

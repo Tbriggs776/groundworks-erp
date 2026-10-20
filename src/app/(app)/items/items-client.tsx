@@ -234,7 +234,7 @@ function ItemForm({
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Income account</Label>
             <select value={incomeAccountId} onChange={(e) => setIncomeAccountId(e.target.value)} className={selectClass}>
               {incomeAccounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+                <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
               ))}
             </select>
           </div>
@@ -246,7 +246,7 @@ function ItemForm({
                 {accounts
                   .filter((a) => a.category === "income_statement" && a.normalBalance === "debit")
                   .map((a) => (
-                    <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+                    <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
                   ))}
               </select>
             </div>

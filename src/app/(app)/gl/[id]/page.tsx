@@ -59,7 +59,7 @@ export default async function JournalDetailPage({
       <div className="space-y-5 max-w-5xl">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="font-heading text-3xl tracking-[0.1em] text-foreground">
+            <div className="font-heading text-2xl sm:text-3xl tracking-[0.06em] text-foreground">
               {j.journalNumber}
             </div>
             <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3">
@@ -110,7 +110,7 @@ export default async function JournalDetailPage({
         {j.overrideHardClose && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
             <span className="uppercase tracking-wider text-destructive">Hard-close override</span>
-            {j.overrideReason && <> — {j.overrideReason}</>}
+            {j.overrideReason && <>: {j.overrideReason}</>}
           </div>
         )}
 

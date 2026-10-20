@@ -52,7 +52,7 @@ export async function postBillToGl(
   jeLines.push({
     accountId: apControl.id,
     credit: toDbMoney(total),
-    memo: `Bill ${bill.billNumber} — ${bill.vendorInvoiceNumber ?? "no vendor invoice #"}`,
+    memo: `Bill ${bill.billNumber} · ${bill.vendorInvoiceNumber ?? "no vendor invoice #"}`,
     vendorId: bill.vendorId,
   });
 
@@ -119,7 +119,7 @@ export async function voidBillFromGl(
       actorId: actor.userId,
       actor,
       organizationId: actor.organizationId,
-      description: `Void of bill ${bill.billNumber} — ${reason}`,
+      description: `Void of bill ${bill.billNumber}: ${reason}`,
     },
     tx
   );

@@ -95,7 +95,7 @@ function PeriodsTable({ periods }: { periods: FiscalPeriod[] }) {
                 {p.periodCode}
               </td>
               <td className="px-3 py-2 text-xs text-muted-foreground">
-                {p.startDate} — {p.endDate}
+                {p.startDate} to {p.endDate}
               </td>
               <td className="px-3 py-2">
                 <StatusBadge status={p.status} />

@@ -36,7 +36,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       <div className="space-y-5 max-w-5xl">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="font-heading text-3xl tracking-[0.08em] text-foreground">
+            <div className="font-heading text-2xl sm:text-3xl tracking-[0.06em] text-foreground">
               {inv.invoiceNumber}
             </div>
             <div className="text-sm mt-1">{inv.customerName}</div>
@@ -71,7 +71,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         {inv.status === "voided" && (
           <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
             <span className="uppercase tracking-wider font-semibold">Voided</span>
-            {inv.voidReason && <> — {inv.voidReason}</>}
+            {inv.voidReason && <>: {inv.voidReason}</>}
             {inv.voidGlJournalId && (
               <>
                 {" · "}

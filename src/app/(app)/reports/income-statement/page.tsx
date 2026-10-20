@@ -162,7 +162,7 @@ function SubgroupBlock({ group }: { group: StatementSubgroup }) {
           colSpan={2}
           className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground pl-8"
         >
-          Subtotal — {group.label}
+          Subtotal: {group.label}
         </td>
         <td className="px-3 py-1.5 text-right font-mono text-xs font-medium">
           {formatMoney(group.subtotal)}

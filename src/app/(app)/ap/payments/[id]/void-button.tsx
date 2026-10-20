@@ -73,7 +73,7 @@ export function PaymentActions({
 
   return (
     <span className="text-[11px] text-muted-foreground italic">
-      Voided — no further actions.
+      Voided; no further actions.
     </span>
   );
 }

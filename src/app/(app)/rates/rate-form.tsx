@@ -99,7 +99,7 @@ function RateDialog({
                 <SelectContent>
                   {currencies.map((c) => (
                     <SelectItem key={c.code} value={c.code}>
-                      {c.code} — {c.name}
+                      {c.code} · {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -119,7 +119,7 @@ function RateDialog({
                 <SelectContent>
                   {currencies.map((c) => (
                     <SelectItem key={c.code} value={c.code}>
-                      {c.code} — {c.name}
+                      {c.code} · {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
