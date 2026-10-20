@@ -8,6 +8,7 @@ import {
   accounts,
   apBillLines,
   apBills,
+  purchaseOrders,
   vendors,
 } from "@/lib/db/schema";
 import { runAs } from "@/lib/actor";
@@ -28,9 +29,10 @@ export default async function BillDetailPage({
   const user = await getUser();
 
   const [result] = await db
-    .select({ bill: apBills, vendor: vendors })
+    .select({ bill: apBills, vendor: vendors, poNumber: purchaseOrders.poNumber })
     .from(apBills)
     .innerJoin(vendors, eq(vendors.id, apBills.vendorId))
+    .leftJoin(purchaseOrders, eq(purchaseOrders.id, apBills.purchaseOrderId))
     .where(
       and(
         eq(apBills.id, id),
@@ -49,7 +51,7 @@ export default async function BillDetailPage({
     .where(eq(apBillLines.billId, id))
     .orderBy(asc(apBillLines.lineNumber));
 
-  const { bill, vendor } = result;
+  const { bill, vendor, poNumber } = result;
   const actor = await requireActor();
   const live = bill.status === "posted" || bill.status === "paid";
   const [detail, applied, available] = live
@@ -82,6 +84,17 @@ export default async function BillDetailPage({
                     {bill.vendorInvoiceNumber}
                   </span>
                 </span>
+              )}
+              {poNumber && (
+                <>
+                  <span>·</span>
+                  <span>
+                    Bills{" "}
+                    <Link href={`/ap/purchase-orders/${bill.purchaseOrderId}`} className="font-mono text-primary hover:underline">
+                      {poNumber}
+                    </Link>
+                  </span>
+                </>
               )}
               <span>·</span>
               <span>Billed {bill.billDate}</span>

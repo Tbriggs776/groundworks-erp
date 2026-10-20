@@ -194,6 +194,9 @@ docs/compliance/      SOC 2 control map and checklist
   vendor credit applications. Printed checks (`src/lib/ap/checks.ts`) draw
   only on bank accounts; printing writes the check number into
   `reference` and moves `accounts.next_check_number`.
+- What's billed on a purchase order comes from `src/lib/ap/po-billing.ts`
+  (bill lines that point at PO lines, on bills not voided). POs approve
+  through the bill thresholds (scope `ap_bill`) and never touch the ledger.
 - Banking amounts are from the account holder's view: + money in, − money
   out (= debit − credit on the account). Reconciliation and overview
   balances use the natural sign (a credit card's balance owed is positive).

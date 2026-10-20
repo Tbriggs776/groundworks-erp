@@ -1,12 +1,13 @@
 import { runAs } from "@/lib/actor";
 import { requireActor } from "@/lib/auth";
-import { documentPdf, statementPdf, type PdfDocKind } from "@/lib/pdf/documents";
+import { documentPdf, purchaseOrderPdf, statementPdf, type PdfDocKind } from "@/lib/pdf/documents";
 import { pdfError, pdfResponse } from "../../response";
 
 /**
  * GET /pdf/<kind>/<id>: a customer-facing PDF for the active company.
- * Kinds: invoice, estimate, sales-receipt, credit-memo, and statement
- * (id = customer, ?from=&to=). Add ?download=1 to save instead of view.
+ * Kinds: invoice, estimate, sales-receipt, credit-memo, purchase-order,
+ * and statement (id = customer, ?from=&to=). Add ?download=1 to save
+ * instead of view.
  */
 const KINDS: Record<string, PdfDocKind> = {
   invoice: "invoice",
@@ -23,7 +24,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
     const file =
       kind === "statement"
         ? await runAs(actor, (ctx) => statementPdf(ctx, { id, from: sp.get("from") || undefined, to: sp.get("to") || undefined }))
-        : KINDS[kind]
+        : kind === "purchase-order"
+          ? await runAs(actor, (ctx) => purchaseOrderPdf(ctx, id))
+          : KINDS[kind]
           ? await runAs(actor, (ctx) => documentPdf(ctx, KINDS[kind], id))
           : null;
     if (!file) return new Response("Not found", { status: 404 });

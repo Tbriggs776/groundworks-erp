@@ -14,6 +14,7 @@ import {
   salesReceipts,
   glJournals,
   glLines,
+  purchaseOrders,
   vendors,
 } from "@/lib/db/schema";
 import { requirePermission, type Ctx } from "@/lib/actor";
@@ -24,7 +25,7 @@ import { requirePermission, type Ctx } from "@/lib/actor";
  *     memos, refunds, bills, journal entries, bank transactions)
  *   - draft invoices the daily run made from a recurring template
  *     (reminders, and scheduled ones that couldn't post)
- *   - bills pending approval, whoever submitted them
+ *   - bills and purchase orders pending approval, whoever submitted them
  *
  * Agents in draft mode end every task here; this is where a person turns
  * their work into ledger entries (or sends it back).
@@ -41,6 +42,7 @@ export type ReviewItem = {
     | "bill_payment"
     | "vendor_credit"
     | "vendor_refund"
+    | "purchase_order"
     | "journal_entry"
     | "bank_transaction";
   id: string;
@@ -62,7 +64,7 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
   const org = ctx.actor.organizationId;
   const tx = ctx.tx;
 
-  const [invoices, custPayments, bills, billPayments, journals, bankTxns, receipts, memos, refunds, vCredits, vRefunds] = await Promise.all([
+  const [invoices, custPayments, bills, billPayments, journals, bankTxns, receipts, memos, refunds, vCredits, vRefunds, pos] = await Promise.all([
     tx
       .select({ d: arInvoices, party: customers.name, agentName: agents.name })
       .from(arInvoices)
@@ -185,6 +187,22 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
       .leftJoin(agents, eq(agents.id, vendorRefunds.createdByAgentId))
       .where(and(eq(vendorRefunds.organizationId, org), eq(vendorRefunds.status, "draft"), isNotNull(vendorRefunds.createdByAgentId)))
       .orderBy(desc(vendorRefunds.createdAt)),
+    tx
+      .select({ d: purchaseOrders, party: vendors.name, agentName: agents.name })
+      .from(purchaseOrders)
+      .innerJoin(vendors, eq(vendors.id, purchaseOrders.vendorId))
+      .leftJoin(agents, eq(agents.id, purchaseOrders.createdByAgentId))
+      .where(
+        and(
+          eq(purchaseOrders.organizationId, org),
+          isNull(purchaseOrders.deletedAt),
+          or(
+            eq(purchaseOrders.status, "pending_approval"),
+            and(eq(purchaseOrders.status, "draft"), isNotNull(purchaseOrders.createdByAgentId))
+          )
+        )
+      )
+      .orderBy(desc(purchaseOrders.createdAt)),
   ]);
 
   const journalTotals = journals.length
@@ -244,6 +262,21 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
       agentName,
       createdAt: d.createdAt,
       href: `/ap/bills/${d.id}`,
+    })),
+    ...pos.map(({ d, party, agentName }) => ({
+      type: "purchase_order" as const,
+      id: d.id,
+      number: d.poNumber,
+      party,
+      date: d.poDate,
+      amount: d.totalAmount,
+      currency: d.currency,
+      status: d.status,
+      reason: d.status === "pending_approval" ? ("awaiting_approval" as const) : ("agent_draft" as const),
+      agentId: d.createdByAgentId,
+      agentName,
+      createdAt: d.createdAt,
+      href: `/ap/purchase-orders/${d.id}`,
     })),
     ...billPayments.map(({ d, party, agentName }) => ({
       type: "bill_payment" as const,

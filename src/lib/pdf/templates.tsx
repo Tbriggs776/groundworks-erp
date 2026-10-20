@@ -34,7 +34,11 @@ export type SalesDocPdf = {
   stamp: string | null;
   partyLabel: string;
   party: PdfParty | null;
+  /** Purchase orders: where the vendor delivers. */
+  shipTo?: PdfParty | null;
   meta: PdfRow[];
+  /** Column heading for the unit price ("RATE", or "COST" on a PO). */
+  rateLabel?: string;
   currency: string;
   lines: Array<{ item: string | null; description: string | null; quantity: string; unitPrice: string; amount: string }>;
   totals: PdfRow[];
@@ -157,7 +161,7 @@ function Meta({ P, s, rows }: { P: Pdf; s: ReturnType<typeof styles>; rows: PdfR
   );
 }
 
-/** Invoice, estimate, sales receipt, or credit memo. */
+/** Invoice, estimate, sales receipt, credit memo, or purchase order. */
 export function salesDocument(P: Pdf, company: PdfCompany, d: SalesDocPdf): ReactElement {
   const s = styles(P);
   const fmt = (v: string) => formatMoney(v, { currency: d.currency });
@@ -171,13 +175,14 @@ export function salesDocument(P: Pdf, company: PdfCompany, d: SalesDocPdf): Reac
         </P.View>
         <P.View style={[s.row, { marginTop: 14, marginBottom: 18 }]}>
           <PartyBlock P={P} s={s} label={d.partyLabel} party={d.party} />
+          {d.shipTo ? <PartyBlock P={P} s={s} label="SHIP TO" party={d.shipTo} /> : null}
           <Meta P={P} s={s} rows={d.meta} />
         </P.View>
 
         <P.View style={s.th} fixed>
           <P.Text style={{ flex: 1 }}>PRODUCT / SERVICE</P.Text>
           <P.Text style={[s.num, { width: 50 }]}>QTY</P.Text>
-          <P.Text style={[s.num, { width: 80 }]}>RATE</P.Text>
+          <P.Text style={[s.num, { width: 80 }]}>{d.rateLabel ?? "RATE"}</P.Text>
           <P.Text style={[s.num, { width: 90 }]}>AMOUNT</P.Text>
         </P.View>
         {d.lines.map((l, i) => (

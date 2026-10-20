@@ -169,6 +169,14 @@ async function main() {
       rest(keyB, "POST", "/vendor-refunds", { vendorId: ids.vendors, refundDate: "2026-05-03", method: "check", bankAccountId: bank.id, amount: "10", memo: MARKER, post: true }),
       "vendor refund"
     );
+    // An approved purchase order, partly billed.
+    ids["purchase-orders"] = await ok(
+      rest(keyB, "POST", "/purchase-orders", { vendorId: ids.vendors, poDate: "2026-05-01", vendorMessage: MARKER, lines: [{ accountId: expense.id, description: MARKER, unitCost: "60" }], submit: true }),
+      "purchase order"
+    );
+    const bPo = await rest(keyB, "GET", `/purchase-orders/${ids["purchase-orders"]}`);
+    assertEq(bPo.json.status, "open", "B setup: the owner's PO is approved on submit");
+    await ok(rest(keyB, "POST", `/purchase-orders/${ids["purchase-orders"]}/bill`, { billDate: "2026-05-02", mode: "percent", percent: "50" }), "bill from PO");
     // A check waiting in B's print queue.
     ids.checks = await ok(
       rest(keyB, "POST", "/expenses", { type: "check", printLater: true, txnDate: "2026-05-05", bankAccountId: bank.id, payeeName: `${MARKER} check`, lines: [{ accountId: expense.id, amount: "15" }], post: true }),
@@ -228,6 +236,7 @@ async function main() {
     );
   }
   const bEstimateLine = (await rest(keyB, "GET", `/estimates/${ids.estimates}`)).json.lines[0].id as string;
+  const bPoLine = (await rest(keyB, "GET", `/purchase-orders/${ids["purchase-orders"]}`)).json.lines[0].id as string;
   const secrets = [MARKER, b.org.id, ...Object.values(ids)];
   const tables = await tenantTables();
   const before = await fingerprint(b.org.id, tables);
@@ -249,6 +258,8 @@ async function main() {
     create_invoice_from_estimate: { invoiceDate: "2026-05-01" },
     update_recurring_invoice: { name: "x", customerId: aCustomer, type: "unscheduled", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: aIncome }] },
     set_recurring_invoice_status: { status: "paused" },
+    update_purchase_order: { vendorId: aVendor, poDate: "2026-05-01", lines: [{ accountId: aExpense, unitCost: "1" }] },
+    create_bill_from_purchase_order: { billDate: "2026-05-05" },
     match_bank_line: { glLineIds: [crypto.randomUUID()] },
     set_reconciliation_cleared: { glLineIds: [crypto.randomUUID()], cleared: true },
   };
@@ -344,6 +355,10 @@ async function main() {
     ["A's vendor credit applied to B's bill", "/vendor-credit-applications", { vendorCreditId: aCredit, billId: ids.bills }],
     ["vendor refund into B's bank account", "/vendor-refunds", { vendorId: aVendor, refundDate: "2026-05-03", method: "check", bankAccountId: bBank, amount: "1" }],
     ["vendor refund of B's vendor credit", "/vendor-refunds", { vendorId: aVendor, refundDate: "2026-05-03", method: "check", bankAccountId: aBank, amount: "1", vendorCreditId: ids["vendor-credits"] }],
+    ["purchase order for B's vendor", "/purchase-orders", { vendorId: ids.vendors, poDate: "2026-05-01", lines: [{ accountId: aExpense, unitCost: "1" }] }],
+    ["purchase order line on B's account", "/purchase-orders", { vendorId: aVendor, poDate: "2026-05-01", lines: [{ accountId: ids.accounts, unitCost: "1" }] }],
+    ["purchase order line with B's item", "/purchase-orders", { vendorId: aVendor, poDate: "2026-05-01", lines: [{ itemId: ids.items, accountId: aExpense, unitCost: "1" }] }],
+    ["bill line billing B's purchase order line", "/bills", { vendorId: aVendor, billDate: "2026-05-01", lines: [{ accountId: aExpense, amount: "1", purchaseOrderLineId: bPoLine }] }],
     ["printing B's queued check", "/checks/print", { bankAccountId: aBank, firstCheckNumber: 1, checks: [{ kind: "check", id: ids.checks }] }],
     ["printing on B's bank account", "/checks/print", { bankAccountId: bBank, firstCheckNumber: 1, checks: [{ kind: "check", id: ids.checks }] }],
   ];

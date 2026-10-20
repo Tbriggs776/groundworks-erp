@@ -6,7 +6,8 @@
  * credit memo, a sales receipt, a refund), create an agent + key, approve
  * from the review queue, banking (record an expense, import a statement, match,
  * add, and rule its lines, reconcile, undo), invite someone, add a
- * company and switch to it, save the security policy, complete an access
+ * company and switch to it, AP (a vendor credit and refund, a purchase
+ * order billed in part, a printed check), save the security policy, complete an access
  * review, export the audit log, set a password, sign out, sign back in
  * with it, ask for a reset link, and sign up a new account with a
  * password.
@@ -101,6 +102,7 @@ const pages = [
   ["/settings/company", "company-profile"], ["/ar/statements", "statements"],
   ["/ap/vendor-credits", null], ["/ap/vendor-credits/new", "vendor-credit-new"], ["/ap/vendor-refunds", null],
   ["/ap/vendor-refunds/new", null], ["/banking/checks", "print-checks"],
+  ["/ap/purchase-orders", null], ["/ap/purchase-orders/new", "po-new"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -302,6 +304,31 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   const refundOk = refund.includes("$20.00") && refund.includes("VC-");
   console.log(refundOk ? "✓ flow: vendor refund of $20.00 posted against the credit" : "✗ flow: vendor refund");
   if (!refundOk) problems.push("vendor refund: " + refund.slice(0, 300));
+
+  // A purchase order, approved on submit (the owner meets the default
+  // tier), then half of it billed.
+  await page.goto(BASE + "/ap/purchase-orders/new", { waitUntil: "networkidle" });
+  await page.getByLabel("Vendor", { exact: true }).selectOption({ label: vendorName });
+  await page.getByLabel("Line 1 account").selectOption({ label: "6200 · Dues & Subscriptions" });
+  await page.getByLabel("Line 1 quantity").fill("4");
+  await page.getByLabel("Line 1 unit cost").fill("25");
+  await page.getByRole("button", { name: "Save and submit" }).click();
+  await page.waitForURL(/\/ap\/purchase-orders\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByRole("button", { name: "Create bill" }).waitFor({ timeout: 10000 });
+  await page.screenshot({ path: `${outDir}/purchase-order.png`, fullPage: true });
+  const poPdf = await page.getByRole("link", { name: "PDF" }).getAttribute("href");
+  const poPdfRes = await page.request.get(BASE + poPdf);
+  const poPdfOk = poPdfRes.status() === 200 && (await poPdfRes.body()).subarray(0, 5).toString() === "%PDF-";
+  await page.getByRole("button", { name: "Create bill" }).click();
+  await page.getByRole("radio", { name: "A percent of each line" }).click();
+  await page.getByRole("dialog").getByLabel("Percent").fill("50");
+  await page.getByRole("dialog").getByRole("button", { name: "Create bill" }).click();
+  await page.waitForURL(/\/ap\/bills\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.waitForLoadState("networkidle");
+  const fromPo = await page.locator("main").innerText();
+  const poOk = poPdfOk && /Bills\s+PO-/.test(fromPo) && fromPo.includes("$50.00");
+  console.log(poOk ? "✓ flow: purchase order approved on submit, PDF, and half of it billed ($50.00)" : "✗ flow: purchase order");
+  if (!poOk) problems.push("purchase order: " + fromPo.slice(0, 300));
 
   await page.goto(BASE + "/banking/transactions/new?type=check", { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Bank account" }).first().click();
