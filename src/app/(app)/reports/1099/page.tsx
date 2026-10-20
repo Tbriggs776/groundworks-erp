@@ -87,6 +87,14 @@ export default async function Form1099Page({
             <Link href={qs({ all: showAll ? undefined : "1" })} className="text-xs text-primary hover:underline">
               {showAll ? "Only vendors that get a 1099" : "Show every vendor paid on 1099 accounts"}
             </Link>
+            <a
+              href={`/reports/export/1099?format=pdf&${exportQs}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent"
+            >
+              PDF summary
+            </a>
             {canExport && (
               <a
                 href={`/reports/1099/export?${exportQs}`}

@@ -7,6 +7,7 @@ import {
 } from "@/lib/gl/reports";
 import { formatMoney } from "@/lib/money";
 import { DateFilter } from "../date-filter";
+import { ExportLinks } from "../report-table";
 
 type SP = Promise<{ asOf?: string }>;
 
@@ -33,7 +34,10 @@ export default async function BalanceSheetPage({
       userEmail={user?.email}
     >
       <div className="space-y-5 max-w-4xl">
-        <DateFilter paramName="asOf" value={asOfDate} label="As of" />
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <DateFilter paramName="asOf" value={asOfDate} label="As of" />
+          <ExportLinks report="balance-sheet" params={{ asOf: asOfDate }} />
+        </div>
 
         <div className="text-center">
           <div className="font-heading text-2xl tracking-[0.1em]">

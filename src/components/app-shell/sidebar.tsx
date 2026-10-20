@@ -107,6 +107,10 @@ const NAV: NavGroup[] = [
     icon: FileBarChart,
     items: [
       { label: "Profit & Loss", href: "/reports/income-statement" },
+      { label: "P&L by Month", href: "/reports/profit-and-loss-by-period" },
+      { label: "P&L by Class", href: "/reports/profit-and-loss-by-class" },
+      { label: "Budget vs Actual", href: "/reports/budget-vs-actual" },
+      { label: "Cash Flow", href: "/reports/cash-flow" },
       { label: "Balance Sheet", href: "/reports/balance-sheet" },
       { label: "AR Aging", href: "/reports/ar-aging" },
       { label: "AP Aging", href: "/reports/ap-aging" },

@@ -3,6 +3,7 @@ import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { getTrialBalance } from "@/lib/gl/reports";
 import { formatMoney, money } from "@/lib/money";
 import { TrialBalanceFilter } from "./filter";
+import { ExportLinks } from "../report-table";
 
 type SP = Promise<{ asOf?: string; includeZero?: string }>;
 
@@ -35,7 +36,10 @@ export default async function TrialBalancePage({
       userEmail={user?.email}
     >
       <div className="space-y-5">
-        <TrialBalanceFilter asOfDate={asOfDate} includeZero={includeZero} />
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <TrialBalanceFilter asOfDate={asOfDate} includeZero={includeZero} />
+          <ExportLinks report="trial-balance" params={{ asOf: asOfDate, includeZero: includeZero ? "1" : undefined }} />
+        </div>
 
         <div className="gw-table-wrap rounded-md border border-border overflow-x-auto">
           <table className="w-full text-sm">
