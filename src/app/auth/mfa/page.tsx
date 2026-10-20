@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionVerdict, getUser } from "@/lib/auth";
 import { safeRedirectPath } from "@/lib/ui/redirect";
+import { BrandMark } from "@/components/brand-mark";
 import { MfaStep } from "./mfa-step";
 
 /**
@@ -25,8 +26,11 @@ export default async function MfaPage({
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-sm">
-        <div className="mb-8 text-center font-heading text-xl tracking-[0.2em]">GROUNDWORKS</div>
-        <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <div className="mb-8 flex flex-col items-center">
+          <BrandMark size={48} />
+          <div className="font-heading text-lg tracking-[0.18em] mt-3">GROUNDWORKS</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-[0_1px_3px_rgb(27_42_78/0.06),0_8px_24px_-12px_rgb(27_42_78/0.12)]">
           <div>
             <h1 className="font-heading text-xl tracking-[0.1em]">TWO-STEP VERIFICATION</h1>
             <p className="text-xs text-muted-foreground mt-1">

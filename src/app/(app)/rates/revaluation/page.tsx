@@ -26,7 +26,7 @@ export default async function RevaluationPage() {
           Re-translates foreign-currency account balances at the spot rate
           as of the revaluation date and posts a balanced adjustment to
           unrealized FX gain / loss. Typically run at period-end with an
-          auto-reverse date of day 1 of the following period — the
+          auto-reverse date of day 1 of the following period, so the
           revaluation unwinds automatically so it doesn&apos;t bleed into
           next period&apos;s actuals.
         </div>

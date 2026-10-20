@@ -149,7 +149,7 @@ export function VendorsClient({
 
       <div className="text-[11px] text-muted-foreground">
         {filtered.length} of {vendors.length} vendors
-        {truncated && " (showing the first 200 — search to narrow)"}.
+        {truncated && " (showing the first 200; search to narrow)"}.
       </div>
 
       <VendorForm open={open} onOpenChange={setOpen} initial={editing} />

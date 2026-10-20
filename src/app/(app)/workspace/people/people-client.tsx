@@ -105,7 +105,7 @@ export function PeopleClient({
                       {p.fullName && <div className="text-[11px] text-muted-foreground">{p.email}</div>}
                       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
                         {p.mfaEnabled === true ? (
-                          <span className="inline-flex items-center gap-0.5 text-emerald-500"><ShieldCheck className="h-3 w-3" />2-step on</span>
+                          <span className="inline-flex items-center gap-0.5 text-[var(--gw-green-bright)]"><ShieldCheck className="h-3 w-3" />2-step on</span>
                         ) : p.mfaEnabled === false ? (
                           <span className="inline-flex items-center gap-0.5"><ShieldOff className="h-3 w-3" />2-step off</span>
                         ) : null}

@@ -339,7 +339,7 @@ function DimensionForm({
           </DialogTitle>
           <DialogDescription className="text-xs">
             {isEdit && initial?.isSystem
-              ? "This is a system dimension — the code is locked but the display name can be customized."
+              ? "This is a system dimension: the code is locked but the display name can be customized."
               : "Dimensions slice journal lines for analytical reporting."}
           </DialogDescription>
         </DialogHeader>
@@ -537,10 +537,10 @@ function DimensionValueForm({
                 <SelectValue placeholder="—" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none__">— top level —</SelectItem>
+                <SelectItem value="__none__">Top level</SelectItem>
                 {parentCandidates.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
-                    {p.code} — {p.name}
+                    {p.code} · {p.name}
                   </SelectItem>
                 ))}
               </SelectContent>

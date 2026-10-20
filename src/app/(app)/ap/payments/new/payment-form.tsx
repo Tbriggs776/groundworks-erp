@@ -152,12 +152,12 @@ export function PaymentForm({
           </Label>
           <Select value={vendorId} onValueChange={(v) => onVendorChange(v ?? "")}>
             <SelectTrigger>
-              <SelectValue placeholder="— choose vendor —" />
+              <SelectValue placeholder="Choose vendor…" />
             </SelectTrigger>
             <SelectContent>
               {vendors.map((v) => (
                 <SelectItem key={v.id} value={v.id}>
-                  {v.code} — {v.name}
+                  {v.code} · {v.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -205,12 +205,12 @@ export function PaymentForm({
           </Label>
           <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
             <SelectTrigger>
-              <SelectValue placeholder="— choose bank —" />
+              <SelectValue placeholder="Choose bank account…" />
             </SelectTrigger>
             <SelectContent>
               {bankAccounts.map((a) => (
                 <SelectItem key={a.id} value={a.id}>
-                  {a.code} — {a.name}
+                  {a.code} · {a.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -329,7 +329,7 @@ export function PaymentForm({
                     colSpan={4}
                     className="px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground"
                   >
-                    Totals — applied {formatMoney(totals.applied)} · discount{" "}
+                    Totals: applied {formatMoney(totals.applied)} · discount{" "}
                     {formatMoney(totals.discount)} · net cash out
                   </td>
                   <td

@@ -136,7 +136,7 @@ export function JournalEntryForm({
             <SelectContent>
               {sourceCodes.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
-                  {s.code} — {s.description}
+                  {s.code} · {s.description}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -173,7 +173,7 @@ export function JournalEntryForm({
               <SelectItem value="__none__">—</SelectItem>
               {reasonCodes.map((r) => (
                 <SelectItem key={r.id} value={r.id}>
-                  {r.code} — {r.description}
+                  {r.code} · {r.description}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -207,10 +207,10 @@ export function JournalEntryForm({
                     }
                     className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5"
                   >
-                    <option value="">— choose account —</option>
+                    <option value="">Choose account…</option>
                     {postingAccounts.map((a) => (
                       <option key={a.id} value={a.id}>
-                        {a.code} — {a.name}
+                        {a.code} · {a.name}
                       </option>
                     ))}
                   </select>

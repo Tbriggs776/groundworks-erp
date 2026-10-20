@@ -135,7 +135,7 @@ export function InvoiceForm({
         <div className="sm:col-span-2">
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Customer</Label>
           <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={`${cell} text-sm py-2`}>
-            <option value="">— choose customer —</option>
+            <option value="">Choose customer…</option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
@@ -184,7 +184,7 @@ export function InvoiceForm({
                 <td className="px-3 py-2 text-xs font-mono text-muted-foreground">{idx + 1}</td>
                 <td className="px-3 py-2">
                   <select value={l.itemId} onChange={(e) => pickItem(l.key, e.target.value)} className={cell}>
-                    <option value="">— none —</option>
+                    <option value="">None</option>
                     {items.map((i) => (
                       <option key={i.id} value={i.id}>{i.name}</option>
                     ))}
@@ -204,9 +204,9 @@ export function InvoiceForm({
                 </td>
                 <td className="px-3 py-2">
                   <select value={l.accountId} onChange={(e) => update(l.key, { accountId: e.target.value })} className={cell}>
-                    <option value="">{l.itemId ? "(from item)" : "— choose —"}</option>
+                    <option value="">{l.itemId ? "(from item)" : "Choose…"}</option>
                     {incomeAccounts.map((a) => (
-                      <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+                      <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
                     ))}
                   </select>
                 </td>

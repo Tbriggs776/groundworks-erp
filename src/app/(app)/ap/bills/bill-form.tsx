@@ -159,12 +159,12 @@ export function BillForm({
           </Label>
           <Select value={vendorId} onValueChange={(v) => setVendorId(v ?? "")}>
             <SelectTrigger>
-              <SelectValue placeholder="— choose vendor —" />
+              <SelectValue placeholder="Choose vendor…" />
             </SelectTrigger>
             <SelectContent>
               {vendors.map((v) => (
                 <SelectItem key={v.id} value={v.id}>
-                  {v.code} — {v.name}
+                  {v.code} · {v.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -237,10 +237,10 @@ export function BillForm({
                     onChange={(e) => updateLine(l.id, { accountId: e.target.value })}
                     className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5"
                   >
-                    <option value="">— choose account —</option>
+                    <option value="">Choose account…</option>
                     {postingAccounts.map((a) => (
                       <option key={a.id} value={a.id}>
-                        {a.code} — {a.name}
+                        {a.code} · {a.name}
                       </option>
                     ))}
                   </select>
@@ -307,7 +307,7 @@ export function BillForm({
           <span className="text-[11px] text-muted-foreground">
             Tier:{" "}
             <span className="text-foreground">
-              {routingPreview.tierName ?? "(no match — fallback)"}
+              {routingPreview.tierName ?? "(no match, using fallback)"}
             </span>
             {" · "}
             Required:{" "}

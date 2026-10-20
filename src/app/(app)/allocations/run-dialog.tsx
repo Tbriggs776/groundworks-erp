@@ -96,10 +96,10 @@ export function RunAllocationDialog({
               onChange={(e) => setSourceAccountId(e.target.value)}
               className="w-full text-sm bg-background border border-border rounded-md px-2 py-2"
             >
-              <option value="">— choose account —</option>
+              <option value="">Choose account…</option>
               {postingAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.code} — {a.name}
+                  {a.code} · {a.name}
                 </option>
               ))}
             </select>

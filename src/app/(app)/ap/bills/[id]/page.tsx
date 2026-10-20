@@ -56,7 +56,7 @@ export default async function BillDetailPage({
       <div className="space-y-5 max-w-5xl">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="font-heading text-3xl tracking-[0.08em] text-foreground">
+            <div className="font-heading text-2xl sm:text-3xl tracking-[0.06em] text-foreground">
               {bill.billNumber}
             </div>
             <div className="text-sm mt-1">{vendor.name}</div>
@@ -95,7 +95,7 @@ export default async function BillDetailPage({
             <span className="uppercase tracking-wider text-destructive font-semibold">
               Rejected
             </span>
-            {" — "}
+            {": "}
             {bill.rejectionReason}
           </div>
         )}
@@ -105,7 +105,7 @@ export default async function BillDetailPage({
             <span className="uppercase tracking-wider font-semibold">
               Voided
             </span>
-            {" — "}
+            {": "}
             {bill.voidReason}
             {bill.voidGlJournalId && (
               <>

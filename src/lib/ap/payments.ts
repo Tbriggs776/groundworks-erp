@@ -66,7 +66,7 @@ export async function postPaymentToGl(
     {
       accountId: payment.bankAccountId,
       credit: toDbMoney(netTotal),
-      memo: `Bill payment ${payment.paymentNumber} — ${payment.method}${
+      memo: `Bill payment ${payment.paymentNumber} · ${payment.method}${
         payment.reference ? ` ref ${payment.reference}` : ""
       }`,
       vendorId: payment.vendorId,
@@ -205,7 +205,7 @@ export async function voidPaymentFromGl(
       actorId: actor.userId,
       actor,
       organizationId: actor.organizationId,
-      description: `Void of bill payment ${payment.paymentNumber} — ${reason}`,
+      description: `Void of bill payment ${payment.paymentNumber}: ${reason}`,
     },
     tx
   );

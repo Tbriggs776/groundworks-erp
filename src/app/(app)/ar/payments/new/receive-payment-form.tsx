@@ -122,7 +122,7 @@ export function ReceivePaymentForm({
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Customer</Label>
           <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={field}>
-            <option value="">— choose customer —</option>
+            <option value="">Choose customer…</option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
@@ -136,7 +136,7 @@ export function ReceivePaymentForm({
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Deposit to</Label>
           <select value={depositAccountId} onChange={(e) => setDepositAccountId(e.target.value)} className={field}>
             {depositAccounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+              <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
             ))}
           </select>
         </div>

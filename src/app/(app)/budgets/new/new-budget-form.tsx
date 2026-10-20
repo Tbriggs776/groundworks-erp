@@ -70,7 +70,7 @@ export function NewBudgetForm({
           <SelectContent>
             {fiscalYears.map((y) => (
               <SelectItem key={y.id} value={y.id}>
-                {y.yearLabel} ({y.startDate} — {y.endDate})
+                {y.yearLabel} ({y.startDate} to {y.endDate})
               </SelectItem>
             ))}
           </SelectContent>

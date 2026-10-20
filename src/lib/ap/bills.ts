@@ -456,7 +456,7 @@ async function requireApprover(ctx: Ctx, bill: ApBill, verb: "approve" | "reject
   if (!canApproveAtRole(ctx.actor.role, routing.requiredRole)) {
     throw new AppError(
       "forbidden",
-      `Role "${ctx.actor.role}" can't ${verb} this bill — "${routing.requiredRole}" or higher is required for ${money(bill.totalAmount).toFixed(2)}.`,
+      `Role "${ctx.actor.role}" can't ${verb} this bill: "${routing.requiredRole}" or higher is required for ${money(bill.totalAmount).toFixed(2)}.`,
       { requiredRole: routing.requiredRole }
     );
   }

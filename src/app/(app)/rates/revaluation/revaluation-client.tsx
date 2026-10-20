@@ -101,12 +101,12 @@ export function RevaluationClient({
             onChange={(e) => setGainAcct(e.target.value)}
             className="w-full text-sm bg-background border border-border rounded-md px-2 py-2"
           >
-            <option value="">— choose account —</option>
+            <option value="">Choose account…</option>
             {postingAccounts
               .filter((a) => a.normalBalance === "credit")
               .map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.code} — {a.name}
+                  {a.code} · {a.name}
                 </option>
               ))}
           </select>
@@ -120,12 +120,12 @@ export function RevaluationClient({
             onChange={(e) => setLossAcct(e.target.value)}
             className="w-full text-sm bg-background border border-border rounded-md px-2 py-2"
           >
-            <option value="">— choose account —</option>
+            <option value="">Choose account…</option>
             {postingAccounts
               .filter((a) => a.normalBalance === "debit")
               .map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.code} — {a.name}
+                  {a.code} · {a.name}
                 </option>
               ))}
           </select>

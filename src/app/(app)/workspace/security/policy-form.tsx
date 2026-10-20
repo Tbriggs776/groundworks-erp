@@ -41,7 +41,7 @@ export function PolicyForm({ policy, editable }: { policy: SecurityPolicy; edita
     >
       <fieldset disabled={!editable || pending} className="space-y-6">
         <label className="flex items-start gap-3 rounded-md border border-border p-4 cursor-pointer">
-          <input type="checkbox" checked={requireMfa} onChange={(e) => setRequireMfa(e.target.checked)} className="mt-1 h-4 w-4 accent-[var(--gw-gold)]" />
+          <input type="checkbox" checked={requireMfa} onChange={(e) => setRequireMfa(e.target.checked)} className="mt-1 h-4 w-4 accent-[var(--gw-navy)]" />
           <span>
             <span className="block text-sm font-medium">Require two-step verification</span>
             <span className={hint}>

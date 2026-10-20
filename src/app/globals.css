@@ -6,17 +6,22 @@
 
 /*
  * GROUNDWORKS DESIGN SYSTEM
- * Dark-mode first. Gold-on-obsidian palette ported from the prototype.
- * shadcn tokens are mapped onto the Groundworks palette so every shadcn
- * component picks up the brand automatically.
+ * Light, modern, quietly classic: Briggs Blue (navy) and Briggs Gold on
+ * ivory paper. Navy carries text and primary actions; gold is accent only
+ * (rules, stars, active markers, focus), never body text. Headings use
+ * letterspaced Roman capitals (Cinzel); everything you read or scan for
+ * numbers uses Geist with tabular figures.
+ *
+ * shadcn tokens map onto the palette, so every shadcn component picks up
+ * the brand automatically.
  */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-epilogue);
-  --font-mono: var(--font-jetbrains);
-  --font-heading: var(--font-bebas);
+  --font-sans: var(--font-geist);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-cinzel);
 
   /* shadcn semantic tokens */
   --color-card: var(--card);
@@ -44,9 +49,11 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Groundworks brand tokens — use these for status/semantic domain colors */
+  /* Groundworks brand tokens: brand marks and semantic status colors */
+  --color-gw-navy: var(--gw-navy);
   --color-gw-gold: var(--gw-gold);
   --color-gw-gold-bright: var(--gw-gold-bright);
+  --color-gw-gold-deep: var(--gw-gold-deep);
   --color-gw-green: var(--gw-green);
   --color-gw-green-bright: var(--gw-green-bright);
   --color-gw-red: var(--gw-red);
@@ -65,92 +72,65 @@
   --radius-xl: calc(var(--radius) * 1.4);
 }
 
-/*
- * Default theme = dark. ERP users stare at this all day;
- * the prototype's dark/gold palette is the product's identity.
- */
-:root,
-.dark {
-  /* Groundworks palette (source of truth) */
-  --gw-bg: #141210;
-  --gw-surface: #1E1B18;
-  --gw-raised: #262219;
-  --gw-border: #302B24;
-  --gw-border-strong: #3D3730;
-  --gw-muted: #58524A;
-  --gw-dim: #8A8078;
-  --gw-light: #C8BFB0;
-  --gw-bright: #EDE5D8;
-  --gw-white: #FAF7F2;
+:root {
+  /* Brand palette (source of truth) */
+  --gw-navy: #1B2A4E;       /* Briggs Blue: text, primary actions, sidebar */
+  --gw-navy-deep: #131E39;
+  --gw-navy-soft: #2B3C66;
+  --gw-gold: #C9A961;       /* Briggs Gold: accents only, never body text */
+  --gw-gold-bright: #DCC489;
+  --gw-gold-deep: #8C6A24;  /* gold dark enough for small text on paper */
+  --gw-ivory: #F6F3EC;      /* page: ecru paper */
+  --gw-paper: #FFFFFF;      /* cards */
+  --gw-linen: #EFEADF;      /* quiet fills, hovers */
+  --gw-border: #E3DCCD;
+  --gw-border-strong: #D2C8B3;
+  --gw-slate: #5C6880;      /* secondary text on paper */
 
-  --gw-gold: #C07A0A;
-  --gw-gold-bright: #E09418;
-  --gw-gold-deep: #301E02;
-
-  --gw-green: #1E6040;
-  --gw-green-bright: #3CA870;
-  --gw-red: #6E2030;
-  --gw-red-bright: #B04050;
-  --gw-blue: #163862;
-  --gw-blue-bright: #2878C0;
-  --gw-teal: #126060;
-  --gw-teal-bright: #28A8A8;
-  --gw-amber: #5A3800;
-  --gw-amber-bright: #D08030;
-  --gw-purple-bright: #8048C0;
+  /* Status colors, tuned to read as text on paper */
+  --gw-green: #E6F2EB;
+  --gw-green-bright: #1F7A4D;
+  --gw-red: #FBECEA;
+  --gw-red-bright: #B42318;
+  --gw-blue: #E8EEF8;
+  --gw-blue-bright: #2557A7;
+  --gw-teal: #E3F2F1;
+  --gw-teal-bright: #0F766E;
+  --gw-amber: #FBF1E0;
+  --gw-amber-bright: #9A5B0B;
+  --gw-purple-bright: #6B3FA0;
 
   /* shadcn tokens mapped onto the palette */
-  --background: var(--gw-bg);
-  --foreground: var(--gw-bright);
-  --card: var(--gw-surface);
-  --card-foreground: var(--gw-bright);
-  --popover: var(--gw-raised);
-  --popover-foreground: var(--gw-bright);
-  --primary: var(--gw-gold);
-  --primary-foreground: var(--gw-bg);
-  --secondary: var(--gw-raised);
-  --secondary-foreground: var(--gw-bright);
-  --muted: var(--gw-surface);
-  --muted-foreground: var(--gw-dim);
-  --accent: var(--gw-raised);
-  --accent-foreground: var(--gw-bright);
+  --background: var(--gw-ivory);
+  --foreground: var(--gw-navy);
+  --card: var(--gw-paper);
+  --card-foreground: var(--gw-navy);
+  --popover: var(--gw-paper);
+  --popover-foreground: var(--gw-navy);
+  --primary: var(--gw-navy);
+  --primary-foreground: #FFFFFF;
+  --secondary: var(--gw-linen);
+  --secondary-foreground: var(--gw-navy);
+  --muted: var(--gw-linen);
+  --muted-foreground: var(--gw-slate);
+  --accent: var(--gw-linen);
+  --accent-foreground: var(--gw-navy);
   --destructive: var(--gw-red-bright);
   --border: var(--gw-border);
-  --input: var(--gw-border);
+  --input: var(--gw-border-strong);
   --ring: var(--gw-gold);
 
-  --sidebar: var(--gw-surface);
-  --sidebar-foreground: var(--gw-dim);
+  /* Sidebar: navy panel, light text, gold markers */
+  --sidebar: var(--gw-navy);
+  --sidebar-foreground: #C3CCDF;
   --sidebar-primary: var(--gw-gold);
-  --sidebar-primary-foreground: var(--gw-bg);
-  --sidebar-accent: var(--gw-raised);
-  --sidebar-accent-foreground: var(--gw-light);
-  --sidebar-border: var(--gw-border);
+  --sidebar-primary-foreground: var(--gw-navy);
+  --sidebar-accent: rgb(255 255 255 / 0.07);
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: rgb(255 255 255 / 0.09);
   --sidebar-ring: var(--gw-gold);
 
-  --radius: 0.5rem;
-}
-
-/* Optional light mode override for future, kept minimal for now */
-.light {
-  --background: #FAF7F2;
-  --foreground: #1E1B18;
-  --card: #FFFFFF;
-  --card-foreground: #1E1B18;
-  --popover: #FFFFFF;
-  --popover-foreground: #1E1B18;
-  --primary: #C07A0A;
-  --primary-foreground: #FFFFFF;
-  --secondary: #EDE5D8;
-  --secondary-foreground: #1E1B18;
-  --muted: #EDE5D8;
-  --muted-foreground: #58524A;
-  --accent: #EDE5D8;
-  --accent-foreground: #1E1B18;
-  --destructive: #B04050;
-  --border: #D8CFBE;
-  --input: #D8CFBE;
-  --ring: #C07A0A;
+  --radius: 0.625rem;
 }
 
 @layer base {
@@ -164,13 +144,13 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "cv11", "ss01";
   }
 
-  /* Display / heading font utility — use via `font-heading` */
+  /* Display / heading face: letterspaced Roman capitals. Use `font-heading`. */
   .font-heading {
-    font-family: var(--font-bebas), sans-serif;
-    letter-spacing: 0.08em;
+    font-family: var(--font-cinzel), Georgia, serif;
+    font-weight: 600;
+    letter-spacing: 0.1em;
   }
 
   /* Stop iOS Safari zooming into form fields under 16px */
@@ -188,23 +168,25 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Thin scrollbars matching the prototype */
+  /* Slim, quiet scrollbars */
   ::-webkit-scrollbar {
-    width: 3px;
-    height: 3px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
-    background: var(--gw-surface);
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--gw-muted);
-    border-radius: 2px;
+    background: var(--gw-border-strong);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
 }
 
 /*
  * Data tables. Every table sits in a `.gw-table-wrap` that scrolls
- * sideways instead of clipping. Scroll shadows hint that more columns
+ * sideways instead of clipping. Soft navy shadows hint that more columns
  * are off-screen. On phones: tighter cells, headers and numbers never
  * wrap, and the first column pins so rows keep their label while
  * scrolling. Unlayered so it beats the per-cell Tailwind padding.
@@ -212,10 +194,11 @@
 .gw-table-wrap {
   overscroll-behavior-x: contain;
   background:
-    linear-gradient(to right, var(--background) 40%, transparent) left / 32px 100% no-repeat local,
-    linear-gradient(to left, var(--background) 40%, transparent) right / 32px 100% no-repeat local,
-    radial-gradient(farthest-side at 0 50%, rgb(224 148 24 / 0.22), transparent) left / 12px 100% no-repeat scroll,
-    radial-gradient(farthest-side at 100% 50%, rgb(224 148 24 / 0.22), transparent) right / 12px 100% no-repeat scroll;
+    linear-gradient(to right, var(--card) 40%, transparent) left / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--card) 40%, transparent) right / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(27 42 78 / 0.14), transparent) left / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(27 42 78 / 0.14), transparent) right / 12px 100% no-repeat scroll
+    var(--card);
 }
 
 .gw-table-wrap th {
@@ -257,13 +240,13 @@
     position: sticky;
     left: 0;
     z-index: 1;
-    background: var(--background);
+    background: var(--card);
     box-shadow: inset -1px 0 0 var(--border);
   }
 
   .gw-table-wrap thead tr > :first-child:not([colspan]),
   .gw-table-wrap tfoot tr > :first-child:not([colspan]) {
-    background: color-mix(in oklab, var(--muted) 50%, var(--background));
+    background: color-mix(in oklab, var(--muted) 50%, var(--card));
   }
 }
 

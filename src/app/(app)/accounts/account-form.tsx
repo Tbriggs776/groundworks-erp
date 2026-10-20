@@ -56,11 +56,11 @@ const SUBCATEGORIES_BY_CATEGORY: Record<
   income_statement: [
     { value: "operating_revenue", label: "Operating Revenue", normal: "credit" },
     { value: "other_revenue", label: "Other Revenue", normal: "credit" },
-    { value: "cogs_labor", label: "COGS — Labor", normal: "debit" },
-    { value: "cogs_materials", label: "COGS — Materials", normal: "debit" },
-    { value: "cogs_equipment", label: "COGS — Equipment", normal: "debit" },
-    { value: "cogs_subcontractor", label: "COGS — Subcontractor", normal: "debit" },
-    { value: "cogs_other", label: "COGS — Other", normal: "debit" },
+    { value: "cogs_labor", label: "COGS: Labor", normal: "debit" },
+    { value: "cogs_materials", label: "COGS: Materials", normal: "debit" },
+    { value: "cogs_equipment", label: "COGS: Equipment", normal: "debit" },
+    { value: "cogs_subcontractor", label: "COGS: Subcontractor", normal: "debit" },
+    { value: "cogs_other", label: "COGS: Other", normal: "debit" },
     { value: "operating_expense", label: "Operating Expense", normal: "debit" },
     { value: "sga", label: "SG&A", normal: "debit" },
     { value: "interest", label: "Interest", normal: "debit" },
@@ -99,7 +99,7 @@ export function AccountForm({ open, onOpenChange, initial }: Props) {
           </DialogTitle>
           <DialogDescription className="text-xs">
             {isEdit
-              ? `Editing ${initial!.code} — ${initial!.name}`
+              ? `Editing ${initial!.code} · ${initial!.name}`
               : "Add a new account to the Chart of Accounts."}
           </DialogDescription>
         </DialogHeader>
@@ -130,7 +130,7 @@ export function AccountForm({ open, onOpenChange, initial }: Props) {
                 name="name"
                 required
                 defaultValue={initial?.name}
-                placeholder="Cash — Operating"
+                placeholder="Operating Cash"
               />
             </div>
           </div>

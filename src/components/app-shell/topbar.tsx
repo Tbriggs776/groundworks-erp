@@ -45,29 +45,34 @@ export function Topbar({ title, crumb, userEmail, switcher, workspaceAdmin }: Pr
           >
             <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[var(--gw-gold)] via-[var(--gw-gold-bright)] to-[var(--gw-gold)]" />
             <SheetTitle className="sr-only">Navigation</SheetTitle>
-            <div className="px-4 py-4 border-b border-border">
+            <div className="px-4 py-4 border-b border-sidebar-border">
               <Brand />
             </div>
             <SidebarNav onNavigate={() => setNavOpen(false)} workspaceAdmin={workspaceAdmin} />
-            {switcher && (
-              <div className="border-t border-border px-4 py-3 sm:hidden">
-                <OrgSwitcher {...switcher} />
-              </div>
-            )}
-            {userEmail && (
-              <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground truncate pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-                {userEmail}
+            {/* Account strip on paper so the switcher reads like everywhere else. */}
+            {(switcher || userEmail) && (
+              <div className="bg-card text-foreground pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                {switcher && (
+                  <div className="px-4 py-3 sm:hidden">
+                    <OrgSwitcher {...switcher} />
+                  </div>
+                )}
+                {userEmail && (
+                  <div className="border-t border-border px-4 pt-3 text-xs text-muted-foreground truncate">
+                    {userEmail}
+                  </div>
+                )}
               </div>
             )}
           </SheetContent>
         </Sheet>
 
         <div className="min-w-0">
-          <div className="font-heading text-[17px] sm:text-[15px] tracking-[0.18em] text-foreground truncate leading-tight">
+          <div className="font-heading text-[16px] sm:text-[15px] tracking-[0.1em] text-foreground truncate leading-tight">
             {title}
           </div>
           {crumb && (
-            <div className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground mt-0.5 truncate">
+            <div className="text-[10px] tracking-[0.18em] uppercase text-muted-foreground mt-0.5 truncate">
               {crumb}
             </div>
           )}

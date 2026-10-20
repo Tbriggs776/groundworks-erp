@@ -122,9 +122,9 @@ async function callTool(actor: Actor, id: JsonRpcId, params: Record<string, unkn
     | { required: boolean; reason: string }
     | undefined;
   const prefix = [
-    result.dryRun ? "DRY RUN — nothing was saved." : "",
+    result.dryRun ? "DRY RUN: nothing was saved." : "",
     result.replayed ? "Replayed (idempotency key already used)." : "",
-    review?.required ? `NEEDS HUMAN REVIEW — ${review.reason}` : "",
+    review?.required ? `NEEDS HUMAN REVIEW: ${review.reason}` : "",
   ]
     .filter(Boolean)
     .map((line) => `${line}\n`)

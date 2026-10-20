@@ -1,24 +1,28 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Bebas_Neue, Epilogue, JetBrains_Mono } from "next/font/google";
+import { Cinzel, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const epilogue = Epilogue({
-  variable: "--font-epilogue",
+/**
+ * Body, tables, forms: modern, with tabular figures for money. (Geist over
+ * Inter: Inter's hyphen sits in wide space, so "sign-in" reads "sign - in".)
+ */
+const geist = Geist({
+  variable: "--font-geist",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
 });
 
-const bebas = Bebas_Neue({
-  variable: "--font-bebas",
+/** Headings and the wordmark: letterspaced classical Roman capitals. */
+const cinzel = Cinzel({
+  variable: "--font-cinzel",
   subsets: ["latin"],
-  weight: "400",
+  weight: ["500", "600", "700"],
 });
 
-const jetbrains = JetBrains_Mono({
-  variable: "--font-jetbrains",
+/** Codes, keys, and figures in tables: same family as the body text. */
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
   subsets: ["latin"],
-  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
@@ -31,8 +35,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#141210",
-  colorScheme: "dark",
+  themeColor: "#FFFFFF",
+  colorScheme: "light",
 };
 
 export default async function RootLayout({
@@ -44,7 +48,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${epilogue.variable} ${bebas.variable} ${jetbrains.variable} h-full antialiased`}
+      className={`${geist.variable} ${cinzel.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
