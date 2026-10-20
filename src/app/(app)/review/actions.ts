@@ -6,6 +6,7 @@ import * as billPayments from "@/lib/ap/bill-payments";
 import * as bills from "@/lib/ap/bills";
 import * as invoices from "@/lib/ar/invoices";
 import * as customerPayments from "@/lib/ar/payments";
+import * as bankTxns from "@/lib/banking/transactions";
 import * as journals from "@/lib/gl/journals";
 import type { ReviewItem } from "@/lib/review";
 
@@ -24,6 +25,8 @@ export async function approveItem(type: ReviewItem["type"], id: string, status: 
         return { id: (await billPayments.postBillPayment(ctx, { id })).id };
       case "journal_entry":
         return { id: (await journals.postJournalEntry(ctx, { id })).id };
+      case "bank_transaction":
+        return { id: (await bankTxns.postBankTransaction(ctx, { id })).id };
       case "bill":
         // Walk the bill as far as this person may take it.
         if (status === "draft") await bills.submitBill(ctx, { id });
@@ -47,6 +50,8 @@ export async function dismissItem(type: ReviewItem["type"], id: string, status: 
         return billPayments.deleteDraftBillPayment(ctx, { id });
       case "journal_entry":
         return journals.deleteDraftJournal(ctx, { id });
+      case "bank_transaction":
+        return bankTxns.deleteDraftBankTransaction(ctx, { id });
       case "bill":
         if (status === "pending_approval") {
           return { id: (await bills.rejectBill(ctx, { id, reason: "Rejected from the review queue" })).id };

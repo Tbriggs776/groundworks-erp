@@ -9,6 +9,7 @@ import {
   Bot,
   Building2,
   FileBarChart,
+  Landmark,
   LayoutDashboard,
   Receipt,
   Settings,
@@ -61,6 +62,17 @@ const NAV: NavGroup[] = [
       { label: "Vendors", href: "/vendors" },
       { label: "Bills", href: "/ap/bills" },
       { label: "Bill Payments", href: "/ap/payments" },
+    ],
+  },
+  {
+    label: "Banking",
+    icon: Landmark,
+    items: [
+      { label: "Bank Accounts", href: "/banking", exact: true },
+      { label: "For Review", href: "/banking/review" },
+      { label: "Transactions", href: "/banking/transactions" },
+      { label: "Bank Rules", href: "/banking/rules" },
+      { label: "Reconcile", href: "/banking/reconcile" },
     ],
   },
   {

@@ -22,6 +22,19 @@ receive payment (explicit or auto-applied oldest first), early-pay discounts
 **Expenses**: vendors (1099 flags), bills with amount-tiered approval routing,
 bill payments with discounts
 
+**Banking**
+- Expenses, checks, deposits (group payments from Undeposited Funds), and
+  transfers, including paying a credit card
+- Import bank and card statements (CSV, OFX, QFX, Web Connect); lines
+  already imported are skipped
+- For review: match each line to what's in the books (suggested by amount
+  and date), add it as a new transaction, or exclude it; undo any of these
+- Bank rules that categorize lines, or record them at import
+- Reconcile to a statement: tick what cleared until the difference is zero;
+  reconciled items can't be voided; only the latest reconciliation can be
+  undone (admins, with a reason)
+- Register with running balance and cleared / reconciled marks
+
 **Workspaces: one sign-in, many companies**
 - Sign up in a minute: name, work email, company. No password; a sign-in
   link by email (or Google / Microsoft / SAML SSO when enabled)
@@ -91,7 +104,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 61 operations: accounts, journals, customers, items, invoices, payments, vendors, bills, bill payments, reports, review queue, activity |
+| Tools | 93 operations: accounts, journals, customers, items, invoices, payments, vendors, bills, bill payments, banking (transactions, statement import, For review, rules, reconciliation), reports, review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -138,8 +151,9 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-15 suites: posting engine, recurring/allocations/budgets, reports, FX,
-parties, bills, bill payments, sales, agents + keys, REST + MCP, RLS,
+16 suites: posting engine, recurring/allocations/budgets, reports, FX,
+parties, bills, bill payments, sales, banking (transactions, statement
+import, For review, rules, reconciliation), agents + keys, REST + MCP, RLS,
 workspaces (sign-up, invites, access, policy, access reviews), session
 security (timeouts, MFA, revocation, rate limits), workspace isolation
 (every API operation attacked from a second workspace, plus the database
@@ -185,12 +199,12 @@ Nobody at Groundworks can see inside a customer's workspace by default.
 
 ## Roadmap to QuickBooks parity
 
-- **Banking**: bank feeds (Plaid), CSV/OFX import, categorization rules that
-  agents can apply, reconciliation
+- **Banking**: live bank feeds (Plaid), split a statement line across
+  categories, attachments on bank transactions
 - **Sales**: sales tax, estimates, sales receipts, credit memos and refunds,
   recurring invoices, invoice PDF + email, online payments, statements
-- **Expenses**: checks / card charges without a bill, receipt capture,
-  purchase orders, 1099 reporting
+- **Expenses**: vendor credits, receipt capture, purchase orders, recurring
+  bills, 1099 reporting
 - **Inventory**: quantity on hand and COGS
 - **Reports**: cash flow statement, P&L by class / location, sales by
   customer / item, expenses by vendor

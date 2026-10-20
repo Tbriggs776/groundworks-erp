@@ -357,3 +357,47 @@ export const apPaymentStatus = pgEnum("ap_payment_status", [
   "posted",
   "voided",
 ]);
+
+// ---------------------------------------------------------------------------
+// Banking
+// ---------------------------------------------------------------------------
+
+/**
+ * Bank transaction kinds (QuickBooks' Expense, Check, Deposit, Transfer).
+ *   expense  — money out of a bank or credit card account to categories
+ *   check    — same, with a check number
+ *   deposit  — money in, from categories and/or customer payments held in
+ *              Undeposited Funds
+ *   transfer — between two bank / credit card accounts (incl. paying a card)
+ */
+export const bankTxnType = pgEnum("bank_txn_type", ["expense", "check", "deposit", "transfer"]);
+
+export const bankTxnStatus = pgEnum("bank_txn_status", ["draft", "posted", "voided"]);
+
+/**
+ * An imported statement line's state in the "For review" list.
+ *   for_review — nothing done yet
+ *   matched    — tied to transactions already in the books
+ *   added      — a new bank transaction was created from it
+ *   excluded   — ignored (duplicate, personal, already handled)
+ */
+export const statementLineStatus = pgEnum("statement_line_status", [
+  "for_review",
+  "matched",
+  "added",
+  "excluded",
+]);
+
+export const statementFormat = pgEnum("statement_format", ["csv", "ofx", "qfx"]);
+
+/** Which way money moves for a bank rule (from the bank account's side). */
+export const bankRuleDirection = pgEnum("bank_rule_direction", ["money_in", "money_out", "any"]);
+
+/** A ledger line on a bank account: cleared (seen on a statement) or reconciled (locked in). */
+export const clearingStatus = pgEnum("clearing_status", ["cleared", "reconciled"]);
+
+export const reconciliationStatus = pgEnum("reconciliation_status", [
+  "in_progress",
+  "completed",
+  "undone",
+]);

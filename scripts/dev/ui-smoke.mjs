@@ -3,10 +3,12 @@
  * every main page (fails on any 4xx/5xx, error boundary, or console
  * error, CSP violations included), and clicks through the main flows:
  * create + post an invoice, create an agent + key, approve from the
- * review queue, invite someone, add a company and switch to it, save the
- * security policy, complete an access review, export the audit log, set a
- * password, sign out, sign back in with it, ask for a reset link, and sign
- * up a new account with a password.
+ * review queue, banking (record an expense, import a statement, match,
+ * add, and rule its lines, reconcile, undo), invite someone, add a
+ * company and switch to it, save the security policy, complete an access
+ * review, export the audit log, set a password, sign out, sign back in
+ * with it, ask for a reset link, and sign up a new account with a
+ * password.
  *
  * Needs: the app running on :3100 built with
  * NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321, the fake auth server
@@ -82,6 +84,10 @@ const pages = [
   ["/workspace", "workspace"], ["/workspace/people", "people"], ["/workspace/security", "security-policy"],
   ["/workspace/access-review", "access-review"], ["/workspace/audit", "audit-log"], ["/workspace/companies/new", null],
   ["/account/security", "my-security"], ["/clients", "clients"],
+  ["/banking", "banking"], ["/banking/review", null], ["/banking/transactions", null],
+  ["/banking/transactions/new?type=expense", "bank-expense-new"], ["/banking/transactions/new?type=check", null],
+  ["/banking/transactions/new?type=deposit", "bank-deposit-new"], ["/banking/transactions/new?type=transfer", null],
+  ["/banking/rules", null], ["/banking/reconcile", "reconcile-start"], ["/banking/register", null],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -126,6 +132,108 @@ if (before > 0) {
   console.log(after === before - 1 ? `✓ flow: review queue approve (${before} → ${after})` : `✗ flow: review approve ${before} → ${after}`);
 } else {
   console.log("· review queue empty, skipped approve flow");
+}
+
+// Flow B: banking. Record an expense, import a statement, match the
+// expense, add a line by hand, write a rule, reconcile, then undo it so
+// the next run can reconcile again.
+{
+  const stamp = Date.now();
+  const amt = (((stamp % 9000) + 1000) / 100).toFixed(2);
+  const pick = async (label, option) => {
+    await page.getByRole("combobox", { name: label }).first().click();
+    await page.getByRole("option", { name: option }).click();
+  };
+  await page.goto(BASE + "/banking/transactions/new?type=expense", { waitUntil: "networkidle" });
+  await pick("Bank account", "1010 · Checking");
+  await pick("Category", "6200 · Dues & Subscriptions");
+  await page.locator('main tbody input[inputmode="decimal"]').first().fill(amt);
+  await page.getByPlaceholder("Or type a name").fill(`Smoke Software ${stamp}`);
+  await page.getByRole("button", { name: "Save and post" }).click();
+  await page.waitForURL(/\/banking\/transactions\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("Posted to the ledger").waitFor({ timeout: 10000 });
+  await page.screenshot({ path: `${outDir}/bank-expense.png`, fullPage: true });
+  console.log(`✓ flow: expense of ${amt} recorded and posted`);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const [y, m, d] = today.split("-");
+  const csv = `Date,Description,Amount\n${m}/${d}/${y},SMOKE SOFTWARE ${stamp},-${amt}\n${m}/${d}/${y},SMOKE COFFEE ${stamp},-4.75\n${m}/${d}/${y},SMOKE MONTHLY FEE ${stamp},-12.00\n`;
+  await page.goto(BASE + "/banking/review", { waitUntil: "networkidle" });
+  const checking = await page.getByRole("combobox", { name: "Account" }).innerText();
+  if (!checking.includes("Checking")) await pick("Account", "1010 · Checking");
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: "Import statement" }).click();
+  await page.locator("#statement-file").setInputFiles({ name: "smoke.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  await page.getByText(/3\s+new lines/).waitFor({ timeout: 15000 });
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.waitForLoadState("networkidle");
+  await page.screenshot({ path: `${outDir}/bank-for-review.png`, fullPage: true });
+  console.log("✓ flow: statement imported into For review (3 new lines)");
+
+  const softwareRow = page.locator("tr", { hasText: `SMOKE SOFTWARE ${stamp}` });
+  await softwareRow.getByRole("button", { name: "Match" }).click();
+  await softwareRow.waitFor({ state: "detached", timeout: 15000 });
+  console.log("✓ flow: statement line matched to the expense");
+
+  const coffeeRow = page.locator("tr", { hasText: `SMOKE COFFEE ${stamp}` });
+  await coffeeRow.getByRole("button", { name: "Categorize" }).click();
+  await pick("Category", "6050 · Auto & Travel");
+  await page.getByRole("button", { name: /^Add \$4\.75$/ }).click();
+  await coffeeRow.waitFor({ state: "detached", timeout: 15000 });
+  console.log("✓ flow: statement line categorized and added");
+
+  await page.goto(BASE + "/banking/rules", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "New rule" }).click();
+  await page.getByPlaceholder("Bank fees").fill(`Smoke fees ${stamp}`);
+  await page.getByPlaceholder("service fee").fill(`MONTHLY FEE ${stamp}`);
+  await pick("Category", "6100 · Bank & Merchant Fees");
+  await page.getByRole("button", { name: "Save rule" }).click();
+  await page.getByText(`Smoke fees ${stamp}`).waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Run on For review" }).click();
+  await page.getByText(/suggested [1-9]/).waitFor({ timeout: 10000 });
+  await page.goto(BASE + "/banking/review", { waitUntil: "networkidle" });
+  const feeRow = page.locator("tr", { hasText: `SMOKE MONTHLY FEE ${stamp}` });
+  await feeRow.getByText(`Rule: Smoke fees ${stamp}`).waitFor({ timeout: 10000 });
+  await feeRow.getByRole("button", { name: "Add" }).click();
+  await feeRow.waitFor({ state: "detached", timeout: 15000 });
+  console.log("✓ flow: bank rule created, suggested, and used to add a line");
+
+  await page.goto(BASE + "/banking/reconcile", { waitUntil: "networkidle" });
+  const resume = page.getByRole("button", { name: "Resume reconciling" });
+  if (await resume.count()) {
+    await resume.click();
+  } else {
+    await pick("Account", "1010 · Checking");
+    await page.locator('main input[type="date"]').first().fill(today);
+    await page.locator('main input[inputmode="decimal"]').first().fill("0");
+    await page.getByRole("button", { name: "Start reconciling" }).click();
+  }
+  await page.waitForURL(/\/banking\/reconcile\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.waitForLoadState("networkidle");
+  const tickAll = page.getByRole("checkbox", { name: "Tick all shown" });
+  if ((await tickAll.getAttribute("aria-checked")) !== "true") await tickAll.click();
+  await page.waitForTimeout(1500);
+  const cleared = await page.locator("div", { hasText: /^Cleared balance$/ }).locator("xpath=following-sibling::div").first().innerText();
+  const clearedNum = cleared.replace(/[^0-9.-]/g, "");
+  await page.locator('main input[inputmode="decimal"]').first().fill(clearedNum);
+  await page.getByRole("button", { name: "Update" }).click();
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: "Finish now" }).waitFor({ timeout: 10000 });
+  await page.screenshot({ path: `${outDir}/reconcile-worksheet.png`, fullPage: true });
+  await page.getByRole("button", { name: "Finish now" }).click();
+  await page.getByText("Items reconciled").waitFor({ timeout: 15000 });
+  await page.screenshot({ path: `${outDir}/reconcile-done.png`, fullPage: true });
+  console.log(`✓ flow: checking reconciled to ${cleared}`);
+
+  await page.getByRole("button", { name: "Undo reconciliation" }).click();
+  await page.getByPlaceholder("Ticked the wrong check").fill("smoke test cleanup");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.getByText("Undone: smoke test cleanup").waitFor({ timeout: 15000 });
+  console.log("✓ flow: reconciliation undone");
+
+  await visit("/banking/register", "bank-register");
+  await visit("/banking", "banking-after");
 }
 
 // Security headers on a page: per-request CSP nonce + clickjacking guard.

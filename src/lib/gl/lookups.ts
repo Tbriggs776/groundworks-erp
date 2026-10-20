@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { accounts, sourceCodes, type Account } from "@/lib/db/schema";
+import { accounts, dimensionValues, sourceCodes, type Account } from "@/lib/db/schema";
 import type { Tx } from "@/lib/actor";
 import { AppError } from "@/lib/errors";
 
@@ -151,4 +151,28 @@ export async function requireLineAccounts(
     }
   }
   return byId;
+}
+
+/** Dimension tags on a line: each value exists in this org, under the dimension it names. */
+export async function requireDimensionTags(
+  tx: Tx,
+  organizationId: string,
+  tags: Array<{ dimensionId: string; valueId: string }>
+): Promise<void> {
+  if (tags.length === 0) return;
+  const vals = await tx
+    .select({ id: dimensionValues.id, dimensionId: dimensionValues.dimensionId })
+    .from(dimensionValues)
+    .where(
+      and(
+        eq(dimensionValues.organizationId, organizationId),
+        inArray(dimensionValues.id, tags.map((t) => t.valueId))
+      )
+    );
+  const byId = new Map(vals.map((v) => [v.id, v.dimensionId]));
+  for (const t of tags) {
+    if (byId.get(t.valueId) !== t.dimensionId) {
+      throw new AppError("invalid_input", "A dimension value doesn't belong to its dimension.");
+    }
+  }
 }

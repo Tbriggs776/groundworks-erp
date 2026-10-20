@@ -463,3 +463,14 @@ export async function requireActiveCustomer(ctx: Ctx, customerId: string): Promi
   if (!c.isActive) throw new AppError("invalid_input", `Customer ${c.name} is inactive.`);
   return c;
 }
+
+/** Guard used by documents: the vendor exists in this org and is active. */
+export async function requireActiveVendor(ctx: Ctx, vendorId: string): Promise<Vendor> {
+  const [v] = await ctx.tx
+    .select()
+    .from(vendors)
+    .where(and(eq(vendors.id, vendorId), eq(vendors.organizationId, ctx.actor.organizationId)));
+  if (!v) throw notFound("Vendor");
+  if (!v.isActive) throw new AppError("invalid_input", `Vendor ${v.name} is inactive.`);
+  return v;
+}

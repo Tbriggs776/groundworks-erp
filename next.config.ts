@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
     root: path.resolve(import.meta.dirname ?? __dirname),
   },
   poweredByHeader: false,
+  experimental: {
+    // Bank statement imports travel through a server action. Vercel caps
+    // request bodies at 4.5 MB; the import form refuses files over 4 MB.
+    serverActions: { bodySizeLimit: "5mb" },
+  },
   async headers() {
     return [{ source: "/:path*", headers: STATIC_SECURITY_HEADERS }];
   },

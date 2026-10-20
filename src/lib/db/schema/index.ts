@@ -17,3 +17,4 @@ export * from "./ap";
 export * from "./ap_payments";
 export * from "./ar";
 export * from "./security";
+export * from "./banking";
