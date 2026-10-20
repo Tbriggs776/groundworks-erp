@@ -50,7 +50,9 @@ const NAV: NavGroup[] = [
     icon: Receipt,
     items: [
       { label: "Customers", href: "/customers" },
+      { label: "Estimates", href: "/ar/estimates" },
       { label: "Invoices", href: "/ar/invoices" },
+      { label: "Recurring Invoices", href: "/ar/recurring" },
       { label: "Sales Receipts", href: "/ar/sales-receipts" },
       { label: "Payments Received", href: "/ar/payments" },
       { label: "Credit Memos", href: "/ar/credit-memos" },

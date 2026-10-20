@@ -74,6 +74,11 @@ export function InvoiceActions({
           </>
         )}
       </div>
+      {invoice.status !== "voided" && (
+        <Link href={`/ar/recurring/new?fromInvoice=${invoice.id}`} className="text-xs text-primary hover:underline">
+          Make recurring
+        </Link>
+      )}
       {err && <p className="text-xs text-destructive max-w-sm text-right">{err}</p>}
 
       <Dialog open={voidOpen} onOpenChange={setVoidOpen}>

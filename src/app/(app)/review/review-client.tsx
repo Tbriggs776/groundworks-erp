@@ -93,7 +93,7 @@ export function ReviewClient({ items }: { items: ReviewItem[] }) {
                       {item.agentName}
                     </span>
                   ) : (
-                    <span className="text-muted-foreground">Awaiting approval</span>
+                    <span className="text-muted-foreground">{item.reason === "recurring" ? "Recurring invoice" : "Awaiting approval"}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-xs font-mono text-muted-foreground">{item.date}</td>

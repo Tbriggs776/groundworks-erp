@@ -19,6 +19,12 @@ do the bookkeeping, with humans approving what posts.
 **Sales**
 - Customers, products & services, invoices (draft → open → paid), sales
   receipts for cash sales, early-pay discounts
+- Estimates with progress invoicing: bill what's left, a percent of each
+  line, or a custom amount per line; billing can't pass the estimate, and
+  a fully billed estimate closes on its own
+- Recurring invoices: scheduled (created and posted on their date),
+  reminders (a draft in the review queue), or unscheduled templates used by
+  hand; any invoice can be made recurring
 - Receive payment: explicit or auto-applied oldest first; an overpayment
   stays as the customer's credit
 - Credit memos and customer credits: applied to open invoices
@@ -114,7 +120,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 127 operations: accounts, journals, customers, items, invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, bills, bill payments, banking (transactions, statement import, For review, rules, reconciliation), reports, review queue, activity |
+| Tools | 141 operations: accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, bills, bill payments, banking (transactions, statement import, For review, rules, reconciliation), reports, review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -161,9 +167,10 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-17 suites: posting engine, recurring/allocations/budgets, reports, FX,
+18 suites: posting engine, recurring/allocations/budgets, reports, FX,
 parties, bills, bill payments, invoices and payments, sales (tax, receipts,
-credit memos, credits, refunds, the liability report), banking (transactions, statement
+credit memos, credits, refunds, the liability report), estimates and
+recurring invoices (progress invoicing, the daily run), banking (transactions, statement
 import, For review, rules, reconciliation), agents + keys, REST + MCP, RLS,
 workspaces (sign-up, invites, access, policy, access reviews), session
 security (timeouts, MFA, revocation, rate limits), workspace isolation

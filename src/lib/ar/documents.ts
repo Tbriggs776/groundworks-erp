@@ -19,25 +19,37 @@ import { amount, id, optionalText } from "@/lib/schemas";
  * account, and taxable come from the item) or fully explicit.
  */
 
-export const SalesLineSchema = z
-  .object({
-    itemId: id.optional().describe("Product / service. Supplies defaults for the fields below."),
-    description: optionalText(1000),
-    quantity: amount.optional().describe("Defaults to 1."),
-    unitPrice: amount
-      .optional()
-      .describe("Defaults to the item's sales price. Negative for a discount line."),
-    accountId: id.optional().describe("Income account. Defaults to the item's income account."),
-    taxable: z
-      .boolean()
-      .optional()
-      .describe("Charge sales tax on this line. Defaults to the item's setting; lines without an item aren't taxable unless set."),
-    dimensions: z
-      .array(z.object({ dimensionId: id, valueId: id }))
-      .optional()
-      .describe("Class / Location / Department / Project tags."),
-  })
-  .refine((l) => l.itemId || l.accountId, { message: "Each line needs an itemId or an accountId." });
+const SalesLineFields = z.object({
+  itemId: id.optional().describe("Product / service. Supplies defaults for the fields below."),
+  description: optionalText(1000),
+  quantity: amount.optional().describe("Defaults to 1."),
+  unitPrice: amount
+    .optional()
+    .describe("Defaults to the item's sales price. Negative for a discount line."),
+  accountId: id.optional().describe("Income account. Defaults to the item's income account."),
+  taxable: z
+    .boolean()
+    .optional()
+    .describe("Charge sales tax on this line. Defaults to the item's setting; lines without an item aren't taxable unless set."),
+  dimensions: z
+    .array(z.object({ dimensionId: id, valueId: id }))
+    .optional()
+    .describe("Class / Location / Department / Project tags."),
+});
+
+const itemOrAccount = [
+  (l: { itemId?: string; accountId?: string }) => Boolean(l.itemId || l.accountId),
+  { message: "Each line needs an itemId or an accountId." },
+] as const;
+
+export const SalesLineSchema = SalesLineFields.refine(...itemOrAccount);
+
+/** Invoice lines can also say which estimate line they bill (progress invoicing). */
+export const InvoiceLineSchema = SalesLineFields.extend({
+  estimateLineId: id
+    .optional()
+    .describe("Estimate line this bills. Set by create_invoice_from_estimate; keep it when editing that invoice."),
+}).refine(...itemOrAccount);
 
 export const taxCodeField = id
   .nullable()

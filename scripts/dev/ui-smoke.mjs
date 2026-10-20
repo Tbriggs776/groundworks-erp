@@ -97,6 +97,7 @@ const pages = [
   ["/ar/sales-receipts", null], ["/ar/sales-receipts/new", "sales-receipt-new"], ["/ar/credit-memos", null],
   ["/ar/credit-memos/new", null], ["/ar/refunds", null], ["/ar/refunds/new", null], ["/ar/refunds/new?kind=credit", "refund-credit-new"],
   ["/sales-tax", "sales-tax"], ["/settings/sales", null],
+  ["/ar/estimates", null], ["/ar/estimates/new", "estimate-new"], ["/ar/recurring", null], ["/ar/recurring/new", "recurring-new"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -171,6 +172,63 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   console.log("✓ flow: refund for returned items posted");
 
   await visit("/sales-tax", "sales-tax-after");
+}
+
+// Flow E: an estimate, accepted, billed 25% by progress invoicing.
+{
+  await page.goto(BASE + "/ar/estimates/new", { waitUntil: "networkidle" });
+  await page.getByLabel("Customer").selectOption({ label: "Northwind Traders" });
+  await page.locator("tbody select").first().selectOption({ label: "Consulting" });
+  await page.locator('tbody input[inputmode="decimal"]').first().fill("4");
+  await page.getByRole("button", { name: "Save estimate" }).click();
+  await page.waitForURL(/\/ar\/estimates\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  const estimateUrl = page.url();
+  await page.getByRole("button", { name: "Accept" }).click();
+  await page.getByRole("dialog").getByPlaceholder("Optional").fill("Smoke buyer");
+  await page.getByRole("dialog").getByRole("button", { name: "Accept" }).click();
+  await page.getByText("by Smoke buyer").waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Create invoice" }).click();
+  await page.getByRole("radio", { name: "A percent of each line" }).click();
+  await page.getByRole("dialog").getByLabel("Percent").fill("25");
+  await page.getByRole("dialog").getByRole("button", { name: "Create invoice" }).click();
+  await page.waitForURL(/\/ar\/invoices\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.waitForLoadState("networkidle");
+  const progress = await page.locator("main").innerText();
+  const progressOk = progress.includes("Bills estimate") && progress.includes("$150.00");
+  console.log(progressOk ? "✓ flow: estimate accepted and 25% billed ($150.00 of $600.00)" : "✗ flow: progress invoice");
+  if (!progressOk) problems.push("progress invoice: " + progress.slice(0, 300));
+  await page.getByRole("button", { name: "Post invoice" }).click();
+  await page.getByText("Posted to the ledger").waitFor({ timeout: 10000 });
+  await page.goto(estimateUrl, { waitUntil: "networkidle" });
+  const left = await page.locator("main").innerText();
+  const leftOk = /left to bill before tax\s+\$450\.00/i.test(left);
+  console.log(leftOk ? "✓ flow: the estimate shows $450.00 left to bill" : "✗ flow: estimate balance");
+  if (!leftOk) problems.push("estimate balance: " + left.slice(0, 400));
+  await page.screenshot({ path: `${outDir}/estimate-progress.png`, fullPage: true });
+}
+
+// Flow R: a recurring invoice template, then an invoice from it now.
+{
+  const stamp = Date.now();
+  await page.goto(BASE + "/ar/recurring/new", { waitUntil: "networkidle" });
+  await page.getByPlaceholder("Monthly retainer").fill(`Smoke retainer ${stamp}`);
+  await page.getByLabel("Type").selectOption("reminder");
+  await page.getByLabel("Customer").selectOption({ label: "Northwind Traders" });
+  await page.locator("tbody select").first().selectOption({ label: "Consulting" });
+  await page.getByRole("button", { name: "Save template" }).click();
+  await page.waitForURL(/\/ar\/recurring\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("Next invoice").waitFor({ timeout: 10000 });
+  await page.screenshot({ path: `${outDir}/recurring-detail.png`, fullPage: true });
+  await page.getByRole("button", { name: "Create invoice now" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Create draft" }).click();
+  await page.waitForURL(/\/ar\/invoices\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.waitForLoadState("networkidle");
+  const fromTemplate = await page.locator("main").innerText();
+  const templateOk = fromTemplate.includes(`From recurring invoice Smoke retainer ${stamp}`) && fromTemplate.includes("Make recurring");
+  console.log(templateOk ? "✓ flow: recurring template saved and used for a draft invoice" : "✗ flow: recurring invoice");
+  if (!templateOk) problems.push("recurring: " + fromTemplate.slice(0, 300));
+  await page.getByRole("button", { name: "Delete draft" }).click();
+  await page.waitForURL(/\/ar\/invoices$/, { timeout: 15000 });
 }
 
 // Flow 2: create an agent and mint a key.

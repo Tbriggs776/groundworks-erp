@@ -121,7 +121,7 @@ src/
                       account/security (own password, MFA, sessions),
                       clients (every workspace + company), support (staff only)
     api/v1/[...path]  REST (generated)        api/mcp  MCP server
-    api/cron/daily    recurring, auto-reversal, pruning   api/health  uptime
+    api/cron/daily    recurring journals + invoices, auto-reversal, pruning   api/health  uptime
     signup, onboarding/{,team}   sign-up: workspace + first company, invites
     invite/[token]    accept an invitation
     auth/             login, callback, mfa (TOTP step), signout (route)
@@ -183,6 +183,8 @@ docs/compliance/      SOC 2 control map and checklist
   balance) come from `src/lib/ar/balances.ts` only; never re-derive them
   from payment applications alone, or credits go missing. Sales documents
   share line resolution, tax, and posting in `src/lib/ar/documents.ts`.
+  What's billed on an estimate comes from `src/lib/ar/estimate-billing.ts`
+  (invoice lines that point at estimate lines, on invoices not voided).
 - Banking amounts are from the account holder's view: + money in, − money
   out (= debit − credit on the account). Reconciliation and overview
   balances use the natural sign (a credit card's balance owed is positive).

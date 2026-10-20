@@ -82,6 +82,7 @@ export const DEFAULT_NUMBER_SERIES: Array<{
   { code: "CM", description: "Credit Memos", prefix: "CM-", width: 6 },
   { code: "RR", description: "Refund Receipts", prefix: "RR-", width: 6 },
   { code: "STP", description: "Sales Tax Payments", prefix: "STP-", width: 6 },
+  { code: "EST", description: "Estimates", prefix: "EST-", width: 6 },
 ];
 
 export async function seedOrganizationDefaults(

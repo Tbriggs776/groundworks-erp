@@ -4,8 +4,6 @@ import {
   check,
   date,
   index,
-  integer,
-  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -17,11 +15,11 @@ import {
 import { paymentMethod, timestamps } from "./_shared";
 import { accounts } from "./accounts";
 import { agents } from "./agents";
-import { arInvoices, arPayments, items, type DimensionTag } from "./ar";
+import { arInvoices, arPayments, docLine, lifecycle, taxedTotals } from "./ar";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
 import { customers } from "./parties";
-import { taxAgencies, taxCodes, taxRates } from "./tax";
+import { taxAgencies, taxRates } from "./tax";
 
 /**
  * MORE SALES DOCUMENTS, beside invoices and customer payments (ar.ts):
@@ -44,59 +42,6 @@ export const salesDocStatus = pgEnum("sales_doc_status", ["draft", "posted", "vo
 export const creditMemoStatus = pgEnum("credit_memo_status", ["draft", "open", "applied", "voided"]);
 export const refundKind = pgEnum("refund_kind", ["items", "credit"]);
 export const taxPaymentStatus = pgEnum("tax_payment_status", ["posted", "voided"]);
-
-/** Header columns every taxed sales document shares. */
-function taxedTotals() {
-  return {
-    currency: text("currency").notNull().default("USD"),
-    exchangeRate: numeric("exchange_rate", { precision: 20, scale: 10 }).notNull().default("1"),
-    subtotalAmount: numeric("subtotal_amount", { precision: 20, scale: 4 }).notNull().default("0"),
-    taxCodeId: uuid("tax_code_id").references(() => taxCodes.id, { onDelete: "restrict" }),
-    taxExempt: boolean("tax_exempt").notNull().default(false),
-    taxableAmount: numeric("taxable_amount", { precision: 20, scale: 4 }).notNull().default("0"),
-    taxAmount: numeric("tax_amount", { precision: 20, scale: 4 }).notNull().default("0"),
-    totalAmount: numeric("total_amount", { precision: 20, scale: 4 }).notNull().default("0"),
-    memo: text("memo"),
-    privateNote: text("private_note"),
-  };
-}
-
-/** Lifecycle columns: who created, posted, and voided it, and the journals. */
-function lifecycle() {
-  return {
-    postedAt: timestamp("posted_at", { withTimezone: true }),
-    postedBy: uuid("posted_by").references(() => profiles.id, { onDelete: "set null" }),
-    glJournalId: uuid("gl_journal_id").references(() => glJournals.id, { onDelete: "set null" }),
-    voidedAt: timestamp("voided_at", { withTimezone: true }),
-    voidedBy: uuid("voided_by").references(() => profiles.id, { onDelete: "set null" }),
-    voidReason: text("void_reason"),
-    voidGlJournalId: uuid("void_gl_journal_id").references(() => glJournals.id, { onDelete: "set null" }),
-    createdBy: uuid("created_by").references(() => profiles.id, { onDelete: "set null" }),
-    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-  };
-}
-
-/** Line columns, the same as invoice lines. */
-function docLine() {
-  return {
-    id: uuid("id").primaryKey().defaultRandom(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    lineNumber: integer("line_number").notNull(),
-    itemId: uuid("item_id").references(() => items.id, { onDelete: "set null" }),
-    description: text("description"),
-    quantity: numeric("quantity", { precision: 20, scale: 4 }).notNull().default("1"),
-    unitPrice: numeric("unit_price", { precision: 20, scale: 4 }).notNull(),
-    amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
-    accountId: uuid("account_id")
-      .notNull()
-      .references(() => accounts.id, { onDelete: "restrict" }),
-    taxable: boolean("taxable").notNull().default(false),
-    dimensions: jsonb("dimensions").$type<DimensionTag[]>().notNull().default([]),
-    ...timestamps,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Sales receipts

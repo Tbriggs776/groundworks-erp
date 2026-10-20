@@ -86,7 +86,7 @@ export default async function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-1">
               {review.length === 0
                 ? "Nothing waiting on you."
-                : `${review.filter((r) => r.agentName).length} agent draft(s) and ${review.filter((r) => r.reason === "awaiting_approval").length} bill(s) awaiting approval.`}
+                : reviewSummary(review)}
             </p>
           </Link>
           <Link
@@ -188,4 +188,12 @@ function QuickLink({
       {label}
     </Link>
   );
+}
+
+function reviewSummary(review: Array<{ reason: string }>) {
+  const n = (reason: string) => review.filter((r) => r.reason === reason).length;
+  const parts = [`${n("agent_draft")} agent draft(s)`];
+  if (n("recurring") > 0) parts.push(`${n("recurring")} recurring invoice(s)`);
+  parts.push(`${n("awaiting_approval")} bill(s) awaiting approval`);
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}.`;
 }
