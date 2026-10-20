@@ -4,6 +4,7 @@ import { accounts } from "@/lib/db/schema";
 import { auditFields, requirePermission, type Ctx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
 import { FORM_1099_BOXES, form1099Report } from "@/lib/ap/form-1099";
+import { changesAfterClose } from "@/lib/gl/close";
 import { notFound } from "@/lib/errors";
 import { money } from "@/lib/money";
 import { reportPdf } from "@/lib/pdf/documents";
@@ -38,6 +39,7 @@ export const REPORT_KEYS = [
   "open-invoices",
   "unpaid-bills",
   "audit-trail",
+  "changes-after-close",
 ] as const;
 export type ReportKey = (typeof REPORT_KEYS)[number];
 
@@ -194,6 +196,8 @@ export async function reportTable(ctx: Ctx, input: ReportParams): Promise<Report
       return unpaidBills(ctx, p);
     case "audit-trail":
       return auditTrail(ctx, p);
+    case "changes-after-close":
+      return changesAfterClose(ctx, p);
   }
 }
 

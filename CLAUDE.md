@@ -204,6 +204,15 @@ docs/compliance/      SOC 2 control map and checklist
   side (assets and expenses debit, the rest credit), never the account's
   normal balance, so contra accounts (sales discounts, accumulated
   depreciation, owner's draw) show negative and reduce their section.
+- Month-end close lives in `src/lib/gl/close.ts`. The books close through a
+  period: closing one closes every earlier open period; reopening one
+  reopens everything after it. Soft closed takes only `adjusting` and
+  reversing journals; hard closed takes a person's closing password
+  (`organizations.hard_close_override_password_hash`, owner sets it). Only
+  people (admins and owners) close or reopen; agents read the checklist.
+  Open checklist items need a note to close past. There is no closing
+  entry at year end: the balance sheet computes prior years' earnings and
+  this fiscal year's net income (`getBalanceSheet`).
 - 1099 amounts come from `src/lib/ap/form-1099.ts` (accounts carry a
   `form_1099_box`). Full TINs leave the app only through the audited CSV
   export; reports and the API show the last 4.

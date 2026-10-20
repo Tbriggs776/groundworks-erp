@@ -1,11 +1,13 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { db } from "@/lib/db/client";
 import {
   accounts,
   fiscalPeriods,
+  fiscalYears,
   glJournals,
   glLines,
+  organizations,
   type Account,
 } from "@/lib/db/schema";
 import { money } from "@/lib/money";
@@ -192,6 +194,22 @@ const SUBCAT_LABEL: Record<Account["subcategory"], string> = {
   other_expense: "Other Expense",
 };
 
+const dayBefore = (iso: string) => new Date(Date.parse(`${iso}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+
+/** First day of the fiscal year holding `asOf`: its fiscal_years row, else the company's start month. */
+async function fiscalYearStart(organizationId: string, asOf: string): Promise<string> {
+  const [fy] = await db
+    .select({ startDate: fiscalYears.startDate })
+    .from(fiscalYears)
+    .where(and(eq(fiscalYears.organizationId, organizationId), lte(fiscalYears.startDate, asOf), gte(fiscalYears.endDate, asOf)))
+    .limit(1);
+  if (fy) return fy.startDate;
+  const [org] = await db.select({ month: organizations.fiscalYearStartMonth }).from(organizations).where(eq(organizations.id, organizationId));
+  const month = org?.month ?? 1;
+  const [y, m] = asOf.split("-").map(Number);
+  return `${m >= month ? y : y - 1}-${String(month).padStart(2, "0")}-01`;
+}
+
 export async function getBalanceSheet(
   organizationId: string,
   asOfDate: string
@@ -238,36 +256,35 @@ export async function getBalanceSheet(
   const liabilities = buildSection("Liabilities", LIABILITY_SUBCATS, "credit");
   const equity = buildSection("Equity", EQUITY_SUBCATS, "credit");
 
-  // Current-year P&L accounts roll into equity for a balanced sheet. Until
-  // year-end close generates an explicit "Current Year Earnings" entry, we
-  // fold the net income into equity here so Assets = L + E still holds.
-  const income = await getIncomeStatement(organizationId, {
-    fromDate: "0001-01-01",
-    toDate: asOfDate,
-  });
-  if (!income.netIncome.isZero()) {
-    const existingRE = equity.subgroups.find(
-      (g) => g.subcategory === "retained_earnings"
-    );
-    const placeholder: StatementRow = {
-      accountId: "__unposted_earnings__",
-      code: "—",
-      name: "Current-Year Earnings (unposted)",
-      displayAmount: income.netIncome,
-      normalBalance: "credit",
-    };
+  // Year end has no closing entry (like QBO): P&L accounts are never zeroed,
+  // so equity computes them. Net income before this fiscal year shows as
+  // prior years' earnings under Retained Earnings; this fiscal year to date
+  // as Net Income. Together they keep Assets = Liabilities + Equity.
+  const fyStart = await fiscalYearStart(organizationId, asOfDate);
+  const [prior, current] = await Promise.all([
+    getIncomeStatement(organizationId, { fromDate: "0001-01-01", toDate: dayBefore(fyStart) }),
+    getIncomeStatement(organizationId, { fromDate: fyStart, toDate: asOfDate }),
+  ]);
+  const rows: StatementRow[] = [
+    { accountId: "__prior_earnings__", code: "—", name: "Retained Earnings (prior years)", displayAmount: prior.netIncome, normalBalance: "credit" },
+    { accountId: "__net_income__", code: "—", name: "Net Income", displayAmount: current.netIncome, normalBalance: "credit" },
+  ];
+  const computed = rows.filter((r) => !r.displayAmount.isZero());
+  if (computed.length > 0) {
+    const earnings = computed.reduce((acc, r) => acc.plus(r.displayAmount), money(0));
+    const existingRE = equity.subgroups.find((g) => g.subcategory === "retained_earnings");
     if (existingRE) {
-      existingRE.rows.push(placeholder);
-      existingRE.subtotal = existingRE.subtotal.plus(income.netIncome);
+      existingRE.rows.push(...computed);
+      existingRE.subtotal = existingRE.subtotal.plus(earnings);
     } else {
       equity.subgroups.push({
         subcategory: "retained_earnings",
         label: SUBCAT_LABEL.retained_earnings,
-        rows: [placeholder],
-        subtotal: income.netIncome,
+        rows: computed,
+        subtotal: earnings,
       });
     }
-    equity.total = equity.total.plus(income.netIncome);
+    equity.total = equity.total.plus(earnings);
   }
 
   const outOfBalance = assets.total.minus(liabilities.total).minus(equity.total);

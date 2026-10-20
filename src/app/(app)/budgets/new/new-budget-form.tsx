@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,9 +48,9 @@ export function NewBudgetForm({
     return (
       <div className="text-sm text-muted-foreground">
         You need a fiscal year before creating a budget.{" "}
-        <a href="/periods" className="text-primary hover:underline">
+        <Link href="/periods" className="text-primary hover:underline">
           Generate one first.
-        </a>
+        </Link>
       </div>
     );
   }
