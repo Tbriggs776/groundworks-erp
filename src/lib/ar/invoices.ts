@@ -7,7 +7,9 @@ import {
   arPaymentApplications,
   arPayments,
   customers,
+  estimates,
   items,
+  recurringInvoices,
   taxAgencies,
   type ArInvoice,
   type ArInvoiceLine,
@@ -42,13 +44,14 @@ import { invoiceSettledSql } from "./balances";
 import { autoApplyCreditsToInvoice, creditsOnInvoice } from "./credits";
 import {
   documentTotals,
+  InvoiceLineSchema,
   resolveSalesLines,
-  SalesLineSchema,
   taxCodeField,
   taxLinesOf,
   totalsColumns,
   writeTaxLines,
 } from "./documents";
+import { checkEstimateBilling, syncEstimateStatus } from "./estimate-billing";
 import { invoiceAppliedTotal, postInvoiceToGl, voidInvoiceFromGl } from "./posting";
 
 /**
@@ -70,7 +73,7 @@ const InvoiceFields = {
   memo: optionalText(2000).describe("Message shown to the customer."),
   privateNote: optionalText(2000).describe("Internal note, never shown to the customer."),
   taxCodeId: taxCodeField,
-  lines: z.array(SalesLineSchema).min(1, "An invoice needs at least 1 line."),
+  lines: z.array(InvoiceLineSchema).min(1, "An invoice needs at least 1 line."),
 };
 
 export const CreateInvoiceSchema = z.object({
@@ -104,7 +107,14 @@ export type InvoiceDetail = InvoiceRow & {
   taxLines: Array<SalesTaxLine & { agencyName: string }>;
   payments: Array<{ paymentId: string; paymentNumber: string; paymentDate: string; amount: string; discountAmount: string; status: string }>;
   credits: Awaited<ReturnType<typeof creditsOnInvoice>>;
+  /** Progress invoice: the estimate it bills. */
+  estimate: { id: string; number: string } | null;
+  /** The recurring template that made it. */
+  recurring: { id: string; name: string } | null;
 };
+
+/** Where an invoice came from, when it didn't start blank. */
+export type InvoiceLinks = { estimateId?: string; recurringInvoiceId?: string };
 
 const openBalance = sql<string>`(CASE WHEN ${arInvoices.status} IN ('open', 'paid')
   THEN ${arInvoices.totalAmount} - ${invoiceSettledSql(sql`"ar_invoices"."id"`)}
@@ -194,7 +204,21 @@ export async function getInvoice(ctx: Ctx, input: { id: string }): Promise<Invoi
     taxLines: await taxLinesWithAgency(ctx, invoiceId),
     payments,
     credits: await creditsOnInvoice(ctx, invoiceId),
+    ...(await originOf(ctx, row.invoice)),
   };
+}
+
+async function originOf(ctx: Ctx, inv: ArInvoice): Promise<Pick<InvoiceDetail, "estimate" | "recurring">> {
+  const [est] = inv.estimateId
+    ? await ctx.tx.select({ id: estimates.id, number: estimates.estimateNumber }).from(estimates).where(eq(estimates.id, inv.estimateId))
+    : [];
+  const [rec] = inv.recurringInvoiceId
+    ? await ctx.tx
+        .select({ id: recurringInvoices.id, name: recurringInvoices.name })
+        .from(recurringInvoices)
+        .where(eq(recurringInvoices.id, inv.recurringInvoiceId))
+    : [];
+  return { estimate: est ?? null, recurring: rec ?? null };
 }
 
 async function taxLinesWithAgency(ctx: Ctx, invoiceId: string) {
@@ -226,10 +250,13 @@ async function loadInvoice(ctx: Ctx, invoiceId: string): Promise<ArInvoice> {
 
 async function resolveInvoice(
   ctx: Ctx,
-  data: z.output<typeof CreateInvoiceSchema> | z.output<typeof UpdateInvoiceSchema>
+  data: z.output<typeof CreateInvoiceSchema> | z.output<typeof UpdateInvoiceSchema>,
+  link: { estimateId: string | null; invoiceId?: string }
 ) {
   const customer = await requireActiveCustomer(ctx, data.customerId);
-  const lines = await resolveSalesLines(ctx, data.lines);
+  const resolved = await resolveSalesLines(ctx, data.lines);
+  const lines = resolved.map((l, i) => ({ ...l, estimateLineId: data.lines[i].estimateLineId ?? null }));
+  await checkEstimateBilling(ctx, { estimateId: link.estimateId, customerId: customer.id, invoiceId: link.invoiceId, lines });
   const totals = await documentTotals(ctx, { customer, taxCodeId: data.taxCodeId, lines });
   const dueDate =
     data.dueDate ??
@@ -258,7 +285,7 @@ async function resolveInvoice(
 async function insertLines(
   ctx: Ctx,
   invoiceId: string,
-  lines: Awaited<ReturnType<typeof resolveSalesLines>>
+  lines: Awaited<ReturnType<typeof resolveInvoice>>["lines"]
 ) {
   await ctx.tx.insert(arInvoiceLines).values(
     lines.map((l, i) => ({
@@ -270,22 +297,38 @@ async function insertLines(
   );
 }
 
+/**
+ * `links` is for callers inside the app (an estimate being billed, a
+ * recurring template running); API callers use the operations made for
+ * those.
+ */
 export async function createInvoice(
   ctx: Ctx,
-  input: CreateInvoiceInput
+  input: CreateInvoiceInput,
+  links: InvoiceLinks = {}
 ): Promise<InvoiceDetail & Partial<ReviewNotice>> {
   requirePermission(ctx.actor, "write", "bookkeeper", "create invoices");
   const data = CreateInvoiceSchema.parse(input);
   const org = ctx.actor.organizationId;
-  const { header, lines, totals } = await resolveInvoice(ctx, data);
+  const estimateId = links.estimateId ?? null;
+  const { header, lines, totals } = await resolveInvoice(ctx, data, { estimateId });
   const invoiceNumber = await nextNumber(ctx.tx, org, "INV");
 
   const [inv] = await ctx.tx
     .insert(arInvoices)
-    .values({ organizationId: org, invoiceNumber, ...header, status: "draft", ...creatorFields(ctx.actor) })
+    .values({
+      organizationId: org,
+      invoiceNumber,
+      ...header,
+      estimateId,
+      recurringInvoiceId: links.recurringInvoiceId ?? null,
+      status: "draft",
+      ...creatorFields(ctx.actor),
+    })
     .returning();
   await insertLines(ctx, inv.id, lines);
   await writeTaxLines(ctx, { invoiceId: inv.id }, totals);
+  if (estimateId) await syncEstimateStatus(ctx, estimateId);
 
   await writeAudit(
     {
@@ -294,7 +337,14 @@ export async function createInvoice(
       event: "ar.invoice.created",
       entityType: "ar_invoice",
       entityId: inv.id,
-      metadata: { invoiceNumber, customerId: header.customerId, total: header.totalAmount, lineCount: lines.length },
+      metadata: {
+        invoiceNumber,
+        customerId: header.customerId,
+        total: header.totalAmount,
+        lineCount: lines.length,
+        ...(estimateId ? { estimateId } : {}),
+        ...(links.recurringInvoiceId ? { recurringInvoiceId: links.recurringInvoiceId } : {}),
+      },
     },
     ctx.tx
   );
@@ -316,7 +366,7 @@ export async function updateInvoice(ctx: Ctx, input: UpdateInvoiceInput): Promis
   if (inv.status !== "draft") {
     throw invalidState(`Only draft invoices can be edited (this one is ${inv.status}). Void and re-issue instead.`);
   }
-  const { header, lines, totals } = await resolveInvoice(ctx, data);
+  const { header, lines, totals } = await resolveInvoice(ctx, data, { estimateId: inv.estimateId, invoiceId: inv.id });
   await ctx.tx
     .update(arInvoices)
     .set({ ...header, updatedAt: sql`now()` })
@@ -324,6 +374,7 @@ export async function updateInvoice(ctx: Ctx, input: UpdateInvoiceInput): Promis
   await ctx.tx.delete(arInvoiceLines).where(eq(arInvoiceLines.invoiceId, inv.id));
   await insertLines(ctx, inv.id, lines);
   await writeTaxLines(ctx, { invoiceId: inv.id }, totals);
+  if (inv.estimateId) await syncEstimateStatus(ctx, inv.estimateId, { reopen: true });
 
   await writeAudit(
     {
@@ -396,6 +447,7 @@ export async function voidInvoice(
       updatedAt: sql`now()`,
     })
     .where(eq(arInvoices.id, invoiceId));
+  if (inv.estimateId) await syncEstimateStatus(ctx, inv.estimateId, { reopen: true });
   return getInvoice(ctx, { id: invoiceId });
 }
 
@@ -407,6 +459,7 @@ export async function deleteDraftInvoice(ctx: Ctx, input: { id: string }): Promi
     throw invalidState(`Only drafts can be deleted (this one is ${inv.status}). Void it instead.`);
   }
   await ctx.tx.delete(arInvoices).where(eq(arInvoices.id, invoiceId));
+  if (inv.estimateId) await syncEstimateStatus(ctx, inv.estimateId, { reopen: true });
   await writeAudit(
     {
       organizationId: ctx.actor.organizationId,

@@ -183,6 +183,13 @@
       "when": 1792512914652,
       "tag": "0025_sales_tax_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792518146696,
+      "tag": "0026_estimates_recurring_invoices",
+      "breakpoints": true
     }
   ]
 }

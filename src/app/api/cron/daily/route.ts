@@ -7,6 +7,7 @@ import { pruneRateLimits } from "@/lib/api/rate-limit";
 import { pruneSessions } from "@/lib/security/sessions";
 import { runAutoReversalsForOrg } from "@/lib/gl/auto-reversal";
 import { runRecurringForOrg } from "@/lib/gl/recurring";
+import { runRecurringInvoicesForOrg } from "@/lib/ar/recurring-invoices";
 
 /**
  * Daily cron entry point. Called by Vercel Cron (see vercel.json).
@@ -19,6 +20,8 @@ import { runRecurringForOrg } from "@/lib/gl/recurring";
  *   1. Generate auto-reversals for any journals whose auto_reverse_date
  *      has arrived
  *   2. Generate recurring JEs due today
+ *   3. Create recurring invoices due today (scheduled ones post; reminders
+ *      wait in the review queue as drafts)
  * Then, once: prune API idempotency keys older than 24 hours, finished
  * rate-limit windows, and session rows that ended over 90 days ago (the
  * audit log keeps the sign-in history).
@@ -33,6 +36,7 @@ type OrgResult = {
   slug: string;
   autoReversals: { checked: number; generated: number; errors: number };
   recurring: { checked: number; generated: number; errors: number };
+  recurringInvoices: { checked: number; created: number; posted: number; errors: number };
 };
 
 export async function POST(request: Request) {
@@ -54,6 +58,7 @@ export async function POST(request: Request) {
       runAutoReversalsForOrg(org.id, asOfDate),
       runRecurringForOrg(org.id, asOfDate),
     ]);
+    const recurringInvoices = await runRecurringInvoicesForOrg(org.id, asOfDate);
     results.push({
       organizationId: org.id,
       slug: org.slug,
@@ -67,6 +72,12 @@ export async function POST(request: Request) {
         generated: recurring.generated,
         errors: recurring.errors.length,
       },
+      recurringInvoices: {
+        checked: recurringInvoices.checked,
+        created: recurringInvoices.created,
+        posted: recurringInvoices.posted,
+        errors: recurringInvoices.errors.length,
+      },
     });
 
     // Log full error details server-side for debugging; don't leak to response.
@@ -78,6 +89,9 @@ export async function POST(request: Request) {
     }
     if (recurring.errors.length > 0) {
       console.warn(`[cron] ${org.slug} recurring errors:`, recurring.errors);
+    }
+    if (recurringInvoices.errors.length > 0) {
+      console.warn(`[cron] ${org.slug} recurring invoice errors:`, recurringInvoices.errors);
     }
   }
 

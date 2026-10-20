@@ -192,7 +192,17 @@ async function main() {
       rest(keyB, "POST", "/tax-payments", { agencyId: ids["tax-agencies"], paymentDate: "2026-05-31", periodEnd: "2026-05-31", amount: "1", bankAccountId: bank.id }),
       "tax payment"
     );
+    // Estimates and recurring invoices.
+    ids.estimates = await ok(
+      rest(keyB, "POST", "/estimates", { customerId: ids.customers, estimateDate: "2026-05-09", memo: MARKER, lines: [{ itemId: ids.items, quantity: 2, unitPrice: "30" }] }),
+      "estimate"
+    );
+    ids["recurring-invoices"] = await ok(
+      rest(keyB, "POST", "/recurring-invoices", { name: `${MARKER} template`, customerId: ids.customers, type: "unscheduled", lines: [{ itemId: ids.items }] }),
+      "recurring invoice"
+    );
   }
+  const bEstimateLine = (await rest(keyB, "GET", `/estimates/${ids.estimates}`)).json.lines[0].id as string;
   const secrets = [MARKER, b.org.id, ...Object.values(ids)];
   const tables = await tenantTables();
   const before = await fingerprint(b.org.id, tables);
@@ -209,6 +219,11 @@ async function main() {
   const bodies: Record<string, Record<string, unknown>> = {
     update_invoice: { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: aIncome }] },
     update_bill: { vendorId: aVendor, billDate: "2026-05-01", lines: [{ accountId: aExpense, amount: "1" }] },
+    update_estimate: { customerId: aCustomer, estimateDate: "2026-05-01", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: aIncome }] },
+    set_estimate_status: { status: "accepted" },
+    create_invoice_from_estimate: { invoiceDate: "2026-05-01" },
+    update_recurring_invoice: { name: "x", customerId: aCustomer, type: "unscheduled", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: aIncome }] },
+    set_recurring_invoice_status: { status: "paused" },
     match_bank_line: { glLineIds: [crypto.randomUUID()] },
     set_reconciliation_cleared: { glLineIds: [crypto.randomUUID()], cleared: true },
   };
@@ -289,6 +304,11 @@ async function main() {
     ["tax payment to B's agency", "/tax-payments", { agencyId: ids["tax-agencies"], paymentDate: "2026-05-31", periodEnd: "2026-05-31", amount: "1", bankAccountId: aBank }],
     ["tax rate under B's agency", "/tax-rates", { name: "x", agencyId: ids["tax-agencies"], ratePercent: "1" }],
     ["customer defaulting to B's tax rate", "/customers", { name: "x", defaultTaxCodeId: ids["tax-rates"] }],
+    ["estimate for B's customer", "/estimates", { customerId: ids.customers, estimateDate: "2026-05-09", lines: [{ itemId: aItem }] }],
+    ["estimate taxed at B's rate", "/estimates", { customerId: aCustomer, estimateDate: "2026-05-09", taxCodeId: ids["tax-rates"], lines: [{ itemId: aItem }] }],
+    ["invoice line billing B's estimate", "/invoices", { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ itemId: aItem, estimateLineId: bEstimateLine }] }],
+    ["recurring invoice for B's customer", "/recurring-invoices", { name: "x", customerId: ids.customers, type: "unscheduled", lines: [{ itemId: aItem }] }],
+    ["recurring invoice with B's item", "/recurring-invoices", { name: "y", customerId: aCustomer, type: "unscheduled", lines: [{ itemId: ids.items }] }],
   ];
   for (const [label, path, body] of borrow) {
     await check(`refused: ${label}`, async () => {

@@ -13,6 +13,7 @@ export function DocLines({
   total,
   currency,
   extraRows = [],
+  taxTotal,
 }: {
   lines: Array<{ id: string; lineNumber: number; itemName: string | null; description: string | null; quantity: string; unitPrice: string; amount: string; taxable: boolean }>;
   subtotal: string;
@@ -21,6 +22,8 @@ export function DocLines({
   total: string;
   currency: string;
   extraRows?: Array<{ label: string; value: string; strong?: boolean }>;
+  /** Documents that don't keep tax lines (estimates, templates): one row instead. */
+  taxTotal?: { label: string; amount: string };
 }) {
   const fmt = (v: string) => formatMoney(v, { currency });
   return (
@@ -56,6 +59,7 @@ export function DocLines({
           {taxLines.map((t) => (
             <FootRow key={t.id} label={`${t.agencyName} ${money(t.ratePercent).toString()}%${taxExempt ? " (exempt)" : ""}`} value={fmt(t.taxAmount)} />
           ))}
+          {taxTotal && <FootRow label={`${taxTotal.label}${taxExempt ? " (exempt)" : ""}`} value={fmt(taxTotal.amount)} />}
           <FootRow label="Total" value={fmt(total)} strong />
           {extraRows.map((r) => (
             <FootRow key={r.label} label={r.label} value={r.value} strong={r.strong} />

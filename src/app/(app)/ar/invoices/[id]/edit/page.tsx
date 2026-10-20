@@ -39,7 +39,17 @@ export default async function EditInvoicePage({ params }: { params: Promise<{ id
         items={data.items}
         incomeAccounts={data.incomeAccounts}
         taxRates={data.taxRates}
-        initial={invoice}
+        initial={{
+          id: invoice.id,
+          customerId: invoice.customerId,
+          date: invoice.invoiceDate,
+          dueDate: invoice.dueDate,
+          poNumber: invoice.poNumber,
+          taxCodeId: invoice.taxCodeId,
+          memo: invoice.memo,
+          privateNote: invoice.privateNote,
+          lockedCustomer: Boolean(invoice.estimateId),
+        }}
         initialLines={invoice.lines}
       />
     </AppShell>

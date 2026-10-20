@@ -57,6 +57,22 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
               <StatusBadge status={overdue ? "overdue" : inv.status} />
               <CreatorChip creator={creator} />
             </div>
+            {(inv.estimate || inv.recurring) && (
+              <div className="text-xs text-muted-foreground mt-1">
+                {inv.estimate && (
+                  <>
+                    Bills estimate{" "}
+                    <Link href={`/ar/estimates/${inv.estimate.id}`} className="text-primary hover:underline font-mono">{inv.estimate.number}</Link>
+                  </>
+                )}
+                {inv.recurring && (
+                  <>
+                    From recurring invoice{" "}
+                    <Link href={`/ar/recurring/${inv.recurring.id}`} className="text-primary hover:underline">{inv.recurring.name}</Link>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex flex-col items-end gap-2">
             <InvoiceActions invoice={inv} />
@@ -69,6 +85,11 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         {inv.status === "draft" && inv.createdByAgentId && (
           <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
             Drafted by an agent and waiting for review. Check the lines, then post it or delete it.
+          </div>
+        )}
+        {inv.status === "draft" && !inv.createdBy && !inv.createdByAgentId && inv.recurring && (
+          <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+            Made by a recurring invoice and waiting for review. Check it, then post it or delete it.
           </div>
         )}
 

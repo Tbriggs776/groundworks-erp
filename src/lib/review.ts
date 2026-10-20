@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import {
   agents,
   apBills,
@@ -20,6 +20,8 @@ import { requirePermission, type Ctx } from "@/lib/actor";
  * THE REVIEW QUEUE — everything waiting on a human:
  *   - drafts an agent created (invoices, payments, sales receipts, credit
  *     memos, refunds, bills, journal entries, bank transactions)
+ *   - draft invoices the daily run made from a recurring template
+ *     (reminders, and scheduled ones that couldn't post)
  *   - bills pending approval, whoever submitted them
  *
  * Agents in draft mode end every task here; this is where a person turns
@@ -44,7 +46,7 @@ export type ReviewItem = {
   amount: string;
   currency: string;
   status: string;
-  reason: "agent_draft" | "awaiting_approval";
+  reason: "agent_draft" | "awaiting_approval" | "recurring";
   agentId: string | null;
   agentName: string | null;
   createdAt: Date;
@@ -66,7 +68,11 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
         and(
           eq(arInvoices.organizationId, org),
           eq(arInvoices.status, "draft"),
-          isNotNull(arInvoices.createdByAgentId)
+          or(
+            isNotNull(arInvoices.createdByAgentId),
+            // Made by the daily run (no person or agent behind it).
+            and(isNotNull(arInvoices.recurringInvoiceId), isNull(arInvoices.createdBy))
+          )
         )
       )
       .orderBy(desc(arInvoices.createdAt)),
@@ -185,7 +191,7 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
       amount: d.totalAmount,
       currency: d.currency,
       status: d.status,
-      reason: "agent_draft" as const,
+      reason: d.createdByAgentId ? ("agent_draft" as const) : ("recurring" as const),
       agentId: d.createdByAgentId,
       agentName,
       createdAt: d.createdAt,

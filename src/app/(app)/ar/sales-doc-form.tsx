@@ -9,13 +9,35 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { Account, ArInvoice, ArInvoiceLine, Customer, Item } from "@/lib/db/schema";
+import type { Account, ArInvoiceLine, Customer, Item, RecurringInvoice } from "@/lib/db/schema";
 import { formatMoney, money, sumMoney } from "@/lib/money";
+import { saveEstimate } from "./estimates/actions";
 import { saveInvoice } from "./invoices/actions";
+import { saveRecurringInvoice } from "./recurring/actions";
 import { saveCreditMemo, saveRefund, saveSalesReceipt } from "./sales-actions";
 
-export type SalesDocFormKind = "invoice" | "sales_receipt" | "credit_memo" | "refund";
+export type SalesDocFormKind = "invoice" | "sales_receipt" | "credit_memo" | "refund" | "estimate" | "recurring_invoice";
 export type TaxRateChoice = { id: string; name: string; ratePercent: string };
+
+/** What an edit form starts from (an invoice, an estimate, or a recurring template). */
+export type SalesDocInitial = {
+  id: string;
+  customerId: string;
+  date: string;
+  /** Invoice due date or estimate expiration date. */
+  dueDate?: string | null;
+  poNumber?: string | null;
+  taxCodeId: string | null;
+  memo: string | null;
+  privateNote: string | null;
+  /** An invoice made from an estimate keeps the estimate's customer. */
+  lockedCustomer?: boolean;
+  schedule?: Pick<RecurringInvoice, "name" | "type" | "frequency" | "endDate" | "maxOccurrences" | "daysInAdvance">;
+};
+
+export type SalesDocInitialLine = Pick<ArInvoiceLine, "itemId" | "description" | "quantity" | "unitPrice" | "accountId" | "taxable"> & {
+  estimateLineId?: string | null;
+};
 
 type Line = {
   key: string;
@@ -25,6 +47,8 @@ type Line = {
   unitPrice: string;
   accountId: string;
   taxable: boolean;
+  /** Progress invoicing: the estimate line this bills. */
+  estimateLineId?: string;
 };
 
 const cell = "w-full text-xs bg-background border border-border rounded-md px-2 py-1.5";
@@ -37,11 +61,33 @@ const METHODS = [
   ["other", "Other"],
 ] as const;
 
+const FREQUENCIES = [
+  ["daily", "Daily"],
+  ["weekly", "Weekly"],
+  ["biweekly", "Every 2 weeks"],
+  ["monthly", "Monthly"],
+  ["quarterly", "Quarterly"],
+  ["semiannually", "Every 6 months"],
+  ["annually", "Yearly"],
+] as const;
+const RECURRING_TYPES = [
+  ["scheduled", "Scheduled: create and post each invoice"],
+  ["reminder", "Reminder: create a draft to review"],
+  ["unscheduled", "Unscheduled: use it by hand"],
+] as const;
+
 const COPY: Record<SalesDocFormKind, { date: string; party: string; post: string; route: string }> = {
   invoice: { date: "Invoice date", party: "Customer", post: "Posting finalizes the invoice: Dr Accounts Receivable, Cr income and sales tax.", route: "/ar/invoices" },
   sales_receipt: { date: "Sale date", party: "Customer (optional)", post: "Posting records the sale: Dr the deposit account, Cr income and sales tax.", route: "/ar/sales-receipts" },
   credit_memo: { date: "Credit date", party: "Customer", post: "Posting gives the credit: Dr income and sales tax, Cr Accounts Receivable.", route: "/ar/credit-memos" },
   refund: { date: "Refund date", party: "Customer", post: "Posting pays the refund: Dr income and sales tax, Cr the bank account.", route: "/ar/refunds" },
+  estimate: { date: "Estimate date", party: "Customer", post: "Estimates don't touch the ledger. Bill one from its page, all at once or in parts.", route: "/ar/estimates" },
+  recurring_invoice: {
+    date: "First invoice date",
+    party: "Customer",
+    post: "Each invoice gets these lines and this tax rate; its due date follows the customer's terms.",
+    route: "/ar/recurring",
+  },
 };
 
 function blankLine(): Line {
@@ -73,6 +119,7 @@ export function SalesDocForm({
   initial,
   initialLines,
   defaultCustomerId,
+  prefill,
 }: {
   kind: SalesDocFormKind;
   customers: Customer[];
@@ -81,9 +128,11 @@ export function SalesDocForm({
   taxRates: TaxRateChoice[];
   depositAccounts?: Account[];
   bankAccounts?: Account[];
-  initial?: ArInvoice;
-  initialLines?: ArInvoiceLine[];
+  initial?: SalesDocInitial;
+  initialLines?: SalesDocInitialLine[];
   defaultCustomerId?: string;
+  /** Starting values for a new document copied from another (Make recurring). */
+  prefill?: Partial<Pick<SalesDocInitial, "taxCodeId" | "memo" | "privateNote" | "poNumber">>;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -93,18 +142,20 @@ export function SalesDocForm({
   const startCustomer = customers.find((c) => c.id === (initial?.customerId ?? defaultCustomerId));
 
   const [customerId, setCustomerId] = useState(startCustomer?.id ?? "");
-  const [docDate, setDocDate] = useState(initial?.invoiceDate ?? today);
+  const [docDate, setDocDate] = useState(initial?.date ?? today);
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? "");
-  const [poNumber, setPoNumber] = useState(initial?.poNumber ?? "");
+  const [poNumber, setPoNumber] = useState(initial?.poNumber ?? prefill?.poNumber ?? "");
   const [method, setMethod] = useState(kind === "refund" ? "check" : "cash");
   const [reference, setReference] = useState("");
   const [depositAccountId, setDepositAccountId] = useState(
     depositAccounts.find((a) => a.code === "1250")?.id ?? depositAccounts[0]?.id ?? ""
   );
   const [bankAccountId, setBankAccountId] = useState(bankAccounts.find((a) => a.code === "1010")?.id ?? bankAccounts[0]?.id ?? "");
-  const [taxCodeId, setTaxCodeId] = useState(initial ? (initial.taxCodeId ?? "") : (startCustomer?.defaultTaxCodeId ?? ""));
-  const [memo, setMemo] = useState(initial?.memo ?? "");
-  const [privateNote, setPrivateNote] = useState(initial?.privateNote ?? "");
+  const [taxCodeId, setTaxCodeId] = useState(
+    initial ? (initial.taxCodeId ?? "") : prefill && "taxCodeId" in prefill ? (prefill.taxCodeId ?? "") : (startCustomer?.defaultTaxCodeId ?? "")
+  );
+  const [memo, setMemo] = useState(initial?.memo ?? prefill?.memo ?? "");
+  const [privateNote, setPrivateNote] = useState(initial?.privateNote ?? prefill?.privateNote ?? "");
   const [lines, setLines] = useState<Line[]>(
     initialLines?.length
       ? initialLines.map((l) => ({
@@ -115,9 +166,20 @@ export function SalesDocForm({
           unitPrice: money(l.unitPrice).toFixed(2),
           accountId: l.accountId,
           taxable: l.taxable,
+          estimateLineId: l.estimateLineId ?? undefined,
         }))
       : [blankLine()]
   );
+  const sched = initial?.schedule;
+  const [name, setName] = useState(sched?.name ?? "");
+  const [recurringType, setRecurringType] = useState<string>(sched?.type ?? "scheduled");
+  const [frequency, setFrequency] = useState<string>(sched?.frequency ?? "monthly");
+  const [daysInAdvance, setDaysInAdvance] = useState(String(sched?.daysInAdvance ?? 0));
+  const [ends, setEnds] = useState<"never" | "date" | "count">(sched?.endDate ? "date" : sched?.maxOccurrences ? "count" : "never");
+  const [endDate, setEndDate] = useState(sched?.endDate ?? "");
+  const [maxOccurrences, setMaxOccurrences] = useState(sched?.maxOccurrences ? String(sched.maxOccurrences) : "12");
+  const recurring = kind === "recurring_invoice";
+  const unscheduled = recurring && recurringType === "unscheduled";
 
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const customer = customers.find((c) => c.id === customerId);
@@ -171,7 +233,35 @@ export function SalesDocForm({
       const common = { taxCodeId: taxCodeId || null, memo, privateNote, lines: lineInput };
       const r =
         kind === "invoice"
-          ? await saveInvoice(initial?.id ?? null, { customerId, invoiceDate: docDate, dueDate: dueDate || undefined, poNumber, ...common }, post)
+          ? await saveInvoice(
+              initial?.id ?? null,
+              {
+                customerId,
+                invoiceDate: docDate,
+                dueDate: dueDate || undefined,
+                poNumber,
+                ...common,
+                lines: lines
+                  .filter((l) => l.itemId || l.accountId)
+                  .map((l, i) => ({ ...lineInput[i], estimateLineId: l.estimateLineId })),
+              },
+              post
+            )
+          : kind === "estimate"
+            ? await saveEstimate(initial?.id ?? null, { customerId, estimateDate: docDate, expirationDate: dueDate || null, ...common })
+          : kind === "recurring_invoice"
+            ? await saveRecurringInvoice(initial?.id ?? null, {
+                name,
+                customerId,
+                type: recurringType as "scheduled",
+                frequency: frequency as "monthly",
+                date: unscheduled ? undefined : docDate,
+                endDate: !unscheduled && ends === "date" && endDate ? endDate : null,
+                maxOccurrences: !unscheduled && ends === "count" && maxOccurrences ? Number(maxOccurrences) : null,
+                daysInAdvance: Number(daysInAdvance) || 0,
+                poNumber,
+                ...common,
+              })
           : kind === "sales_receipt"
             ? await saveSalesReceipt(
                 { customerId: customerId || undefined, receiptDate: docDate, method: method as "cash", reference: reference || undefined, depositAccountId, ...common },
@@ -189,14 +279,77 @@ export function SalesDocForm({
   }
 
   const needsCustomer = kind !== "sales_receipt";
-  const canSave = !pending && (!needsCustomer || customerId) && docDate && subtotal.gt(0);
+  const canSave = !pending && (!needsCustomer || customerId) && (unscheduled || docDate) && subtotal.gt(0) && (!recurring || name.trim());
+  const dateLabel = recurring && initial ? "Next invoice date" : copy.date;
 
   return (
     <div className="space-y-5 max-w-5xl">
+      {recurring && (
+        <div className="rounded-md border border-border p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="sm:col-span-2">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Template name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Monthly retainer" />
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Type</Label>
+              <select value={recurringType} onChange={(e) => setRecurringType(e.target.value)} className={`${cell} text-sm py-2`} aria-label="Type">
+                {RECURRING_TYPES.map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {!unscheduled && (
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Repeats</Label>
+                <select value={frequency} onChange={(e) => setFrequency(e.target.value)} className={`${cell} text-sm py-2`} aria-label="Repeats">
+                  {FREQUENCIES.map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Create days in advance</Label>
+                <Input type="number" min={0} max={90} value={daysInAdvance} onChange={(e) => setDaysInAdvance(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Ends</Label>
+                <select value={ends} onChange={(e) => setEnds(e.target.value as "never")} className={`${cell} text-sm py-2`} aria-label="Ends">
+                  <option value="never">Never</option>
+                  <option value="date">On a date</option>
+                  <option value="count">After a number of invoices</option>
+                </select>
+              </div>
+              <div>
+                {ends === "date" && (
+                  <>
+                    <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">End date</Label>
+                    <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                  </>
+                )}
+                {ends === "count" && (
+                  <>
+                    <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Invoices</Label>
+                    <Input type="number" min={1} value={maxOccurrences} onChange={(e) => setMaxOccurrences(e.target.value)} />
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div className="sm:col-span-2">
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">{copy.party}</Label>
-          <select value={customerId} onChange={(e) => pickCustomer(e.target.value)} className={`${cell} text-sm py-2`}>
+          <select
+            value={customerId}
+            onChange={(e) => pickCustomer(e.target.value)}
+            disabled={initial?.lockedCustomer}
+            className={`${cell} text-sm py-2`}
+            aria-label="Customer"
+          >
             <option value="">{needsCustomer ? "Choose customer…" : "No customer"}</option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -207,10 +360,18 @@ export function SalesDocForm({
             <p className="text-[11px] text-primary mt-1">Tax exempt{customer?.taxExemptReason ? `: ${customer.taxExemptReason}` : ""}</p>
           )}
         </div>
-        <div>
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">{copy.date}</Label>
-          <Input type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} />
-        </div>
+        {!unscheduled && (
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">{dateLabel}</Label>
+            <Input type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} />
+          </div>
+        )}
+        {kind === "estimate" && (
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Expiration date</Label>
+            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+        )}
         {kind === "invoice" && (
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Due date</Label>
@@ -223,7 +384,7 @@ export function SalesDocForm({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-        {kind === "invoice" && (
+        {(kind === "invoice" || recurring) && (
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Customer PO #</Label>
             <Input value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
@@ -292,7 +453,10 @@ export function SalesDocForm({
           <tbody>
             {lines.map((l, idx) => (
               <tr key={l.key} className="border-t border-border align-top">
-                <td className="px-3 py-2 text-xs font-mono text-muted-foreground">{idx + 1}</td>
+                <td className="px-3 py-2 text-xs font-mono text-muted-foreground" title={l.estimateLineId ? "Bills an estimate line" : undefined}>
+                  {idx + 1}
+                  {l.estimateLineId && <div className="text-[9px] text-primary">EST</div>}
+                </td>
                 <td className="px-3 py-2">
                   <select value={l.itemId} onChange={(e) => pickItem(l.key, e.target.value)} className={cell}>
                     <option value="">None</option>
@@ -383,12 +547,20 @@ export function SalesDocForm({
       {err && <p className="text-sm text-destructive">{err}</p>}
 
       <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-border">
-        <Button onClick={() => submit(true)} disabled={!canSave}>
-          {pending ? "Saving…" : "Save and post"}
-        </Button>
-        <Button variant="outline" onClick={() => submit(false)} disabled={!canSave}>
-          Save draft
-        </Button>
+        {kind === "estimate" || recurring ? (
+          <Button onClick={() => submit(false)} disabled={!canSave}>
+            {pending ? "Saving…" : recurring ? "Save template" : "Save estimate"}
+          </Button>
+        ) : (
+          <>
+            <Button onClick={() => submit(true)} disabled={!canSave}>
+              {pending ? "Saving…" : "Save and post"}
+            </Button>
+            <Button variant="outline" onClick={() => submit(false)} disabled={!canSave}>
+              Save draft
+            </Button>
+          </>
+        )}
         <Button variant="ghost" onClick={() => router.back()}>
           Cancel
         </Button>
