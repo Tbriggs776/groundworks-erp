@@ -15,7 +15,7 @@ import { amount, optionalText } from "@/lib/schemas";
 export const LOGO_MAX_BYTES = 512 * 1024;
 const LOGO_TYPES = ["image/png", "image/jpeg"] as const;
 
-const AddressSchema = z.object({
+export const AddressSchema = z.object({
   street1: optionalText(200),
   street2: optionalText(200),
   city: optionalText(100),
@@ -142,7 +142,7 @@ export async function updateCompanyProfile(ctx: Ctx, input: UpdateCompanyProfile
 }
 
 /** Keep only the address parts that are filled in. */
-function compactAddress(a: z.output<typeof AddressSchema>): CompanyAddress {
+export function compactAddress(a: z.output<typeof AddressSchema>): CompanyAddress {
   return Object.fromEntries(Object.entries(a).filter(([, v]) => typeof v === "string" && v)) as CompanyAddress;
 }
 

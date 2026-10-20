@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serviceAction, type ActionResult } from "@/lib/action";
 import * as billPayments from "@/lib/ap/bill-payments";
 import * as bills from "@/lib/ap/bills";
+import * as purchaseOrders from "@/lib/ap/purchase-orders";
 import * as vendorCredits from "@/lib/ap/vendor-credits";
 import * as vendorRefunds from "@/lib/ap/vendor-refunds";
 import * as invoices from "@/lib/ar/invoices";
@@ -42,6 +43,14 @@ export async function approveItem(type: ReviewItem["type"], id: string, status: 
         return { id: (await vendorCredits.postVendorCredit(ctx, { id })).id };
       case "vendor_refund":
         return { id: (await vendorRefunds.postVendorRefund(ctx, { id })).id };
+      case "purchase_order": {
+        // Submitting approves it at once when this person's role allows.
+        if (status === "draft") {
+          const po = await purchaseOrders.submitPurchaseOrder(ctx, { id });
+          if (po.status === "open") return { id };
+        }
+        return { id: (await purchaseOrders.approvePurchaseOrder(ctx, { id })).id };
+      }
       case "bill":
         // Walk the bill as far as this person may take it.
         if (status === "draft") await bills.submitBill(ctx, { id });
@@ -77,6 +86,11 @@ export async function dismissItem(type: ReviewItem["type"], id: string, status: 
         return vendorCredits.deleteDraftVendorCredit(ctx, { id });
       case "vendor_refund":
         return vendorRefunds.deleteDraftVendorRefund(ctx, { id });
+      case "purchase_order":
+        if (status === "pending_approval") {
+          return { id: (await purchaseOrders.rejectPurchaseOrder(ctx, { id, reason: "Rejected from the review queue" })).id };
+        }
+        return purchaseOrders.deleteDraftPurchaseOrder(ctx, { id });
       case "bill":
         if (status === "pending_approval") {
           return { id: (await bills.rejectBill(ctx, { id, reason: "Rejected from the review queue" })).id };

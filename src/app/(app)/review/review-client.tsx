@@ -20,12 +20,14 @@ const TYPE_LABEL: Record<ReviewItem["type"], string> = {
   bill_payment: "Bill payment",
   vendor_credit: "Vendor credit",
   vendor_refund: "Vendor refund",
+  purchase_order: "Purchase order",
   journal_entry: "Journal entry",
   bank_transaction: "Bank transaction",
 };
 
 function approveLabel(item: ReviewItem): string {
   if (item.type === "bill") return item.status === "approved" ? "Post" : "Approve & post";
+  if (item.type === "purchase_order") return "Approve";
   return "Post";
 }
 
@@ -111,7 +113,7 @@ export function ReviewClient({ items }: { items: ReviewItem[] }) {
                       disabled={pending && busy === item.id}
                       onClick={() => act(item, () => dismissItem(item.type, item.id, item.status))}
                     >
-                      {item.type === "bill" && item.status === "pending_approval" ? "Reject" : "Discard"}
+                      {(item.type === "bill" || item.type === "purchase_order") && item.status === "pending_approval" ? "Reject" : "Discard"}
                     </Button>
                     <Button
                       size="sm"

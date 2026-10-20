@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { accounts, customers, items, taxCodes } from "@/lib/db/schema";
+import { accounts, companyProfiles, customers, items, taxCodes, vendors } from "@/lib/db/schema";
 
 /**
  * Reference data the sales forms need (customers, items, income accounts,
@@ -65,4 +65,36 @@ export async function salesFormData(organizationId: string) {
     bankAccounts: accountRows.filter((a) => a.isCash || a.isReconciliation),
     taxRates: rateRows,
   };
+}
+
+/** Reference data for purchase orders: vendors, items, line accounts, and the default ship-to. */
+export async function purchaseFormData(organizationId: string) {
+  const [vendorRows, itemRows, accountRows, [profile]] = await Promise.all([
+    db
+      .select()
+      .from(vendors)
+      .where(and(eq(vendors.organizationId, organizationId), eq(vendors.isActive, true), isNull(vendors.deletedAt)))
+      .orderBy(asc(vendors.name)),
+    db
+      .select()
+      .from(items)
+      .where(and(eq(items.organizationId, organizationId), eq(items.isActive, true), isNull(items.deletedAt)))
+      .orderBy(asc(items.name)),
+    db
+      .select()
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.organizationId, organizationId),
+          eq(accounts.accountType, "posting"),
+          eq(accounts.isActive, true),
+          eq(accounts.isBlocked, false),
+          eq(accounts.directPosting, true),
+          eq(accounts.isControl, false)
+        )
+      )
+      .orderBy(asc(accounts.code)),
+    db.select({ address: companyProfiles.address }).from(companyProfiles).where(eq(companyProfiles.organizationId, organizationId)),
+  ]);
+  return { vendors: vendorRows, items: itemRows, accounts: accountRows, companyAddress: profile?.address ?? {} };
 }

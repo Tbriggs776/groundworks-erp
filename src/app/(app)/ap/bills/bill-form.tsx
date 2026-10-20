@@ -28,6 +28,8 @@ type Line = {
   accountId: string;
   amount: string;
   description: string;
+  /** Kept when editing a bill made from a purchase order. */
+  purchaseOrderLineId: string | null;
 };
 
 const EMPTY: Line = {
@@ -35,6 +37,7 @@ const EMPTY: Line = {
   accountId: "",
   amount: "",
   description: "",
+  purchaseOrderLineId: null,
 };
 
 function newLine(): Line {
@@ -81,6 +84,7 @@ export function BillForm({
           accountId: l.accountId,
           amount: l.amount,
           description: l.description ?? "",
+          purchaseOrderLineId: l.purchaseOrderLineId,
         }))
       : [newLine()]
   );
@@ -133,6 +137,7 @@ export function BillForm({
             accountId: l.accountId,
             amount: l.amount,
             description: l.description,
+            purchaseOrderLineId: l.purchaseOrderLineId,
           })),
       };
       const r = isEdit
@@ -230,6 +235,11 @@ export function BillForm({
               <tr key={l.id} className="border-t border-border">
                 <td className="px-3 py-2 text-xs font-mono text-muted-foreground">
                   {idx + 1}
+                  {l.purchaseOrderLineId && (
+                    <span className="block text-[9px] uppercase tracking-wider" title="Bills a purchase order line">
+                      PO
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <select

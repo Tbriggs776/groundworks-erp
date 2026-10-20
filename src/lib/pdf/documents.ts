@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { customers, type Address } from "@/lib/db/schema";
+import { customers, vendors, type Address } from "@/lib/db/schema";
 import { requirePermission, type Ctx } from "@/lib/actor";
 import { getCreditMemo } from "@/lib/ar/credit-memos";
 import { getEstimate } from "@/lib/ar/estimates";
@@ -9,6 +9,7 @@ import { getInvoice } from "@/lib/ar/invoices";
 import { getSalesReceipt } from "@/lib/ar/sales-receipts";
 import { customerStatement, listStatements, ListStatementsSchema, StatementSchema, type Statement } from "@/lib/ar/statements";
 import { amountInWords, checkPrint, type CheckRef } from "@/lib/ap/checks";
+import { getPurchaseOrder } from "@/lib/ap/purchase-orders";
 import { loadCompanyProfile } from "@/lib/company/profile";
 import { formatMoney, money } from "@/lib/money";
 import { id } from "@/lib/schemas";
@@ -287,6 +288,47 @@ export async function checksPdf(ctx: Ctx, refs: CheckRef[]): Promise<PdfFile> {
   const first = list[0]?.checkNumber;
   const name = list.length === 1 ? `Check_${first ?? "unnumbered"}` : `Checks_${first ?? "unnumbered"}_${list[list.length - 1]?.checkNumber ?? ""}`;
   return { fileName: `${name.replace(/_$/, "")}.pdf`, contentType: "application/pdf", bytes };
+}
+
+/** A purchase order for the vendor: what we're buying, where it ships, and the total. */
+export async function purchaseOrderPdf(ctx: Ctx, poId: string): Promise<PdfFile> {
+  requirePermission(ctx.actor, "read", "viewer", "download documents");
+  const d = await getPurchaseOrder(ctx, { id: poId });
+  const [v] = await ctx.tx
+    .select({ name: vendors.name, email: vendors.email, addresses: vendors.addresses })
+    .from(vendors)
+    .where(and(eq(vendors.id, d.vendorId), eq(vendors.organizationId, ctx.actor.organizationId)));
+  const list = Array.isArray(v?.addresses) ? (v.addresses as Address[]) : [];
+  const vendorAddress = list.find((a) => a.type === "mailing") ?? list.find((a) => a.type === "billing") ?? list.find((a) => a.type === "remit") ?? list[0];
+  const co = await company(ctx);
+  const fmt = (x: string) => formatMoney(x, { currency: d.currency });
+  const data: SalesDocPdf = {
+    title: "Purchase order",
+    stamp: d.status === "open" || d.status === "closed" ? null : d.status === "rejected" ? "NOT APPROVED" : "DRAFT",
+    partyLabel: "VENDOR",
+    party: v ? { name: v.name, addressLines: addressLines(vendorAddress), email: v.email } : null,
+    shipTo: { name: co.name, addressLines: addressLines(d.shipTo), email: null },
+    meta: [
+      { label: "PO #", value: d.poNumber },
+      { label: "Date", value: pdfDate(d.poDate) },
+      ...(d.expectedDate ? [{ label: "Expected", value: pdfDate(d.expectedDate) }] : []),
+    ],
+    rateLabel: "COST",
+    currency: d.currency,
+    // A line with neither item nor description names its account, so it's never blank.
+    lines: d.lines.map((l) => ({
+      item: l.itemName,
+      description: l.description ?? (l.itemName ? null : l.accountName),
+      quantity: l.quantity,
+      unitPrice: l.unitCost,
+      amount: l.amount,
+    })),
+    totals: [{ label: "Total", value: fmt(d.totalAmount), strong: true }],
+    message: d.vendorMessage,
+    signature: false,
+  };
+  const bytes = await render((P) => salesDocument(P, co, data));
+  return { fileName: `PurchaseOrder_${d.poNumber}.pdf`, contentType: "application/pdf", bytes };
 }
 
 /** API shape: the file as base64 inside JSON. */

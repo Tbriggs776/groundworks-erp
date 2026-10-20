@@ -17,6 +17,7 @@ import { approvalThresholds } from "./approvals";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
 import { vendors } from "./parties";
+import { purchaseOrderLines, purchaseOrders } from "./purchase_orders";
 
 /**
  * AP BILLS — vendor invoices entered into the system. A bill carries:
@@ -114,6 +115,11 @@ export const apBills = pgTable(
     description: text("description"),
     notes: text("notes"),
 
+    /** The purchase order this bill bills, if any. */
+    purchaseOrderId: uuid("purchase_order_id").references(() => purchaseOrders.id, {
+      onDelete: "set null",
+    }),
+
     // Who created the document — a human or an agent (never both). Drives
     // the review queue: agent-created drafts wait there for a human.
     createdBy: uuid("created_by").references(() => profiles.id, {
@@ -131,6 +137,7 @@ export const apBills = pgTable(
     index("ap_bills_vendor_idx").on(t.organizationId, t.vendorId),
     index("ap_bills_due_idx").on(t.organizationId, t.dueDate),
     index("ap_bills_agent_idx").on(t.organizationId, t.createdByAgentId),
+    index("ap_bills_po_idx").on(t.organizationId, t.purchaseOrderId),
   ]
 );
 
@@ -156,10 +163,17 @@ export const apBillLines = pgTable(
 
     description: text("description"),
 
+    /** The purchase order line this bill line bills (progress billing). */
+    purchaseOrderLineId: uuid("purchase_order_line_id").references(
+      () => purchaseOrderLines.id,
+      { onDelete: "set null" }
+    ),
+
     ...timestamps,
   },
   (t) => [
     uniqueIndex("ap_bill_lines_bill_line_key").on(t.billId, t.lineNumber),
+    index("ap_bill_lines_po_line_idx").on(t.purchaseOrderLineId),
   ]
 );
 

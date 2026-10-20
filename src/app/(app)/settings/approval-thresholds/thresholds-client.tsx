@@ -62,12 +62,12 @@ export function ThresholdsClient({
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
-          Amount tiers determine who must approve AP bills.
+          Amount tiers determine who must approve bills and purchase orders. Someone whose role meets the tier approves a purchase order just by submitting it.
           <ul className="list-disc ml-4 mt-2 space-y-1">
             <li><code>min</code> is inclusive, <code>max</code> is exclusive.</li>
             <li><code>max</code> blank = unbounded (top tier).</li>
             <li>Required role is a <strong>minimum</strong>: higher ranks always qualify.</li>
-            <li>If no active tier matches a bill&apos;s amount, admin is required by default.</li>
+            <li>If no active tier matches the amount, admin is required by default.</li>
           </ul>
         </div>
         <Button onClick={() => { setEditing(null); setOpen(true); }}>
@@ -92,7 +92,7 @@ export function ThresholdsClient({
             {thresholds.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-3 py-10 text-center text-xs text-muted-foreground">
-                  No tiers configured. Without tiers, admin is required for all bills (default).
+                  No tiers configured. Without tiers, admin is required for all bills and purchase orders (default).
                 </td>
               </tr>
             )}

@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   apBillLines,
   apBills,
+  purchaseOrders,
   vendors,
   type ApBill,
   type ApBillLine,
@@ -36,6 +37,7 @@ import {
 import { canApproveAtRole, resolveApprovalRouting } from "./approval";
 import { billSettledSql } from "./balances";
 import { billAppliedTotal } from "./payments";
+import { checkPurchaseOrderBilling, syncPurchaseOrderStatus } from "./po-billing";
 import { postBillToGl, voidBillFromGl } from "./posting";
 
 /**
@@ -46,7 +48,8 @@ import { postBillToGl, voidBillFromGl } from "./posting";
  *
  * Rejected bills are editable and drop back to draft when saved. Approval
  * routing comes from approval_thresholds; an agent never approves a bill
- * it created itself.
+ * it created itself. A bill made from a purchase order bills its lines
+ * (see ./po-billing.ts); voiding or deleting it gives them back.
  */
 
 // ---------------------------------------------------------------------------
@@ -57,6 +60,10 @@ const BillLineSchema = z.object({
   accountId: id.describe("Expense, asset, or COGS account to debit."),
   amount: positiveAmount.describe("Line amount in the bill's currency."),
   description: optionalText(500),
+  purchaseOrderLineId: id
+    .optional()
+    .nullable()
+    .describe("The purchase order line this line bills. Only on bills made from a purchase order; keep it when editing one."),
 });
 
 const BillFields = {
@@ -161,6 +168,7 @@ export type BillDetail = ApBill & {
   vendorName: string;
   openBalance: string;
   lines: ApBillLine[];
+  purchaseOrderNumber: string | null;
 };
 
 export async function getBill(ctx: Ctx, input: { id: string }): Promise<BillDetail> {
@@ -181,7 +189,10 @@ export async function getBill(ctx: Ctx, input: { id: string }): Promise<BillDeta
     bill.status === "posted" || bill.status === "paid"
       ? money(bill.totalAmount).minus(applied)
       : money(0);
-  return { ...bill, vendorName: vendor?.name ?? "", openBalance: toDbMoney(open), lines };
+  const [po] = bill.purchaseOrderId
+    ? await ctx.tx.select({ poNumber: purchaseOrders.poNumber }).from(purchaseOrders).where(eq(purchaseOrders.id, bill.purchaseOrderId))
+    : [];
+  return { ...bill, vendorName: vendor?.name ?? "", openBalance: toDbMoney(open), lines, purchaseOrderNumber: po?.poNumber ?? null };
 }
 
 async function loadBill(ctx: Ctx, billId: string, forUpdate = false): Promise<ApBill> {
@@ -206,7 +217,8 @@ async function loadBill(ctx: Ctx, billId: string, forUpdate = false): Promise<Ap
 
 async function resolveBillFields(
   ctx: Ctx,
-  data: z.output<typeof CreateBillSchema> | z.output<typeof UpdateBillSchema>
+  data: z.output<typeof CreateBillSchema> | z.output<typeof UpdateBillSchema>,
+  link: { purchaseOrderId: string | null; billId?: string } = { purchaseOrderId: null }
 ) {
   const org = ctx.actor.organizationId;
   const [vendor] = await ctx.tx
@@ -219,6 +231,14 @@ async function resolveBillFields(
   }
 
   await requireLineAccounts(ctx.tx, org, data.lines.map((l) => l.accountId));
+  const currency = data.currency ?? vendor.currency;
+  await checkPurchaseOrderBilling(ctx, {
+    purchaseOrderId: link.purchaseOrderId,
+    vendorId: vendor.id,
+    currency,
+    billId: link.billId,
+    lines: data.lines,
+  });
 
   const subtotal = sumMoney(data.lines.map((l) => l.amount));
   const dueDate =
@@ -236,7 +256,7 @@ async function resolveBillFields(
       dueDate,
       discountDate: data.discountDate ?? null,
       discountPercent: money(data.discountPercent ?? "0").toFixed(6),
-      currency: data.currency ?? vendor.currency,
+      currency,
       exchangeRate: data.exchangeRate ?? "1",
       subtotalAmount: toDbMoney(subtotal),
       // Discount terms affect payment-time math only; the bill is owed in full.
@@ -279,11 +299,33 @@ async function assertNotDuplicate(
   }
 }
 
-export async function createBill(ctx: Ctx, input: CreateBillInput): Promise<BillDetail> {
+/** Bill lines as stored, with their PO line links. */
+function billLineRows(org: string, billId: string, lines: z.output<typeof BillLineSchema>[]) {
+  return lines.map((l, i) => ({
+    organizationId: org,
+    billId,
+    lineNumber: i + 1,
+    accountId: l.accountId,
+    amount: l.amount,
+    description: l.description,
+    purchaseOrderLineId: l.purchaseOrderLineId ?? null,
+  }));
+}
+
+/**
+ * `links.purchaseOrderId` is for callers inside the app (a purchase order
+ * being billed); API callers use create_bill_from_purchase_order.
+ */
+export async function createBill(
+  ctx: Ctx,
+  input: CreateBillInput,
+  links: { purchaseOrderId?: string } = {}
+): Promise<BillDetail> {
   requirePermission(ctx.actor, "write", "bookkeeper", "create bills");
   const data = CreateBillSchema.parse(input);
   const org = ctx.actor.organizationId;
-  const { header, lines } = await resolveBillFields(ctx, data);
+  const purchaseOrderId = links.purchaseOrderId ?? null;
+  const { header, lines } = await resolveBillFields(ctx, data, { purchaseOrderId });
   await assertNotDuplicate(ctx, header.vendorId, header.vendorInvoiceNumber);
 
   const billNumber = await nextNumber(ctx.tx, org, "AP");
@@ -293,21 +335,14 @@ export async function createBill(ctx: Ctx, input: CreateBillInput): Promise<Bill
       organizationId: org,
       billNumber,
       ...header,
+      purchaseOrderId,
       status: "draft",
       ...creatorFields(ctx.actor),
     })
     .returning();
 
-  await ctx.tx.insert(apBillLines).values(
-    lines.map((l, i) => ({
-      organizationId: org,
-      billId: bill.id,
-      lineNumber: i + 1,
-      accountId: l.accountId,
-      amount: l.amount,
-      description: l.description,
-    }))
-  );
+  await ctx.tx.insert(apBillLines).values(billLineRows(org, bill.id, lines));
+  if (purchaseOrderId) await syncPurchaseOrderStatus(ctx, purchaseOrderId);
 
   await writeAudit(
     {
@@ -321,6 +356,7 @@ export async function createBill(ctx: Ctx, input: CreateBillInput): Promise<Bill
         vendorId: header.vendorId,
         total: header.totalAmount,
         lineCount: lines.length,
+        ...(purchaseOrderId ? { purchaseOrderId } : {}),
       },
     },
     ctx.tx
@@ -340,7 +376,7 @@ export async function updateBill(ctx: Ctx, input: UpdateBillInput): Promise<Bill
       `Cannot edit a ${bill.status} bill. Only draft or rejected bills are editable.`
     );
   }
-  const { header, lines } = await resolveBillFields(ctx, data);
+  const { header, lines } = await resolveBillFields(ctx, data, { purchaseOrderId: bill.purchaseOrderId, billId: bill.id });
   await assertNotDuplicate(ctx, header.vendorId, header.vendorInvoiceNumber, bill.id);
 
   await ctx.tx
@@ -357,16 +393,8 @@ export async function updateBill(ctx: Ctx, input: UpdateBillInput): Promise<Bill
     .where(eq(apBills.id, bill.id));
 
   await ctx.tx.delete(apBillLines).where(eq(apBillLines.billId, bill.id));
-  await ctx.tx.insert(apBillLines).values(
-    lines.map((l, i) => ({
-      organizationId: org,
-      billId: bill.id,
-      lineNumber: i + 1,
-      accountId: l.accountId,
-      amount: l.amount,
-      description: l.description,
-    }))
-  );
+  await ctx.tx.insert(apBillLines).values(billLineRows(org, bill.id, lines));
+  if (bill.purchaseOrderId) await syncPurchaseOrderStatus(ctx, bill.purchaseOrderId, { reopen: true });
 
   await writeAudit(
     {
@@ -590,6 +618,7 @@ export async function voidBill(
       updatedAt: sql`now()`,
     })
     .where(eq(apBills.id, billId));
+  if (bill.purchaseOrderId) await syncPurchaseOrderStatus(ctx, bill.purchaseOrderId, { reopen: true });
   return getBill(ctx, { id: billId });
 }
 
@@ -633,6 +662,7 @@ export async function deleteDraftBill(ctx: Ctx, input: { id: string }): Promise<
     throw invalidState(`Only draft or rejected bills can be deleted (this one is ${bill.status}).`);
   }
   await ctx.tx.delete(apBills).where(eq(apBills.id, billId));
+  if (bill.purchaseOrderId) await syncPurchaseOrderStatus(ctx, bill.purchaseOrderId, { reopen: true });
   await writeAudit(
     {
       organizationId: ctx.actor.organizationId,

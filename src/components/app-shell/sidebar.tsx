@@ -67,6 +67,7 @@ const NAV: NavGroup[] = [
     icon: Wallet,
     items: [
       { label: "Vendors", href: "/vendors" },
+      { label: "Purchase Orders", href: "/ap/purchase-orders" },
       { label: "Bills", href: "/ap/bills" },
       { label: "Bill Payments", href: "/ap/payments" },
       { label: "Vendor Credits", href: "/ap/vendor-credits" },
