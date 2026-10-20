@@ -17,6 +17,12 @@ function sourceHref(s: RegisterRow["source"]): string {
       return `/ar/payments/${s.id}`;
     case "bill_payment":
       return `/ap/payments/${s.id}`;
+    case "sales_receipt":
+      return `/ar/sales-receipts/${s.id}`;
+    case "refund_receipt":
+      return `/ar/refunds/${s.id}`;
+    case "sales_tax_payment":
+      return `/sales-tax`;
     default:
       return `/gl/${s.id}`;
   }

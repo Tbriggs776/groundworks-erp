@@ -1,6 +1,5 @@
 import { addDays, format, parseISO } from "date-fns";
-import Decimal from "decimal.js";
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   arInvoiceLines,
@@ -8,11 +7,11 @@ import {
   arPaymentApplications,
   arPayments,
   customers,
-  dimensionValues,
   items,
+  taxAgencies,
   type ArInvoice,
   type ArInvoiceLine,
-  type DimensionTag,
+  type SalesTaxLine,
 } from "@/lib/db/schema";
 import {
   auditFields,
@@ -24,8 +23,7 @@ import {
 import { writeAudit } from "@/lib/audit";
 import { AppError, invalidState, notFound } from "@/lib/errors";
 import { nextNumber } from "@/lib/gl/number-series";
-import { requireLineAccounts } from "@/lib/gl/lookups";
-import { money, sumMoney, toDbMoney } from "@/lib/money";
+import { money } from "@/lib/money";
 import { requireActiveCustomer } from "@/lib/parties/service";
 import { postOrQueueForReview, type ReviewNotice } from "@/lib/review-policy";
 import {
@@ -40,37 +38,27 @@ import {
   pagination,
   toPage,
 } from "@/lib/schemas";
+import { invoiceSettledSql } from "./balances";
+import { autoApplyCreditsToInvoice, creditsOnInvoice } from "./credits";
 import {
-  invoiceAppliedTotal,
-  postInvoiceToGl,
-  voidInvoiceFromGl,
-} from "./posting";
+  documentTotals,
+  resolveSalesLines,
+  SalesLineSchema,
+  taxCodeField,
+  taxLinesOf,
+  totalsColumns,
+  writeTaxLines,
+} from "./documents";
+import { invoiceAppliedTotal, postInvoiceToGl, voidInvoiceFromGl } from "./posting";
 
 /**
  * INVOICES (AR). Lifecycle: draft → open → paid | voided.
  *
- * A line can be as small as { itemId } (price, description, and income
- * account come from the item) or fully explicit { description, quantity,
- * unitPrice, accountId }. A negative unit price makes a discount line.
+ * A line can be as small as { itemId } (price, description, income
+ * account, and taxable come from the item) or fully explicit
+ * { description, quantity, unitPrice, accountId }. A negative unit price
+ * makes a discount line. Sales tax is charged on the taxable total.
  */
-
-const InvoiceLineSchema = z
-  .object({
-    itemId: id.optional().describe("Product / service. Supplies defaults for the fields below."),
-    description: optionalText(1000),
-    quantity: amount.optional().describe("Defaults to 1."),
-    unitPrice: amount
-      .optional()
-      .describe("Defaults to the item's sales price. Negative for a discount line."),
-    accountId: id.optional().describe("Income account. Defaults to the item's income account."),
-    dimensions: z
-      .array(z.object({ dimensionId: id, valueId: id }))
-      .optional()
-      .describe("Class / Location / Department / Project tags."),
-  })
-  .refine((l) => l.itemId || l.accountId, {
-    message: "Each line needs an itemId or an accountId.",
-  });
 
 const InvoiceFields = {
   customerId: id,
@@ -81,7 +69,8 @@ const InvoiceFields = {
   exchangeRate: amount.optional(),
   memo: optionalText(2000).describe("Message shown to the customer."),
   privateNote: optionalText(2000).describe("Internal note, never shown to the customer."),
-  lines: z.array(InvoiceLineSchema).min(1, "An invoice needs at least 1 line."),
+  taxCodeId: taxCodeField,
+  lines: z.array(SalesLineSchema).min(1, "An invoice needs at least 1 line."),
 };
 
 export const CreateInvoiceSchema = z.object({
@@ -112,16 +101,13 @@ const VoidSchema = z.object({ id, reason: z.string().trim().min(1).max(500) });
 export type InvoiceRow = ArInvoice & { customerName: string; openBalance: string };
 export type InvoiceDetail = InvoiceRow & {
   lines: Array<ArInvoiceLine & { itemName: string | null }>;
+  taxLines: Array<SalesTaxLine & { agencyName: string }>;
   payments: Array<{ paymentId: string; paymentNumber: string; paymentDate: string; amount: string; discountAmount: string; status: string }>;
+  credits: Awaited<ReturnType<typeof creditsOnInvoice>>;
 };
 
 const openBalance = sql<string>`(CASE WHEN ${arInvoices.status} IN ('open', 'paid')
-  THEN ${arInvoices.totalAmount} - COALESCE((
-    SELECT SUM(a.amount + a.discount_amount)
-      FROM ${arPaymentApplications} a
-      JOIN ${arPayments} p ON p.id = a.payment_id
-     WHERE a.invoice_id = "ar_invoices"."id" AND p.status = 'posted'
-  ), 0)
+  THEN ${arInvoices.totalAmount} - ${invoiceSettledSql(sql`"ar_invoices"."id"`)}
   ELSE 0 END)::text`;
 
 export async function listInvoices(
@@ -205,8 +191,21 @@ export async function getInvoice(ctx: Ctx, input: { id: string }): Promise<Invoi
     customerName: row.customerName,
     openBalance: row.openBalance,
     lines: lines.map((l) => ({ ...l.line, itemName: l.itemName })),
+    taxLines: await taxLinesWithAgency(ctx, invoiceId),
     payments,
+    credits: await creditsOnInvoice(ctx, invoiceId),
   };
+}
+
+async function taxLinesWithAgency(ctx: Ctx, invoiceId: string) {
+  const lines = await taxLinesOf(ctx, { invoiceId });
+  if (lines.length === 0) return [];
+  const agencies = await ctx.tx
+    .select({ id: taxAgencies.id, name: taxAgencies.name })
+    .from(taxAgencies)
+    .where(eq(taxAgencies.organizationId, ctx.actor.organizationId));
+  const name = new Map(agencies.map((a) => [a.id, a.name]));
+  return lines.map((l) => ({ ...l, agencyName: name.get(l.agencyId) ?? "" }));
 }
 
 async function loadInvoice(ctx: Ctx, invoiceId: string): Promise<ArInvoice> {
@@ -225,81 +224,13 @@ async function loadInvoice(ctx: Ctx, invoiceId: string): Promise<ArInvoice> {
   return inv;
 }
 
-/** qty × price, rounded half-up to cents like every invoice the customer has ever seen. */
-function lineAmount(quantity: string, unitPrice: string): string {
-  return toDbMoney(money(quantity).times(money(unitPrice)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP));
-}
-
 async function resolveInvoice(
   ctx: Ctx,
   data: z.output<typeof CreateInvoiceSchema> | z.output<typeof UpdateInvoiceSchema>
 ) {
-  const org = ctx.actor.organizationId;
   const customer = await requireActiveCustomer(ctx, data.customerId);
-
-  const itemIds = data.lines.map((l) => l.itemId).filter((x): x is string => !!x);
-  const itemRows = itemIds.length
-    ? await ctx.tx
-        .select()
-        .from(items)
-        .where(and(eq(items.organizationId, org), inArray(items.id, itemIds)))
-    : [];
-  const itemById = new Map(itemRows.map((i) => [i.id, i]));
-
-  const lines = data.lines.map((l, i) => {
-    const item = l.itemId ? itemById.get(l.itemId) : undefined;
-    if (l.itemId && !item) throw new AppError("not_found", `Line ${i + 1}: item not found.`);
-    if (item && !item.isActive) {
-      throw new AppError("invalid_input", `Line ${i + 1}: ${item.name} is inactive.`);
-    }
-    const unitPrice = l.unitPrice ?? item?.salesPrice ?? null;
-    if (unitPrice === null) {
-      throw new AppError(
-        "invalid_input",
-        `Line ${i + 1}: unitPrice is required${item ? ` (${item.name} has no default price)` : ""}.`
-      );
-    }
-    const quantity = l.quantity ?? "1.0000";
-    if (money(quantity).lte(0)) {
-      throw new AppError("invalid_input", `Line ${i + 1}: quantity must be greater than zero.`);
-    }
-    return {
-      itemId: item?.id ?? null,
-      description: l.description ?? item?.description ?? item?.name ?? null,
-      quantity,
-      unitPrice: toDbMoney(unitPrice),
-      amount: lineAmount(quantity, unitPrice),
-      accountId: l.accountId ?? item!.incomeAccountId,
-      dimensions: (l.dimensions ?? []) as DimensionTag[],
-    };
-  });
-
-  await requireLineAccounts(ctx.tx, org, lines.map((l) => l.accountId));
-
-  // Dimension values must belong to this org and to the named dimension.
-  const tags = lines.flatMap((l) => l.dimensions);
-  if (tags.length > 0) {
-    const vals = await ctx.tx
-      .select({ id: dimensionValues.id, dimensionId: dimensionValues.dimensionId })
-      .from(dimensionValues)
-      .where(
-        and(
-          eq(dimensionValues.organizationId, org),
-          inArray(dimensionValues.id, tags.map((t) => t.valueId))
-        )
-      );
-    const byId = new Map(vals.map((v) => [v.id, v.dimensionId]));
-    for (const t of tags) {
-      if (byId.get(t.valueId) !== t.dimensionId) {
-        throw new AppError("invalid_input", "A dimension value doesn't belong to its dimension.");
-      }
-    }
-  }
-
-  const total = sumMoney(lines.map((l) => l.amount));
-  if (total.lte(0)) {
-    throw new AppError("invalid_input", "Invoice total must be greater than zero.");
-  }
+  const lines = await resolveSalesLines(ctx, data.lines);
+  const totals = await documentTotals(ctx, { customer, taxCodeId: data.taxCodeId, lines });
   const dueDate =
     data.dueDate ??
     format(addDays(parseISO(data.invoiceDate), customer.defaultPaymentTermsDays), "yyyy-MM-dd");
@@ -315,19 +246,19 @@ async function resolveInvoice(
       poNumber: data.poNumber,
       currency: data.currency ?? customer.currency,
       exchangeRate: data.exchangeRate ?? "1",
-      subtotalAmount: toDbMoney(total),
-      totalAmount: toDbMoney(total),
+      ...totalsColumns(totals),
       memo: data.memo,
       privateNote: data.privateNote,
     },
     lines,
+    totals,
   };
 }
 
 async function insertLines(
   ctx: Ctx,
   invoiceId: string,
-  lines: Awaited<ReturnType<typeof resolveInvoice>>["lines"]
+  lines: Awaited<ReturnType<typeof resolveSalesLines>>
 ) {
   await ctx.tx.insert(arInvoiceLines).values(
     lines.map((l, i) => ({
@@ -346,7 +277,7 @@ export async function createInvoice(
   requirePermission(ctx.actor, "write", "bookkeeper", "create invoices");
   const data = CreateInvoiceSchema.parse(input);
   const org = ctx.actor.organizationId;
-  const { header, lines } = await resolveInvoice(ctx, data);
+  const { header, lines, totals } = await resolveInvoice(ctx, data);
   const invoiceNumber = await nextNumber(ctx.tx, org, "INV");
 
   const [inv] = await ctx.tx
@@ -354,6 +285,7 @@ export async function createInvoice(
     .values({ organizationId: org, invoiceNumber, ...header, status: "draft", ...creatorFields(ctx.actor) })
     .returning();
   await insertLines(ctx, inv.id, lines);
+  await writeTaxLines(ctx, { invoiceId: inv.id }, totals);
 
   await writeAudit(
     {
@@ -384,13 +316,14 @@ export async function updateInvoice(ctx: Ctx, input: UpdateInvoiceInput): Promis
   if (inv.status !== "draft") {
     throw invalidState(`Only draft invoices can be edited (this one is ${inv.status}). Void and re-issue instead.`);
   }
-  const { header, lines } = await resolveInvoice(ctx, data);
+  const { header, lines, totals } = await resolveInvoice(ctx, data);
   await ctx.tx
     .update(arInvoices)
     .set({ ...header, updatedAt: sql`now()` })
     .where(eq(arInvoices.id, inv.id));
   await ctx.tx.delete(arInvoiceLines).where(eq(arInvoiceLines.invoiceId, inv.id));
   await insertLines(ctx, inv.id, lines);
+  await writeTaxLines(ctx, { invoiceId: inv.id }, totals);
 
   await writeAudit(
     {
@@ -429,6 +362,7 @@ export async function postInvoice(ctx: Ctx, input: { id: string }): Promise<Invo
       updatedAt: sql`now()`,
     })
     .where(eq(arInvoices.id, invoiceId));
+  await autoApplyCreditsToInvoice(ctx, invoiceId);
   return getInvoice(ctx, { id: invoiceId });
 }
 
@@ -447,7 +381,7 @@ export async function voidInvoice(
   const applied = await invoiceAppliedTotal(ctx.tx, invoiceId);
   if (applied.gt(0)) {
     throw invalidState(
-      `Invoice ${inv.invoiceNumber} has ${applied.toFixed(2)} in posted payments. Void those payments first.`
+      `Invoice ${inv.invoiceNumber} has ${applied.toFixed(2)} in payments and credits against it. Void those payments and unapply the credits first.`
     );
   }
   const { journalId } = await voidInvoiceFromGl(ctx, inv, reason);

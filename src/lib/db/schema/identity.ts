@@ -103,6 +103,9 @@ export const organizations = pgTable(
       .notNull()
       .default(true),
 
+    /** Customer credits (credit memos, overpayments) pay down open invoices, oldest first, as they post. */
+    autoApplyCredits: boolean("auto_apply_credits").notNull().default(true),
+
     settings: jsonb("settings").notNull().default({}),
     ...timestamps,
   },

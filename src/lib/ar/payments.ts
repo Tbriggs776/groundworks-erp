@@ -36,6 +36,7 @@ import {
   toPage,
   type Page,
 } from "@/lib/schemas";
+import { releaseCreditApplications, usesOfCredit } from "./credits";
 import {
   invoiceAppliedTotal,
   postCustomerPaymentToGl,
@@ -47,6 +48,8 @@ import {
  * CUSTOMER PAYMENTS (receive payment). Money in against open invoices.
  * Either list the applications explicitly, or give a total `amount` and
  * let it apply oldest-due-first across the customer's open invoices.
+ * Whatever isn't applied (an overpayment, or a prepayment with no open
+ * invoices) stays on the customer as a credit; see ./credits.ts.
  */
 
 const ApplicationSchema = z.object({
@@ -76,7 +79,9 @@ export const CreateCustomerPaymentSchema = z
       .describe("Which invoices this pays. Omit and pass `amount` to auto-apply oldest first."),
     amount: positiveAmount
       .optional()
-      .describe("Total received. Used to auto-apply when `applications` is omitted."),
+      .describe(
+        "Total received. Without `applications` it auto-applies oldest first; any amount beyond the applications (or the open invoices) stays as a customer credit."
+      ),
     post: z.boolean().optional().describe("Post to the ledger in the same call."),
   })
   .refine((d) => d.applications || d.amount, {
@@ -96,6 +101,9 @@ const VoidSchema = z.object({ id, reason: z.string().trim().min(1).max(500) });
 export type CustomerPaymentRow = ArPayment & { customerName: string };
 export type CustomerPaymentDetail = CustomerPaymentRow & {
   applications: Array<ArPaymentApplication & { invoiceNumber: string }>;
+  /** Amount not applied to invoices or refunded: the customer's credit. */
+  unappliedAmount: string;
+  creditUses: Awaited<ReturnType<typeof usesOfCredit>>;
 };
 
 export async function listCustomerPayments(
@@ -146,10 +154,14 @@ export async function getCustomerPayment(
     .innerJoin(arInvoices, eq(arInvoices.id, arPaymentApplications.invoiceId))
     .where(eq(arPaymentApplications.paymentId, paymentId))
     .orderBy(asc(arInvoices.invoiceNumber));
+  const creditUses = await usesOfCredit(ctx, { paymentId });
+  const applied = sumMoney([...apps.map((a) => a.app.amount), ...creditUses.map((u) => u.amount)]);
   return {
     ...row.payment,
     customerName: row.customerName,
     applications: apps.map((a) => ({ ...a.app, invoiceNumber: a.invoiceNumber })),
+    unappliedAmount: toDbMoney(money(row.payment.amount).minus(applied)),
+    creditUses,
   };
 }
 
@@ -167,7 +179,7 @@ async function loadPayment(ctx: Ctx, paymentId: string): Promise<ArPayment> {
 
 type App = { invoiceId: string; amount: string; discountAmount: string };
 
-/** Spread `total` across the customer's open invoices, oldest due first. */
+/** Spread `total` across the customer's open invoices, oldest due first. What's left becomes a credit. */
 async function autoApply(ctx: Ctx, customerId: string, total: string): Promise<App[]> {
   const open = await ctx.tx
     .select()
@@ -189,14 +201,6 @@ async function autoApply(ctx: Ctx, customerId: string, total: string): Promise<A
     const take = remaining.lt(balance) ? remaining : balance;
     apps.push({ invoiceId: inv.id, amount: toDbMoney(take), discountAmount: "0.0000" });
     remaining = remaining.minus(take);
-  }
-  if (remaining.gt(0)) {
-    const openTotal = money(total).minus(remaining);
-    throw new AppError(
-      "invalid_input",
-      `Payment of ${money(total).toFixed(2)} exceeds this customer's open invoices (${openTotal.toFixed(2)}). Unapplied credits aren't supported yet; record the excess separately.`,
-      { openBalance: openTotal.toFixed(2) }
-    );
   }
   return apps;
 }
@@ -275,18 +279,16 @@ export async function createCustomerPayment(
         discountAmount: a.discountAmount ?? "0.0000",
       }))
     : await autoApply(ctx, customer.id, d.amount!);
-  if (apps.length === 0) {
-    throw new AppError("invalid_input", "This customer has no open invoices to apply a payment to.");
-  }
-  await assertApplicationsFit(ctx, customer.id, apps);
+  if (apps.length > 0) await assertApplicationsFit(ctx, customer.id, apps);
 
-  const cash = sumMoney(apps.map((a) => a.amount));
-  if (d.applications && d.amount && !money(d.amount).eq(cash)) {
+  const applied = sumMoney(apps.map((a) => a.amount));
+  if (d.amount && money(d.amount).lt(applied)) {
     throw new AppError(
       "invalid_input",
-      `amount (${money(d.amount).toFixed(2)}) doesn't match the applications (${cash.toFixed(2)}).`
+      `amount (${money(d.amount).toFixed(2)}) is less than the applications (${applied.toFixed(2)}).`
     );
   }
+  const cash = d.amount ? money(d.amount) : applied;
   const discount = sumMoney(apps.map((a) => a.discountAmount));
   const paymentNumber = await nextNumber(ctx.tx, org, "ARPAY");
 
@@ -309,15 +311,17 @@ export async function createCustomerPayment(
       ...creatorFields(ctx.actor),
     })
     .returning();
-  await ctx.tx.insert(arPaymentApplications).values(
-    apps.map((a) => ({
-      organizationId: org,
-      paymentId: payment.id,
-      invoiceId: a.invoiceId,
-      amount: a.amount,
-      discountAmount: a.discountAmount,
-    }))
-  );
+  if (apps.length > 0) {
+    await ctx.tx.insert(arPaymentApplications).values(
+      apps.map((a) => ({
+        organizationId: org,
+        paymentId: payment.id,
+        invoiceId: a.invoiceId,
+        amount: a.amount,
+        discountAmount: a.discountAmount,
+      }))
+    );
+  }
 
   await writeAudit(
     {
@@ -333,6 +337,7 @@ export async function createCustomerPayment(
         discount: toDbMoney(discount),
         invoiceCount: apps.length,
         autoApplied: !d.applications,
+        unapplied: toDbMoney(cash.minus(applied)),
       },
     },
     ctx.tx
@@ -367,11 +372,13 @@ export async function postCustomerPayment(
     .select()
     .from(arPaymentApplications)
     .where(eq(arPaymentApplications.paymentId, paymentId));
-  await assertApplicationsFit(
-    ctx,
-    payment.customerId,
-    apps.map((a) => ({ invoiceId: a.invoiceId, amount: a.amount, discountAmount: a.discountAmount }))
-  );
+  if (apps.length > 0) {
+    await assertApplicationsFit(
+      ctx,
+      payment.customerId,
+      apps.map((a) => ({ invoiceId: a.invoiceId, amount: a.amount, discountAmount: a.discountAmount }))
+    );
+  }
 
   const { journalId } = await postCustomerPaymentToGl(ctx, payment);
   await ctx.tx
@@ -400,6 +407,7 @@ export async function voidCustomerPayment(
   if (payment.status !== "posted") {
     throw invalidState(`Only posted payments can be voided (this one is ${payment.status}).`);
   }
+  await releaseCreditApplications(ctx, { paymentId }, `Payment ${payment.paymentNumber}`);
   const { journalId } = await voidCustomerPaymentFromGl(ctx, payment, reason);
   await ctx.tx
     .update(arPayments)

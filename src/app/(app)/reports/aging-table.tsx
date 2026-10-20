@@ -27,7 +27,7 @@ export function AgingTable({
 }: {
   report: AgingReport;
   partyLabel: string;
-  docHref: (id: string) => string;
+  docHref: (id: string, kind: string) => string;
 }) {
   return (
     <div className="gw-table-wrap rounded-md border border-border overflow-x-auto">
@@ -54,7 +54,7 @@ export function AgingTable({
                 <div>{p.partyName}</div>
                 <div className="flex flex-wrap gap-x-2 text-[10px] text-muted-foreground font-mono">
                   {p.documents.map((d) => (
-                    <Link key={d.id} href={docHref(d.id)} className="hover:text-primary">
+                    <Link key={d.id} href={docHref(d.id, d.kind)} className="hover:text-primary">
                       {d.number}
                       {d.daysPastDue > 0 ? ` (${d.daysPastDue}d)` : ""}
                     </Link>

@@ -19,6 +19,7 @@ import { agents } from "./agents";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
 import { customers } from "./parties";
+import { taxCodes } from "./tax";
 
 /**
  * SALES / AR — products & services, invoices, and customer payments.
@@ -81,6 +82,8 @@ export const items = pgTable(
     expenseAccountId: uuid("expense_account_id").references(() => accounts.id, {
       onDelete: "restrict",
     }),
+    /** Charged sales tax when the document has a tax rate. */
+    taxable: boolean("taxable").notNull().default(true),
 
     isActive: boolean("is_active").notNull().default(true),
     externalId: text("external_id"),
@@ -120,6 +123,14 @@ export const arInvoices = pgTable(
     subtotalAmount: numeric("subtotal_amount", { precision: 20, scale: 4 })
       .notNull()
       .default("0"),
+    /** Sales tax rate picked for this invoice; null = no tax. */
+    taxCodeId: uuid("tax_code_id").references(() => taxCodes.id, { onDelete: "restrict" }),
+    /** The customer was tax exempt when this was saved. */
+    taxExempt: boolean("tax_exempt").notNull().default(false),
+    /** Σ taxable lines. */
+    taxableAmount: numeric("taxable_amount", { precision: 20, scale: 4 }).notNull().default("0"),
+    taxAmount: numeric("tax_amount", { precision: 20, scale: 4 }).notNull().default("0"),
+    /** subtotal + tax. */
     totalAmount: numeric("total_amount", { precision: 20, scale: 4 })
       .notNull()
       .default("0"),
@@ -183,6 +194,8 @@ export const arInvoiceLines = pgTable(
     accountId: uuid("account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "restrict" }),
+    /** Counts toward the taxable amount. Defaults from the item. */
+    taxable: boolean("taxable").notNull().default(false),
     dimensions: jsonb("dimensions").$type<DimensionTag[]>().notNull().default([]),
 
     ...timestamps,

@@ -31,6 +31,7 @@ export const CreateItemSchema = z.object({
   incomeAccountId: id.describe("Income account credited when sold, e.g. 4000 Sales or 4100 Services."),
   purchaseCost: nonNegativeAmount.optional().nullable(),
   expenseAccountId: id.optional().nullable().describe("Expense / COGS account when purchased."),
+  taxable: z.boolean().optional().describe("Charge sales tax when sold (default true). Lines can override."),
   isActive: z.boolean().optional(),
 });
 export type CreateItemInput = z.input<typeof CreateItemSchema>;
@@ -107,6 +108,7 @@ export async function createItem(ctx: Ctx, input: CreateItemInput): Promise<Item
         incomeAccountId: d.incomeAccountId,
         purchaseCost: d.purchaseCost ?? null,
         expenseAccountId: d.expenseAccountId ?? null,
+        taxable: d.taxable ?? true,
         isActive: d.isActive ?? true,
       })
       .returning();
@@ -150,6 +152,7 @@ export async function updateItem(ctx: Ctx, input: UpdateItemInput): Promise<Item
         purchaseCost: d.purchaseCost !== undefined ? d.purchaseCost : before.purchaseCost,
         expenseAccountId:
           d.expenseAccountId !== undefined ? d.expenseAccountId : before.expenseAccountId,
+        taxable: d.taxable ?? before.taxable,
         isActive: d.isActive ?? before.isActive,
         updatedAt: sql`now()`,
       })

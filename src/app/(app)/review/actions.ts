@@ -5,7 +5,10 @@ import { serviceAction, type ActionResult } from "@/lib/action";
 import * as billPayments from "@/lib/ap/bill-payments";
 import * as bills from "@/lib/ap/bills";
 import * as invoices from "@/lib/ar/invoices";
+import * as creditMemos from "@/lib/ar/credit-memos";
 import * as customerPayments from "@/lib/ar/payments";
+import * as refunds from "@/lib/ar/refunds";
+import * as salesReceipts from "@/lib/ar/sales-receipts";
 import * as bankTxns from "@/lib/banking/transactions";
 import * as journals from "@/lib/gl/journals";
 import type { ReviewItem } from "@/lib/review";
@@ -27,6 +30,12 @@ export async function approveItem(type: ReviewItem["type"], id: string, status: 
         return { id: (await journals.postJournalEntry(ctx, { id })).id };
       case "bank_transaction":
         return { id: (await bankTxns.postBankTransaction(ctx, { id })).id };
+      case "sales_receipt":
+        return { id: (await salesReceipts.postSalesReceipt(ctx, { id })).id };
+      case "credit_memo":
+        return { id: (await creditMemos.postCreditMemo(ctx, { id })).id };
+      case "refund_receipt":
+        return { id: (await refunds.postRefund(ctx, { id })).id };
       case "bill":
         // Walk the bill as far as this person may take it.
         if (status === "draft") await bills.submitBill(ctx, { id });
@@ -52,6 +61,12 @@ export async function dismissItem(type: ReviewItem["type"], id: string, status: 
         return journals.deleteDraftJournal(ctx, { id });
       case "bank_transaction":
         return bankTxns.deleteDraftBankTransaction(ctx, { id });
+      case "sales_receipt":
+        return salesReceipts.deleteDraftSalesReceipt(ctx, { id });
+      case "credit_memo":
+        return creditMemos.deleteDraftCreditMemo(ctx, { id });
+      case "refund_receipt":
+        return refunds.deleteDraftRefund(ctx, { id });
       case "bill":
         if (status === "pending_approval") {
           return { id: (await bills.rejectBill(ctx, { id, reason: "Rejected from the review queue" })).id };

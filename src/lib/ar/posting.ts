@@ -1,12 +1,5 @@
 import { and, asc, eq, sql } from "drizzle-orm";
-import {
-  arInvoiceLines,
-  arInvoices,
-  arPaymentApplications,
-  arPayments,
-  type ArInvoice,
-  type ArPayment,
-} from "@/lib/db/schema";
+import { arInvoiceLines, arInvoices, type ArInvoice, type ArPayment } from "@/lib/db/schema";
 import { auditFields, type Ctx, type Tx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
 import { AppError } from "@/lib/errors";
@@ -16,13 +9,16 @@ import {
   type JournalLineInput,
 } from "@/lib/gl/posting";
 import { accountByCode, controlAccount, sourceCodeId } from "@/lib/gl/lookups";
-import { money, sumMoney, toDbMoney } from "@/lib/money";
+import { money, toDbMoney } from "@/lib/money";
+import { invoiceSettled } from "./balances";
+import { postSalesDocument } from "./documents";
 
 /**
  * AR → GL.
  *
- * Invoice:  Dr AR control (total) / Cr each line's income account.
- *           A negative line (a discount line) debits its account instead.
+ * Invoice:  Dr AR control (total) / Cr each line's income account, Cr each
+ *           tax agency's liability. A negative line (a discount line)
+ *           debits its account instead. See ./documents.ts.
  * Payment:  Dr deposit account (cash) + Dr 4950 Sales Discounts (discount)
  *           / Cr AR control (cash + discount).
  *
@@ -40,72 +36,31 @@ export async function postInvoiceToGl(
   ctx: Ctx,
   invoice: ArInvoice
 ): Promise<{ journalId: string; journalNumber: string }> {
-  const { actor, tx } = ctx;
-  const org = actor.organizationId;
-  const ar = await controlAccount(tx, org, "receivables");
-  const sjSource = await sourceCodeId(tx, org, "SJ");
-
-  const lines = await tx
+  const ar = await controlAccount(ctx.tx, ctx.actor.organizationId, "receivables");
+  const lines = await ctx.tx
     .select()
     .from(arInvoiceLines)
     .where(eq(arInvoiceLines.invoiceId, invoice.id))
     .orderBy(asc(arInvoiceLines.lineNumber));
   if (lines.length === 0) throw new AppError("invalid_state", "Invoice has no lines.");
-
-  const jeLines: JournalLineInput[] = [
-    {
-      accountId: ar.id,
-      debit: toDbMoney(invoice.totalAmount),
-      memo: `Invoice ${invoice.invoiceNumber}`,
-      customerId: invoice.customerId,
-    },
-  ];
-  for (const l of lines) {
-    const amt = money(l.amount);
-    if (amt.isZero()) continue;
-    jeLines.push({
-      accountId: l.accountId,
-      ...(amt.gt(0) ? { credit: toDbMoney(amt) } : { debit: toDbMoney(amt.abs()) }),
-      memo: l.description ?? undefined,
-      customerId: invoice.customerId,
-      dimensions: l.dimensions.length > 0 ? l.dimensions : undefined,
-    });
-  }
-
-  const result = await createAndPostJournal(
-    {
-      organizationId: org,
-      actorId: actor.userId,
-      actor,
-      journalDate: invoice.invoiceDate,
-      sourceCodeId: sjSource,
-      source: "ar",
-      description: `Invoice ${invoice.invoiceNumber}`,
-      currency: invoice.currency,
-      exchangeRate: invoice.exchangeRate,
-      documentNo: invoice.invoiceNumber,
-      lines: jeLines,
-    },
-    tx
-  );
-  if (!result.ok) throw postingFailed(result);
-
-  await writeAudit(
-    {
-      organizationId: org,
-      ...auditFields(actor),
-      event: "ar.invoice.posted",
-      entityType: "ar_invoice",
-      entityId: invoice.id,
-      metadata: {
-        invoiceNumber: invoice.invoiceNumber,
-        journalId: result.journalId,
-        total: invoice.totalAmount,
-      },
-    },
-    tx
-  );
-  return { journalId: result.journalId, journalNumber: result.journalNumber };
+  return postSalesDocument(ctx, {
+    direction: "sale",
+    ref: { invoiceId: invoice.id },
+    number: invoice.invoiceNumber,
+    label: `Invoice ${invoice.invoiceNumber}`,
+    date: invoice.invoiceDate,
+    currency: invoice.currency,
+    exchangeRate: invoice.exchangeRate,
+    total: invoice.totalAmount,
+    customerId: invoice.customerId,
+    counter: { accountId: ar.id, bank: false, memo: `Invoice ${invoice.invoiceNumber}` },
+    lines,
+    sourceCode: "SJ",
+    source: "ar",
+    auditEvent: "ar.invoice.posted",
+    entityType: "ar_invoice",
+    entityId: invoice.id,
+  });
 }
 
 export async function voidInvoiceFromGl(
@@ -255,17 +210,12 @@ export async function voidCustomerPaymentFromGl(
   return { journalId: result.journalId };
 }
 
-/** Σ (cash + discount) from POSTED payments against an invoice. */
+/** Σ settled against an invoice: posted payments (cash + discount) and credits applied. */
 export async function invoiceAppliedTotal(tx: Tx, invoiceId: string) {
-  const rows = await tx
-    .select({ amount: arPaymentApplications.amount, discount: arPaymentApplications.discountAmount })
-    .from(arPaymentApplications)
-    .innerJoin(arPayments, eq(arPayments.id, arPaymentApplications.paymentId))
-    .where(and(eq(arPaymentApplications.invoiceId, invoiceId), eq(arPayments.status, "posted")));
-  return sumMoney(rows.flatMap((r) => [r.amount, r.discount]));
+  return invoiceSettled(tx, invoiceId);
 }
 
-/** open ↔ paid, from posted payments. Other statuses are owned elsewhere. */
+/** open ↔ paid, from what has been settled. Other statuses are owned elsewhere. */
 export async function recomputeInvoiceStatus(
   tx: Tx,
   organizationId: string,

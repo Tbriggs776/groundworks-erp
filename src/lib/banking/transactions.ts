@@ -12,6 +12,7 @@ import {
   glLineClearings,
   glLines,
   paymentMethod,
+  salesReceipts,
   vendors,
   type BankTransaction,
   type BankTransactionLine,
@@ -89,7 +90,7 @@ export const CreateDepositSchema = z
       .array(id)
       .optional()
       .describe(
-        "Customer payments waiting in Undeposited Funds to include (see list_undeposited_payments). Each moves into the bank."
+        "Customer payments and sales receipts waiting in Undeposited Funds to include (see list_undeposited_payments). Each moves into the bank."
       ),
     lines: z
       .array(LineSchema)
@@ -232,11 +233,12 @@ export async function getBankTransaction(ctx: Ctx, input: { id: string }): Promi
       l: bankTransactionLines,
       accountCode: accounts.code,
       accountName: accounts.name,
-      paymentNumber: arPayments.paymentNumber,
+      paymentNumber: sql<string | null>`COALESCE(${arPayments.paymentNumber}, ${salesReceipts.receiptNumber})`,
     })
     .from(bankTransactionLines)
     .innerJoin(accounts, eq(accounts.id, bankTransactionLines.accountId))
     .leftJoin(arPayments, eq(arPayments.id, bankTransactionLines.arPaymentId))
+    .leftJoin(salesReceipts, eq(salesReceipts.id, bankTransactionLines.salesReceiptId))
     .where(eq(bankTransactionLines.transactionId, txnId))
     .orderBy(asc(bankTransactionLines.lineNumber));
   return {
@@ -247,6 +249,7 @@ export async function getBankTransaction(ctx: Ctx, input: { id: string }): Promi
 
 export type UndepositedPayment = {
   id: string;
+  kind: "payment" | "sales_receipt";
   paymentNumber: string;
   paymentDate: string;
   customerName: string;
@@ -258,40 +261,36 @@ export type UndepositedPayment = {
 };
 
 /**
- * Customer payments received into a holding account (Undeposited Funds)
- * and not yet on a deposit. A deposit moves them into the bank.
+ * Customer payments and sales receipts received into a holding account
+ * (Undeposited Funds) and not yet on a deposit. A deposit moves them into
+ * the bank.
  */
 export async function listUndepositedPayments(ctx: Ctx): Promise<UndepositedPayment[]> {
   requirePermission(ctx.actor, "read", "viewer", "list undeposited payments");
-  const rows = await ctx.tx
-    .select({
-      id: arPayments.id,
-      paymentNumber: arPayments.paymentNumber,
-      paymentDate: arPayments.paymentDate,
-      customerName: customers.name,
-      method: arPayments.method,
-      reference: arPayments.reference,
-      amount: arPayments.amount,
-      holdingAccountId: accounts.id,
-      holdingAccountName: accounts.name,
-    })
-    .from(arPayments)
-    .innerJoin(customers, eq(customers.id, arPayments.customerId))
-    .innerJoin(accounts, eq(accounts.id, arPayments.depositAccountId))
-    .where(
-      and(
-        eq(arPayments.organizationId, ctx.actor.organizationId),
-        eq(arPayments.status, "posted"),
-        eq(accounts.isReconciliation, false),
-        sql`NOT EXISTS (
-          SELECT 1 FROM bank_transaction_lines bl
-            JOIN bank_transactions bt ON bt.id = bl.transaction_id
-           WHERE bl.ar_payment_id = "ar_payments"."id"
-             AND bt.status <> 'voided' AND bt.deleted_at IS NULL)`
-      )
-    )
-    .orderBy(asc(arPayments.paymentDate), asc(arPayments.paymentNumber));
-  return rows;
+  const org = ctx.actor.organizationId;
+  const onDeposit = (col: string, idExpr: string) =>
+    sql.raw(`NOT EXISTS (SELECT 1 FROM bank_transaction_lines bl JOIN bank_transactions bt ON bt.id = bl.transaction_id
+       WHERE bl.${col} = ${idExpr} AND bt.status <> 'voided' AND bt.deleted_at IS NULL)`);
+  const rows = await ctx.tx.execute<UndepositedPayment>(sql`
+    SELECT p.id, 'payment' AS kind, p.payment_number AS "paymentNumber", p.payment_date::text AS "paymentDate",
+           c.name AS "customerName", p.method::text AS method, p.reference, p.amount::text AS amount,
+           a.id AS "holdingAccountId", a.name AS "holdingAccountName"
+      FROM ar_payments p
+      JOIN customers c ON c.id = p.customer_id
+      JOIN accounts a ON a.id = p.deposit_account_id
+     WHERE p.organization_id = ${org} AND p.status = 'posted' AND NOT a.is_reconciliation
+       AND ${onDeposit("ar_payment_id", "p.id")}
+    UNION ALL
+    SELECT r.id, 'sales_receipt', r.receipt_number, r.receipt_date::text,
+           COALESCE(c.name, 'Sales receipt'), r.method::text, r.reference, r.total_amount::text,
+           a.id, a.name
+      FROM sales_receipts r
+      LEFT JOIN customers c ON c.id = r.customer_id
+      JOIN accounts a ON a.id = r.deposit_account_id
+     WHERE r.organization_id = ${org} AND r.status = 'posted' AND NOT a.is_reconciliation
+       AND ${onDeposit("sales_receipt_id", "r.id")}
+     ORDER BY 4, 3`);
+  return rows.map((r) => ({ ...r }));
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +304,7 @@ type DraftLine = {
   description: string | null;
   customerId: string | null;
   arPaymentId: string | null;
+  salesReceiptId: string | null;
   dimensions: DimensionTag[];
 };
 
@@ -324,6 +324,7 @@ async function validateLines(ctx: Ctx, bankAccountId: string, lines: LineInput[]
     description: l.description ?? null,
     customerId: l.customerId ?? null,
     arPaymentId: null,
+    salesReceiptId: null,
     dimensions: (l.dimensions ?? []) as DimensionTag[],
   }));
 }
@@ -334,47 +335,83 @@ async function validatePayee(ctx: Ctx, p: { vendorId?: string; customerId?: stri
   if (p.customerId) await requireActiveCustomer(ctx, p.customerId);
 }
 
-/** Payments for a deposit: posted, sitting in a holding account, not on another live deposit. */
-async function paymentLines(ctx: Ctx, paymentIds: string[], excludeTxnId?: string): Promise<DraftLine[]> {
-  if (paymentIds.length === 0) return [];
-  if (new Set(paymentIds).size !== paymentIds.length) {
+/**
+ * Payments and sales receipts for a deposit: posted, sitting in a holding
+ * account, not on another live deposit.
+ */
+async function paymentLines(ctx: Ctx, ids: string[], excludeTxnId?: string): Promise<DraftLine[]> {
+  if (ids.length === 0) return [];
+  if (new Set(ids).size !== ids.length) {
     throw new AppError("invalid_input", "Each payment may appear only once on a deposit.");
   }
-  const rows = await ctx.tx
+  const org = ctx.actor.organizationId;
+  const payments = await ctx.tx
     .select({ p: arPayments, holdingIsBank: accounts.isReconciliation })
     .from(arPayments)
     .innerJoin(accounts, eq(accounts.id, arPayments.depositAccountId))
-    .where(and(eq(arPayments.organizationId, ctx.actor.organizationId), inArray(arPayments.id, paymentIds)))
+    .where(and(eq(arPayments.organizationId, org), inArray(arPayments.id, ids)))
     .for("update", { of: arPayments });
-  if (rows.length !== paymentIds.length) throw notFound("One or more customer payments");
-  for (const { p, holdingIsBank } of rows) {
-    if (p.status !== "posted") throw invalidState(`Payment ${p.paymentNumber} is ${p.status}; only posted payments can be deposited.`);
-    if (holdingIsBank) throw invalidState(`Payment ${p.paymentNumber} already went straight into a bank account.`);
+  const receipts = await ctx.tx
+    .select({ r: salesReceipts, holdingIsBank: accounts.isReconciliation })
+    .from(salesReceipts)
+    .innerJoin(accounts, eq(accounts.id, salesReceipts.depositAccountId))
+    .where(and(eq(salesReceipts.organizationId, org), inArray(salesReceipts.id, ids)))
+    .for("update", { of: salesReceipts });
+  if (payments.length + receipts.length !== ids.length) throw notFound("One or more customer payments");
+  const docs = [
+    ...payments.map(({ p, holdingIsBank }) => ({
+      id: p.id,
+      label: `Payment ${p.paymentNumber}`,
+      status: p.status,
+      holdingIsBank,
+      line: {
+        accountId: p.depositAccountId,
+        amount: p.amount,
+        description: `Payment ${p.paymentNumber}${p.reference ? ` · ${p.reference}` : ""}`,
+        customerId: p.customerId,
+        arPaymentId: p.id,
+        salesReceiptId: null,
+        dimensions: [],
+      },
+    })),
+    ...receipts.map(({ r, holdingIsBank }) => ({
+      id: r.id,
+      label: `Sales receipt ${r.receiptNumber}`,
+      status: r.status,
+      holdingIsBank,
+      line: {
+        accountId: r.depositAccountId,
+        amount: r.totalAmount,
+        description: `Sales receipt ${r.receiptNumber}${r.reference ? ` · ${r.reference}` : ""}`,
+        customerId: r.customerId,
+        arPaymentId: null,
+        salesReceiptId: r.id,
+        dimensions: [],
+      },
+    })),
+  ];
+  for (const d of docs) {
+    if (d.status !== "posted") throw invalidState(`${d.label} is ${d.status}; only posted payments can be deposited.`);
+    if (d.holdingIsBank) throw invalidState(`${d.label} already went straight into a bank account.`);
   }
   const taken = await ctx.tx
-    .select({ paymentId: bankTransactionLines.arPaymentId, txnNumber: bankTransactions.txnNumber })
+    .select({ paymentId: bankTransactionLines.arPaymentId, receiptId: bankTransactionLines.salesReceiptId, txnNumber: bankTransactions.txnNumber })
     .from(bankTransactionLines)
     .innerJoin(bankTransactions, eq(bankTransactions.id, bankTransactionLines.transactionId))
     .where(
       and(
-        inArray(bankTransactionLines.arPaymentId, paymentIds),
+        or(inArray(bankTransactionLines.arPaymentId, ids), inArray(bankTransactionLines.salesReceiptId, ids)),
         ne(bankTransactions.status, "voided"),
         isNull(bankTransactions.deletedAt),
         excludeTxnId ? ne(bankTransactions.id, excludeTxnId) : undefined
       )
     );
   if (taken.length > 0) {
-    const p = rows.find((r) => r.p.id === taken[0].paymentId)!.p;
-    throw invalidState(`Payment ${p.paymentNumber} is already on deposit ${taken[0].txnNumber}.`);
+    const d = docs.find((x) => x.id === (taken[0].paymentId ?? taken[0].receiptId))!;
+    throw invalidState(`${d.label} is already on deposit ${taken[0].txnNumber}.`);
   }
-  return rows.map(({ p }) => ({
-    accountId: p.depositAccountId,
-    amount: p.amount,
-    description: `Payment ${p.paymentNumber}${p.reference ? ` · ${p.reference}` : ""}`,
-    customerId: p.customerId,
-    arPaymentId: p.id,
-    dimensions: [],
-  }));
+  // Keep the caller's order.
+  return ids.map((i) => docs.find((d) => d.id === i)!.line);
 }
 
 async function insertTransaction(
@@ -544,7 +581,7 @@ export async function postBankTransaction(ctx: Ctx, input: { id: string }): Prom
     .where(eq(bankTransactionLines.transactionId, txnId))
     .orderBy(asc(bankTransactionLines.lineNumber));
   // A drafted deposit's payments may have been deposited elsewhere since.
-  await paymentLines(ctx, lines.map((l) => l.arPaymentId).filter((x): x is string => Boolean(x)), txnId);
+  await paymentLines(ctx, lines.map((l) => l.arPaymentId ?? l.salesReceiptId).filter((x): x is string => Boolean(x)), txnId);
 
   const { journalId } = await postBankTransactionToGl(ctx, txn, lines);
   await ctx.tx

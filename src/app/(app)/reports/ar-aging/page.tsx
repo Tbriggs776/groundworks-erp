@@ -25,7 +25,7 @@ export default async function ArAgingPage({
     <AppShell title="AR Aging" crumb={`${organization.name} · Reports`} userEmail={user?.email}>
       <div className="space-y-5 max-w-6xl">
         <DateFilter paramName="asOf" value={asOf} label="As of" />
-        <AgingTable report={report} partyLabel="Customer" docHref={(id) => `/ar/invoices/${id}`} />
+        <AgingTable report={report} partyLabel="Customer" docHref={(id, kind) => (kind === "credit_memo" ? `/ar/credit-memos/${id}` : kind === "payment" ? `/ar/payments/${id}` : `/ar/invoices/${id}`)} />
       </div>
     </AppShell>
   );

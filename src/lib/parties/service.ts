@@ -4,11 +4,9 @@ import {
   apBills,
   apPaymentApplications,
   apPayments,
-  arInvoices,
-  arPaymentApplications,
-  arPayments,
   customerType,
   customers,
+  taxCodes,
   vendorType,
   vendors,
   type Address,
@@ -18,6 +16,7 @@ import {
 } from "@/lib/db/schema";
 import { auditFields, requirePermission, type Ctx, type Tx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
+import { customerBalanceSql } from "@/lib/ar/balances";
 import { AppError, notFound, rethrowUnique } from "@/lib/errors";
 import {
   currency,
@@ -89,7 +88,12 @@ export const CreateCustomerSchema = z.object({
   ...PartyFields,
   customerType: z.enum(customerType.enumValues).optional(),
   creditLimit: nonNegativeAmount.optional().nullable(),
-  taxExempt: z.boolean().optional(),
+  taxExempt: z.boolean().optional().describe("Charge this customer no sales tax."),
+  taxExemptReason: optionalText(200).describe("Why: resale, nonprofit, government… Shown on documents."),
+  defaultTaxCodeId: id
+    .nullable()
+    .optional()
+    .describe("Sales tax rate new documents for this customer start with (from list_tax_rates)."),
   taxId: optionalText(50),
 });
 export type CreateCustomerInput = z.input<typeof CreateCustomerSchema>;
@@ -153,16 +157,17 @@ export type CustomerRow = Customer & { openBalance: string };
 // columns unqualified in single-table selects, which would silently bind
 // `id` to the subquery's own table.
 
-const customerOpenBalance = sql<string>`COALESCE((
-  SELECT SUM(i.total_amount - COALESCE((
-    SELECT SUM(a.amount + a.discount_amount)
-      FROM ${arPaymentApplications} a
-      JOIN ${arPayments} p ON p.id = a.payment_id
-     WHERE a.invoice_id = i.id AND p.status = 'posted'
-  ), 0))
-    FROM ${arInvoices} i
-   WHERE i.customer_id = "customers"."id" AND i.status IN ('open', 'paid')
-), 0)::text`;
+/** Net: what the customer owes on invoices, less their unused credits. */
+const customerOpenBalance = sql<string>`${customerBalanceSql(sql`"customers"."id"`)}::text`;
+
+async function requireTaxCode(ctx: Ctx, taxCodeId: string): Promise<string> {
+  const [code] = await ctx.tx
+    .select({ id: taxCodes.id })
+    .from(taxCodes)
+    .where(and(eq(taxCodes.id, taxCodeId), eq(taxCodes.organizationId, ctx.actor.organizationId)));
+  if (!code) throw notFound("Sales tax rate");
+  return code.id;
+}
 
 export async function listCustomers(
   ctx: Ctx,
@@ -232,6 +237,8 @@ export async function createCustomer(ctx: Ctx, input: CreateCustomerInput): Prom
         currency: d.currency ?? "USD",
         creditLimit: d.creditLimit ?? null,
         taxExempt: d.taxExempt ?? false,
+        taxExemptReason: d.taxExemptReason,
+        defaultTaxCodeId: d.defaultTaxCodeId ? await requireTaxCode(ctx, d.defaultTaxCodeId) : null,
         taxId: d.taxId,
         notes: d.notes,
         isActive: d.isActive ?? true,
@@ -275,6 +282,11 @@ export async function updateCustomer(ctx: Ctx, input: UpdateCustomerInput): Prom
         currency: d.currency ?? before.currency,
         creditLimit: d.creditLimit !== undefined ? d.creditLimit : before.creditLimit,
         taxExempt: d.taxExempt ?? before.taxExempt,
+        taxExemptReason: d.taxExemptReason !== undefined ? d.taxExemptReason : before.taxExemptReason,
+        defaultTaxCodeId:
+          d.defaultTaxCodeId === undefined
+            ? before.defaultTaxCodeId
+            : d.defaultTaxCodeId && (await requireTaxCode(ctx, d.defaultTaxCodeId)),
         taxId: d.taxId !== undefined ? d.taxId : before.taxId,
         notes: d.notes !== undefined ? d.notes : before.notes,
         isActive: d.isActive ?? before.isActive,

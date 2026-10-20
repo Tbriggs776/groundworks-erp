@@ -6,7 +6,10 @@ import {
   arInvoices,
   arPayments,
   bankTransactions,
+  creditMemos,
   customers,
+  refundReceipts,
+  salesReceipts,
   glJournals,
   glLines,
   vendors,
@@ -15,8 +18,8 @@ import { requirePermission, type Ctx } from "@/lib/actor";
 
 /**
  * THE REVIEW QUEUE — everything waiting on a human:
- *   - drafts an agent created (invoices, payments, bills, journal entries,
- *     bank transactions)
+ *   - drafts an agent created (invoices, payments, sales receipts, credit
+ *     memos, refunds, bills, journal entries, bank transactions)
  *   - bills pending approval, whoever submitted them
  *
  * Agents in draft mode end every task here; this is where a person turns
@@ -24,7 +27,16 @@ import { requirePermission, type Ctx } from "@/lib/actor";
  */
 
 export type ReviewItem = {
-  type: "invoice" | "customer_payment" | "bill" | "bill_payment" | "journal_entry" | "bank_transaction";
+  type:
+    | "invoice"
+    | "customer_payment"
+    | "sales_receipt"
+    | "credit_memo"
+    | "refund_receipt"
+    | "bill"
+    | "bill_payment"
+    | "journal_entry"
+    | "bank_transaction";
   id: string;
   number: string;
   party: string | null;
@@ -44,7 +56,7 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
   const org = ctx.actor.organizationId;
   const tx = ctx.tx;
 
-  const [invoices, custPayments, bills, billPayments, journals, bankTxns] = await Promise.all([
+  const [invoices, custPayments, bills, billPayments, journals, bankTxns, receipts, memos, refunds] = await Promise.all([
     tx
       .select({ d: arInvoices, party: customers.name, agentName: agents.name })
       .from(arInvoices)
@@ -128,6 +140,27 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
         )
       )
       .orderBy(desc(bankTransactions.createdAt)),
+    tx
+      .select({ d: salesReceipts, party: customers.name, agentName: agents.name })
+      .from(salesReceipts)
+      .leftJoin(customers, eq(customers.id, salesReceipts.customerId))
+      .leftJoin(agents, eq(agents.id, salesReceipts.createdByAgentId))
+      .where(and(eq(salesReceipts.organizationId, org), eq(salesReceipts.status, "draft"), isNotNull(salesReceipts.createdByAgentId)))
+      .orderBy(desc(salesReceipts.createdAt)),
+    tx
+      .select({ d: creditMemos, party: customers.name, agentName: agents.name })
+      .from(creditMemos)
+      .innerJoin(customers, eq(customers.id, creditMemos.customerId))
+      .leftJoin(agents, eq(agents.id, creditMemos.createdByAgentId))
+      .where(and(eq(creditMemos.organizationId, org), eq(creditMemos.status, "draft"), isNotNull(creditMemos.createdByAgentId)))
+      .orderBy(desc(creditMemos.createdAt)),
+    tx
+      .select({ d: refundReceipts, party: customers.name, agentName: agents.name })
+      .from(refundReceipts)
+      .innerJoin(customers, eq(customers.id, refundReceipts.customerId))
+      .leftJoin(agents, eq(agents.id, refundReceipts.createdByAgentId))
+      .where(and(eq(refundReceipts.organizationId, org), eq(refundReceipts.status, "draft"), isNotNull(refundReceipts.createdByAgentId)))
+      .orderBy(desc(refundReceipts.createdAt)),
   ]);
 
   const journalTotals = journals.length
@@ -232,6 +265,51 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
       agentName,
       createdAt: d.createdAt,
       href: `/banking/transactions/${d.id}`,
+    })),
+    ...receipts.map(({ d, party, agentName }) => ({
+      type: "sales_receipt" as const,
+      id: d.id,
+      number: d.receiptNumber,
+      party,
+      date: d.receiptDate,
+      amount: d.totalAmount,
+      currency: d.currency,
+      status: d.status,
+      reason: "agent_draft" as const,
+      agentId: d.createdByAgentId,
+      agentName,
+      createdAt: d.createdAt,
+      href: `/ar/sales-receipts/${d.id}`,
+    })),
+    ...memos.map(({ d, party, agentName }) => ({
+      type: "credit_memo" as const,
+      id: d.id,
+      number: d.memoNumber,
+      party,
+      date: d.memoDate,
+      amount: d.totalAmount,
+      currency: d.currency,
+      status: d.status,
+      reason: "agent_draft" as const,
+      agentId: d.createdByAgentId,
+      agentName,
+      createdAt: d.createdAt,
+      href: `/ar/credit-memos/${d.id}`,
+    })),
+    ...refunds.map(({ d, party, agentName }) => ({
+      type: "refund_receipt" as const,
+      id: d.id,
+      number: d.refundNumber,
+      party,
+      date: d.refundDate,
+      amount: d.totalAmount,
+      currency: d.currency,
+      status: d.status,
+      reason: "agent_draft" as const,
+      agentId: d.createdByAgentId,
+      agentName,
+      createdAt: d.createdAt,
+      href: `/ar/refunds/${d.id}`,
     })),
   ];
   return items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());

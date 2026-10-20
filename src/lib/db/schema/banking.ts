@@ -29,6 +29,7 @@ import { arPayments, type DimensionTag } from "./ar";
 import { organizations, profiles } from "./identity";
 import { glJournals, glLines } from "./journals";
 import { customers, vendors } from "./parties";
+import { salesReceipts } from "./sales";
 
 /**
  * BANKING — money moving through bank and credit card accounts that isn't
@@ -137,12 +138,15 @@ export const bankTransactionLines = pgTable(
     customerId: uuid("customer_id").references(() => customers.id, { onDelete: "restrict" }),
     /** Deposits only: a received customer payment moved out of Undeposited Funds. */
     arPaymentId: uuid("ar_payment_id").references(() => arPayments.id, { onDelete: "restrict" }),
+    /** Deposits only: a sales receipt moved out of Undeposited Funds. */
+    salesReceiptId: uuid("sales_receipt_id").references(() => salesReceipts.id, { onDelete: "restrict" }),
     dimensions: jsonb("dimensions").$type<DimensionTag[]>().notNull().default([]),
     ...timestamps,
   },
   (t) => [
     uniqueIndex("bank_transaction_lines_txn_line_key").on(t.transactionId, t.lineNumber),
     index("bank_transaction_lines_payment_idx").on(t.arPaymentId),
+    index("bank_transaction_lines_receipt_idx").on(t.salesReceiptId),
   ]
 );
 
