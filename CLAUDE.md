@@ -20,7 +20,7 @@ construction-ERP direction. Use it for look-and-feel only.
 - **Next.js 16 (App Router) + React 19**: Server Components by default
 - **TypeScript strict**
 - **Tailwind v4 + shadcn/ui (`base-nova`)**: design tokens in `src/app/globals.css`
-- **Supabase**: Postgres (managed), Auth (magic link), RLS
+- **Supabase**: Postgres (managed), Auth (email + password), RLS
 - **Drizzle ORM**: schema in `src/lib/db/schema/`, snake_case
 - **zod 4** for every input; the same schemas generate the API's JSON Schema
 - **decimal.js** for money, **date-fns** for dates

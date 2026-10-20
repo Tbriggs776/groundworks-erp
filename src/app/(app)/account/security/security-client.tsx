@@ -31,7 +31,7 @@ export function MfaSettings({ enrolled, required }: { enrolled: boolean; require
       <p className="text-sm">
         {enrolled
           ? "On. You'll enter a code from your authenticator app when you sign in."
-          : "Off. Add an authenticator app so a stolen email inbox isn't enough to get into your books."}
+          : "Off. Add an authenticator app so a stolen password isn't enough to get into your books."}
         {required && <span className="text-muted-foreground"> Your workspace requires it.</span>}
       </p>
       <div className="flex flex-wrap gap-2">

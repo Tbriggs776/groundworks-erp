@@ -5,8 +5,8 @@ import { CompanyForm } from "@/components/company-form";
 import { startWorkspace } from "./actions";
 
 /**
- * Sign-up step 1: name the company. New users land here after their first
- * sign-in (from /signup the company name is already filled in). Existing
+ * Sign-up step 1: name the company. New users land here right after they
+ * create an account (from /signup the company name is already filled in). Existing
  * users come with `?new=1` to start a separate workspace; adding a company
  * to the current workspace lives under Workspace → Companies.
  */

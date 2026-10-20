@@ -3,8 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { safeRedirectPath } from "@/lib/ui/redirect";
 
 /**
- * OAuth / magic-link callback. Supabase sends the user back here with a
- * `code` param; we exchange it for a session and redirect.
+ * Where Supabase sends people back from OAuth, SSO, a password-reset link,
+ * or an email confirmation, with a `code` param; we exchange it for a
+ * session and redirect.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);

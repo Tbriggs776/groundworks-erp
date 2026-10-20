@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 
 /**
- * Sign-in methods beyond the magic link, switched on per deployment:
+ * Sign-in methods beyond email and password, switched on per deployment:
  *   NEXT_PUBLIC_AUTH_PROVIDERS=google,azure   OAuth buttons (enable the
  *                                             providers in Supabase first)
  *   NEXT_PUBLIC_AUTH_SSO=1                    "Sign in with SSO" (SAML,

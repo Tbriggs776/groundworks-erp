@@ -7,8 +7,8 @@ import { AcceptButton } from "./accept-button";
 
 /**
  * Invitation landing page. The proxy sends signed-out visitors to sign in
- * first (with a redirect back here); a new person's first sign-in creates
- * their account. By now we know who they are.
+ * first (with a redirect back here); a new person creates an account from
+ * there and comes straight back. By now we know who they are.
  */
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
