@@ -142,3 +142,20 @@ export function Notes({ memo, privateNote }: { memo: string | null; privateNote:
     </div>
   );
 }
+
+/**
+ * Opens the document's PDF in a new tab. A plain link, not next/link:
+ * prefetching would render PDFs nobody asked for.
+ */
+export function PdfLink({ kind, id, label = "PDF" }: { kind: "invoice" | "estimate" | "sales-receipt" | "credit-memo"; id: string; label?: string }) {
+  return (
+    <a
+      href={`/pdf/${kind}/${id}`}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent"
+    >
+      {label}
+    </a>
+  );
+}

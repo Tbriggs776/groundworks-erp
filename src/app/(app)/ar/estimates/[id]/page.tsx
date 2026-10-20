@@ -10,7 +10,7 @@ import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
-import { Notes } from "../../doc-view";
+import { Notes, PdfLink } from "../../doc-view";
 import { EstimateActions } from "./estimate-actions";
 
 export default async function EstimatePage({ params }: { params: Promise<{ id: string }> }) {
@@ -74,6 +74,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
                 remaining: l.remaining,
               }))}
             />
+            <PdfLink kind="estimate" id={e.id} />
             <Link href="/ar/estimates" className="text-xs text-muted-foreground hover:text-foreground">← Back to estimates</Link>
           </div>
         </div>

@@ -12,7 +12,7 @@ import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
 import { CreditsOnInvoice, UseCredit } from "../../credit-panels";
-import { DocLines } from "../../doc-view";
+import { DocLines, PdfLink } from "../../doc-view";
 import { InvoiceActions } from "./invoice-actions";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
@@ -76,6 +76,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           </div>
           <div className="flex flex-col items-end gap-2">
             <InvoiceActions invoice={inv} />
+            <PdfLink kind="invoice" id={inv.id} />
             <Link href="/ar/invoices" className="text-xs text-muted-foreground hover:text-foreground">
               ← Back to invoices
             </Link>

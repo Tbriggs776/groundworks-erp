@@ -98,6 +98,7 @@ const pages = [
   ["/ar/credit-memos/new", null], ["/ar/refunds", null], ["/ar/refunds/new", null], ["/ar/refunds/new?kind=credit", "refund-credit-new"],
   ["/sales-tax", "sales-tax"], ["/settings/sales", null],
   ["/ar/estimates", null], ["/ar/estimates/new", "estimate-new"], ["/ar/recurring", null], ["/ar/recurring/new", "recurring-new"],
+  ["/settings/company", "company-profile"], ["/ar/statements", "statements"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -229,6 +230,43 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   if (!templateOk) problems.push("recurring: " + fromTemplate.slice(0, 300));
   await page.getByRole("button", { name: "Delete draft" }).click();
   await page.waitForURL(/\/ar\/invoices$/, { timeout: 15000 });
+}
+
+// Flow P: company profile and logo, then the PDFs customers get.
+{
+  const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  await page.goto(BASE + "/settings/company", { waitUntil: "networkidle" });
+  await page.getByLabel("Phone").fill("(480) 555 0100");
+  await page.getByLabel("City").fill("Mesa");
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByText("Saved.").waitFor({ timeout: 10000 });
+  await page.getByLabel("Logo file").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: Buffer.from(PNG, "base64") });
+  await page.getByText("Logo saved.").waitFor({ timeout: 10000 });
+  await page.getByAltText("Company logo").waitFor({ timeout: 10000 });
+  console.log("✓ flow: company profile saved and logo uploaded");
+
+  const isPdf = async (path) => {
+    const res = await page.request.get(BASE + path);
+    const body = await res.body();
+    return res.status() === 200 && res.headers()["content-type"] === "application/pdf" && body.subarray(0, 5).toString() === "%PDF-";
+  };
+  await page.goto(BASE + "/ar/invoices", { waitUntil: "networkidle" });
+  const invoiceHref = await page.locator('main a[href^="/ar/invoices/"]').filter({ hasText: /^INV-/ }).first().getAttribute("href");
+  await page.goto(BASE + invoiceHref, { waitUntil: "networkidle" });
+  const pdfHref = await page.getByRole("link", { name: "PDF" }).getAttribute("href");
+  const invoicePdf = await isPdf(pdfHref);
+  console.log(invoicePdf ? "✓ flow: invoice PDF downloads" : "✗ flow: invoice PDF");
+  if (!invoicePdf) problems.push("invoice PDF " + pdfHref);
+
+  await page.goto(BASE + "/ar/statements", { waitUntil: "networkidle" });
+  await page.getByRole("link", { name: "Northwind Traders" }).click();
+  await page.waitForURL(/\/ar\/statements\/[0-9a-f-]{36}/, { timeout: 15000 });
+  await page.getByText("Balance forward").first().waitFor({ timeout: 10000 });
+  await page.screenshot({ path: `${outDir}/statement.png`, fullPage: true });
+  const statementHref = await page.getByRole("link", { name: "PDF" }).getAttribute("href");
+  const statementPdf = (await isPdf(statementHref)) && (await isPdf("/pdf/statements"));
+  console.log(statementPdf ? "✓ flow: statement PDFs download (one customer and all)" : "✗ flow: statement PDFs");
+  if (!statementPdf) problems.push("statement PDF " + statementHref);
 }
 
 // Flow 2: create an agent and mint a key.

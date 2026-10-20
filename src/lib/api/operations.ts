@@ -12,6 +12,8 @@ import * as recurringInvoices from "@/lib/ar/recurring-invoices";
 import * as refunds from "@/lib/ar/refunds";
 import * as salesReceipts from "@/lib/ar/sales-receipts";
 import * as salesSettings from "@/lib/ar/settings";
+import * as statements from "@/lib/ar/statements";
+import * as companyProfile from "@/lib/company/profile";
 import { ListActivitySchema, listActivity } from "@/lib/audit-query";
 import * as reconcile from "@/lib/banking/reconcile";
 import * as bankReview from "@/lib/banking/review";
@@ -23,6 +25,7 @@ import { listDimensions, listPeriods, ListPeriodsSchema, whoami } from "@/lib/gl
 import * as parties from "@/lib/parties/service";
 import { AgingSchema, apAging, arAging } from "@/lib/reports/aging";
 import * as financial from "@/lib/reports/financial";
+import * as pdf from "@/lib/pdf/documents";
 import { listReviewQueue } from "@/lib/review";
 import * as taxLiability from "@/lib/sales-tax/liability";
 import * as taxRates from "@/lib/sales-tax/rates";
@@ -341,6 +344,17 @@ export const OPERATIONS: Operation[] = [
     run: (ctx, input) => invoices.getInvoice(ctx, input),
   }),
   op({
+    name: "get_invoice_pdf",
+    title: "An invoice as a PDF",
+    description: "An invoice rendered as the customer sees it, with the company letterhead and logo. Drafts are stamped DRAFT and voided documents VOID. Returns { fileName, contentType, sizeBytes, base64 }.",
+    group: "Sales",
+    method: "GET",
+    path: "/invoices/{id}/pdf",
+    scope: "read",
+    input: pdf.DocumentPdfSchema,
+    run: async (ctx, input) => pdf.asJson(await pdf.documentPdf(ctx, "invoice", pdf.DocumentPdfSchema.parse(input).id)),
+  }),
+  op({
     name: "create_invoice",
     title: "Create an invoice",
     description: `Bill a customer. Each line is either { itemId, quantity } (price, description, and income account come from the item) or explicit { description, quantity, unitPrice, accountId }. A negative unitPrice makes a discount line. Due date defaults from the customer's terms. Saved as a draft unless post=true; posting books Dr Accounts Receivable / Cr income. ${POSTING_NOTE}`,
@@ -420,6 +434,17 @@ export const OPERATIONS: Operation[] = [
     scope: "read",
     input: ById,
     run: (ctx, input) => estimates.getEstimate(ctx, input),
+  }),
+  op({
+    name: "get_estimate_pdf",
+    title: "An estimate as a PDF",
+    description: "An estimate rendered as the customer sees it, with the company letterhead and logo. Drafts are stamped DRAFT and voided documents VOID. Returns { fileName, contentType, sizeBytes, base64 }.",
+    group: "Sales",
+    method: "GET",
+    path: "/estimates/{id}/pdf",
+    scope: "read",
+    input: pdf.DocumentPdfSchema,
+    run: async (ctx, input) => pdf.asJson(await pdf.documentPdf(ctx, "estimate", pdf.DocumentPdfSchema.parse(input).id)),
   }),
   op({
     name: "create_estimate",
@@ -651,6 +676,17 @@ export const OPERATIONS: Operation[] = [
     run: (ctx, input) => salesReceipts.getSalesReceipt(ctx, input),
   }),
   op({
+    name: "get_sales_receipt_pdf",
+    title: "A sales receipt as a PDF",
+    description: "A sales receipt rendered as the customer sees it, with the company letterhead and logo. Drafts are stamped DRAFT and voided documents VOID. Returns { fileName, contentType, sizeBytes, base64 }.",
+    group: "Sales",
+    method: "GET",
+    path: "/sales-receipts/{id}/pdf",
+    scope: "read",
+    input: pdf.DocumentPdfSchema,
+    run: async (ctx, input) => pdf.asJson(await pdf.documentPdf(ctx, "sales_receipt", pdf.DocumentPdfSchema.parse(input).id)),
+  }),
+  op({
     name: "create_sales_receipt",
     title: "Record a sales receipt",
     description: `A sale paid on the spot (no invoice): lines like an invoice, plus how it was paid. Money lands in 1250 Undeposited Funds unless depositAccountId is a bank; group it into a deposit later. Use create_invoice instead when the customer pays later. ${POSTING_NOTE}`,
@@ -719,6 +755,17 @@ export const OPERATIONS: Operation[] = [
     scope: "read",
     input: ById,
     run: (ctx, input) => creditMemos.getCreditMemo(ctx, input),
+  }),
+  op({
+    name: "get_credit_memo_pdf",
+    title: "A credit memo as a PDF",
+    description: "A credit memo rendered as the customer sees it, with the company letterhead and logo. Drafts are stamped DRAFT and voided documents VOID. Returns { fileName, contentType, sizeBytes, base64 }.",
+    group: "Sales",
+    method: "GET",
+    path: "/credit-memos/{id}/pdf",
+    scope: "read",
+    input: pdf.DocumentPdfSchema,
+    run: async (ctx, input) => pdf.asJson(await pdf.documentPdf(ctx, "credit_memo", pdf.DocumentPdfSchema.parse(input).id)),
   }),
   op({
     name: "create_credit_memo",
@@ -893,6 +940,88 @@ export const OPERATIONS: Operation[] = [
     scope: "admin",
     input: salesSettings.UpdateSalesSettingsSchema,
     run: (ctx, input) => salesSettings.updateSalesSettings(ctx, input),
+  }),
+  op({
+    name: "get_company_profile",
+    title: "Company profile",
+    description: "What customers see on PDFs: legal name, address, phone, email, website, tax ID, footer message, and whether a logo is set (not the image itself).",
+    group: "Sales",
+    method: "GET",
+    path: "/company-profile",
+    scope: "read",
+    input: Empty,
+    run: (ctx) => companyProfile.getCompanyProfile(ctx),
+  }),
+  op({
+    name: "update_company_profile",
+    title: "Change the company profile",
+    description: "Change the details printed on invoices, estimates, and statements. Fields left out stay as they are; null or \"\" clears one. Requires admin and the admin scope.",
+    group: "Sales",
+    method: "PATCH",
+    path: "/company-profile",
+    scope: "admin",
+    input: companyProfile.UpdateCompanyProfileSchema,
+    run: (ctx, input) => companyProfile.updateCompanyProfile(ctx, input),
+  }),
+  op({
+    name: "set_company_logo",
+    title: "Set the company logo",
+    description: "Upload the logo printed on PDFs: a PNG or JPEG, base64 encoded, 512 KB at most. Replaces any logo. Requires admin and the admin scope.",
+    group: "Sales",
+    method: "POST",
+    path: "/company-profile/logo",
+    scope: "admin",
+    input: companyProfile.SetCompanyLogoSchema,
+    run: (ctx, input) => companyProfile.setCompanyLogo(ctx, input),
+  }),
+  op({
+    name: "remove_company_logo",
+    title: "Remove the company logo",
+    description: "PDFs go back to text only. Requires admin and the admin scope.",
+    group: "Sales",
+    method: "DELETE",
+    path: "/company-profile/logo",
+    scope: "admin",
+    destructive: true,
+    input: Empty,
+    run: (ctx) => companyProfile.removeCompanyLogo(ctx),
+  }),
+  op({
+    name: "list_statements",
+    title: "List customer statements",
+    description:
+      "Balance forward statement totals for every customer with a balance or activity between from and to: opening balance, charges, payments and credits, closing balance, and aging as of to. Use get_customer_statement for the lines.",
+    group: "Sales",
+    method: "GET",
+    path: "/statements",
+    scope: "read",
+    input: statements.ListStatementsSchema,
+    run: async (ctx, input) => ({
+      data: (await statements.listStatements(ctx, input)).map(({ lines, ...rest }) => ({ ...rest, lineCount: lines.length })),
+    }),
+  }),
+  op({
+    name: "get_customer_statement",
+    title: "Get a customer statement",
+    description:
+      "One customer's balance forward statement: the balance on from, every invoice, payment, credit memo, credit refund, and void through to (with a running balance), the closing balance, and aging. The closing balance equals the customer's AR balance in the ledger on that date.",
+    group: "Sales",
+    method: "GET",
+    path: "/customers/{id}/statement",
+    scope: "read",
+    input: statements.StatementSchema,
+    run: (ctx, input) => statements.customerStatement(ctx, input),
+  }),
+  op({
+    name: "get_customer_statement_pdf",
+    title: "Customer statement as a PDF",
+    description: "The statement from get_customer_statement as a PDF with the company letterhead. Returns { fileName, contentType, sizeBytes, base64 }.",
+    group: "Sales",
+    method: "GET",
+    path: "/customers/{id}/statement-pdf",
+    scope: "read",
+    input: statements.StatementSchema,
+    run: async (ctx, input) => pdf.asJson(await pdf.statementPdf(ctx, input)),
   }),
 
   // ------------------------------------------------------------- Sales tax
