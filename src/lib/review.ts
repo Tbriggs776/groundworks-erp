@@ -23,8 +23,8 @@ import { requirePermission, type Ctx } from "@/lib/actor";
  * THE REVIEW QUEUE — everything waiting on a human:
  *   - drafts an agent created (invoices, payments, sales receipts, credit
  *     memos, refunds, bills, journal entries, bank transactions)
- *   - draft invoices the daily run made from a recurring template
- *     (reminders, and scheduled ones that couldn't post)
+ *   - draft invoices and bills the daily run made from a recurring
+ *     template (reminders, and scheduled ones that couldn't post or submit)
  *   - bills and purchase orders pending approval, whoever submitted them
  *
  * Agents in draft mode end every task here; this is where a person turns
@@ -104,7 +104,8 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
         and(
           eq(apBills.organizationId, org),
           sql`(${apBills.status} = 'pending_approval'
-               OR (${apBills.status} IN ('draft', 'approved') AND ${apBills.createdByAgentId} IS NOT NULL))`
+               OR (${apBills.status} IN ('draft', 'approved') AND ${apBills.createdByAgentId} IS NOT NULL)
+               OR (${apBills.status} = 'draft' AND ${apBills.recurringBillId} IS NOT NULL AND ${apBills.createdBy} IS NULL))`
         )
       )
       .orderBy(desc(apBills.createdAt)),
@@ -257,7 +258,12 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
       amount: d.totalAmount,
       currency: d.currency,
       status: d.status,
-      reason: d.status === "pending_approval" ? ("awaiting_approval" as const) : ("agent_draft" as const),
+      reason:
+        d.status === "pending_approval"
+          ? ("awaiting_approval" as const)
+          : d.createdByAgentId
+            ? ("agent_draft" as const)
+            : ("recurring" as const),
       agentId: d.createdByAgentId,
       agentName,
       createdAt: d.createdAt,

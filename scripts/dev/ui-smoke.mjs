@@ -7,7 +7,8 @@
  * from the review queue, banking (record an expense, import a statement, match,
  * add, and rule its lines, reconcile, undo), invite someone, add a
  * company and switch to it, AP (a vendor credit and refund, a purchase
- * order billed in part, a printed check), save the security policy, complete an access
+ * order billed in part, a recurring bill, the 1099 report, a printed
+ * check), save the security policy, complete an access
  * review, export the audit log, set a password, sign out, sign back in
  * with it, ask for a reset link, and sign up a new account with a
  * password.
@@ -103,6 +104,7 @@ const pages = [
   ["/ap/vendor-credits", null], ["/ap/vendor-credits/new", "vendor-credit-new"], ["/ap/vendor-refunds", null],
   ["/ap/vendor-refunds/new", null], ["/banking/checks", "print-checks"],
   ["/ap/purchase-orders", null], ["/ap/purchase-orders/new", "po-new"],
+  ["/ap/recurring", null], ["/ap/recurring/new", "recurring-bill-new"], ["/reports/1099", "report-1099"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -329,6 +331,40 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   const poOk = poPdfOk && /Bills\s+PO-/.test(fromPo) && fromPo.includes("$50.00");
   console.log(poOk ? "✓ flow: purchase order approved on submit, PDF, and half of it billed ($50.00)" : "✗ flow: purchase order");
   if (!poOk) problems.push("purchase order: " + fromPo.slice(0, 300));
+
+  // A recurring bill used by hand, then the 1099 report: map an account
+  // and download the CSV.
+  await page.goto(BASE + "/ap/recurring/new", { waitUntil: "networkidle" });
+  await page.getByLabel("Template name").fill(`Smoke rent ${stamp}`);
+  await page.getByLabel("Type").selectOption("unscheduled");
+  await page.getByLabel("Vendor", { exact: true }).selectOption({ label: vendorName });
+  await page.getByLabel("Line 1 account").selectOption({ label: "6600 · Rent & Lease" });
+  await page.getByLabel("Line 1 amount").fill("1200");
+  await page.getByRole("button", { name: "Save template" }).click();
+  await page.waitForURL(/\/ap\/recurring\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByRole("button", { name: "Create bill now" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Create bill" }).click();
+  await page.waitForURL(/\/ap\/bills\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.waitForLoadState("networkidle");
+  const fromTemplate = await page.locator("main").innerText();
+  const rbOk = fromTemplate.includes("$1,200.00");
+  console.log(rbOk ? "✓ flow: recurring bill template saved and used for a bill ($1,200.00)" : "✗ flow: recurring bill");
+  if (!rbOk) problems.push("recurring bill: " + fromTemplate.slice(0, 300));
+
+  await page.goto(BASE + "/reports/1099", { waitUntil: "networkidle" });
+  await page.getByLabel("1099 box for 6200").selectOption("misc_3");
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(800);
+  await page.reload({ waitUntil: "networkidle" });
+  const mapped = (await page.getByLabel("1099 box for 6200").inputValue()) === "misc_3";
+  await page.getByLabel("1099 box for 6200").selectOption("");
+  await page.waitForTimeout(800);
+  const csvHref = await page.getByRole("link", { name: "Export CSV" }).getAttribute("href");
+  const csvRes = await page.request.get(BASE + csvHref);
+  const csvOk = csvRes.status() === 200 && csvRes.headers()["content-type"].startsWith("text/csv") && (await csvRes.text()).startsWith("vendor,tin,");
+  await page.screenshot({ path: `${outDir}/report-1099-mapped.png`, fullPage: true });
+  console.log(mapped && csvOk ? "✓ flow: 1099 box mapped and the CSV exported" : `✗ flow: 1099 (mapped ${mapped}, csv ${csvOk})`);
+  if (!(mapped && csvOk)) problems.push("1099 flow");
 
   await page.goto(BASE + "/banking/transactions/new?type=check", { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Bank account" }).first().click();

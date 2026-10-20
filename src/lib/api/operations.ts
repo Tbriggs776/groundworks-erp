@@ -6,7 +6,9 @@ import * as vendorCreditApps from "@/lib/ap/credits";
 import * as vendorCredits from "@/lib/ap/vendor-credits";
 import * as vendorRefunds from "@/lib/ap/vendor-refunds";
 import * as bills from "@/lib/ap/bills";
+import * as form1099 from "@/lib/ap/form-1099";
 import * as purchaseOrders from "@/lib/ap/purchase-orders";
+import * as recurringBills from "@/lib/ap/recurring-bills";
 import * as credits from "@/lib/ar/credits";
 import * as creditMemos from "@/lib/ar/credit-memos";
 import * as estimates from "@/lib/ar/estimates";
@@ -137,6 +139,18 @@ export const OPERATIONS: Operation[] = [
     scope: "read",
     input: accounts.ListAccountsSchema,
     run: (ctx, input) => accounts.listAccounts(ctx, input),
+  }),
+  op({
+    name: "set_account_1099_box",
+    title: "Map an account to a 1099 box",
+    description:
+      "Name the 1099 box an expense account's vendor payments report in: nec_1 (nonemployee compensation), misc_1 (rents), misc_2 (royalties), misc_3 (other income), misc_6 (medical), misc_10 (attorney gross proceeds). box null clears it. Drives report_1099. Accountant and up.",
+    group: "Accounting",
+    method: "PATCH",
+    path: "/accounts/{id}/1099-box",
+    scope: "write",
+    input: form1099.Set1099BoxSchema,
+    run: (ctx, input) => form1099.setAccount1099Box(ctx, input),
   }),
   op({
     name: "get_account",
@@ -1463,6 +1477,84 @@ export const OPERATIONS: Operation[] = [
     run: (ctx, input) => purchaseOrders.createBillFromPurchaseOrder(ctx, input),
   }),
   op({
+    name: "list_recurring_bills",
+    title: "List recurring bills",
+    description: "Recurring bill templates with their schedule (type, frequency, next date, bills made so far, last error). Filter by status (active, paused, ended), type, vendorId, or q.",
+    group: "Expenses",
+    method: "GET",
+    path: "/recurring-bills",
+    scope: "read",
+    input: recurringBills.ListRecurringBillsSchema,
+    run: (ctx, input) => recurringBills.listRecurringBills(ctx, input),
+  }),
+  op({
+    name: "get_recurring_bill",
+    title: "Get a recurring bill",
+    description: "One recurring bill template with its lines and the bills it has made.",
+    group: "Expenses",
+    method: "GET",
+    path: "/recurring-bills/{id}",
+    scope: "read",
+    input: ById,
+    run: (ctx, input) => recurringBills.getRecurringBill(ctx, input),
+  }),
+  op({
+    name: "create_recurring_bill",
+    title: "Create a recurring bill",
+    description:
+      "Save a bill (rent, a lease, a retainer) with a schedule. type scheduled: the daily run creates each bill and submits it for approval. reminder: it creates a draft that waits in the review queue. unscheduled: a saved bill to use by hand (use_recurring_bill). Bills are dated on the schedule date, created daysInAdvance days early; monthly and longer schedules keep the start date's day of the month. Ends after endDate or maxOccurrences. Bills still follow the normal approval and posting.",
+    group: "Expenses",
+    method: "POST",
+    path: "/recurring-bills",
+    scope: "write",
+    input: recurringBills.CreateRecurringBillSchema,
+    run: (ctx, input) => recurringBills.createRecurringBill(ctx, input),
+  }),
+  op({
+    name: "update_recurring_bill",
+    title: "Update a recurring bill",
+    description: "Replace a template's settings and lines. Pass nextRunDate to move the schedule (a new date also becomes the day-of-month anchor). Bills already made don't change.",
+    group: "Expenses",
+    method: "PATCH",
+    path: "/recurring-bills/{id}",
+    scope: "write",
+    input: recurringBills.UpdateRecurringBillSchema,
+    run: (ctx, input) => recurringBills.updateRecurringBill(ctx, input),
+  }),
+  op({
+    name: "set_recurring_bill_status",
+    title: "Pause or resume a recurring bill",
+    description: "paused stops the schedule. active resumes it from the next schedule date on or after today; dates missed while paused are skipped, not billed.",
+    group: "Expenses",
+    method: "POST",
+    path: "/recurring-bills/{id}/status",
+    scope: "write",
+    input: recurringBills.SetRecurringBillStatusSchema,
+    run: (ctx, input) => recurringBills.setRecurringBillStatus(ctx, input),
+  }),
+  op({
+    name: "use_recurring_bill",
+    title: "Create a bill from a recurring template now",
+    description: "Make a bill from the template right away, off schedule (the schedule isn't touched). Pass submit=true to submit it for approval in the same call. Returns the bill.",
+    group: "Expenses",
+    method: "POST",
+    path: "/recurring-bills/{id}/use",
+    scope: "write",
+    input: recurringBills.UseRecurringBillSchema,
+    run: (ctx, input) => recurringBills.createBillFromRecurring(ctx, input),
+  }),
+  op({
+    name: "delete_recurring_bill",
+    title: "Delete a recurring bill",
+    description: "Delete a template. Bills it already made stay.",
+    group: "Expenses",
+    method: "DELETE",
+    path: "/recurring-bills/{id}",
+    scope: "write",
+    input: ById,
+    run: (ctx, input) => recurringBills.deleteRecurringBill(ctx, input),
+  }),
+  op({
     name: "list_bill_payments",
     title: "List bill payments",
     description: "Payments to vendors, newest first. Filter by status or vendorId.",
@@ -2195,6 +2287,18 @@ export const OPERATIONS: Operation[] = [
     scope: "read",
     input: AgingSchema,
     run: (ctx, input) => apAging(ctx, input),
+  }),
+  op({
+    name: "report_1099",
+    title: "1099 report",
+    description:
+      "What each vendor was paid in a calendar year, by 1099 box (NEC 1, MISC 1/2/3/6/10), counted by payment date: bill payments spread over the bill's lines, plus banking expenses and checks with the vendor as payee. Only accounts mapped to a box count (see set_account_1099_box). Card payments are left out (1099-K). A vendor is reportable when marked as a 1099 vendor and a box reaches the threshold ($600 through 2025, $2,000 from 2026, royalties $10). `issues` lists what to fix before filing (missing TIN, W-9, address, or a 1099 payee not marked). TINs show the last 4 only.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/1099",
+    scope: "read",
+    input: form1099.Form1099ReportSchema,
+    run: (ctx, input) => form1099.form1099Report(ctx, input),
   }),
 
   // ----------------------------------------------------------------- Review

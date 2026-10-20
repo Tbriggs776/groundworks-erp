@@ -4,6 +4,7 @@ import {
   boolean,
   index,
   integer,
+  pgEnum,
   pgTable,
   text,
   uniqueIndex,
@@ -18,6 +19,17 @@ import {
   timestamps,
 } from "./_shared";
 import { organizations } from "./identity";
+
+/**
+ * 1099 boxes an expense account's vendor payments report in:
+ *   nec_1    1099-NEC box 1, nonemployee compensation
+ *   misc_1   1099-MISC box 1, rents
+ *   misc_2   1099-MISC box 2, royalties
+ *   misc_3   1099-MISC box 3, other income
+ *   misc_6   1099-MISC box 6, medical and health care payments
+ *   misc_10  1099-MISC box 10, gross proceeds paid to an attorney
+ */
+export const form1099Box = pgEnum("form_1099_box", ["nec_1", "misc_1", "misc_2", "misc_3", "misc_6", "misc_10"]);
 import { currencies } from "./finance";
 
 /**
@@ -108,6 +120,8 @@ export const accounts = pgTable(
     isReconciliation: boolean("is_reconciliation").notNull().default(false),
     /** Bank accounts that print checks: the number the next printed check gets. */
     nextCheckNumber: integer("next_check_number"),
+    /** Payments to 1099 vendors on this account report in this box. */
+    form1099Box: form1099Box("form_1099_box"),
     isStatistical: boolean("is_statistical").notNull().default(false),
     debitCreditEnforced: debitCreditEnforced("debit_credit_enforced")
       .notNull()

@@ -177,6 +177,16 @@ async function main() {
     const bPo = await rest(keyB, "GET", `/purchase-orders/${ids["purchase-orders"]}`);
     assertEq(bPo.json.status, "open", "B setup: the owner's PO is approved on submit");
     await ok(rest(keyB, "POST", `/purchase-orders/${ids["purchase-orders"]}/bill`, { billDate: "2026-05-02", mode: "percent", percent: "50" }), "bill from PO");
+    // A recurring bill, and a 1099 vendor paid on a 1099 account.
+    ids["recurring-bills"] = await ok(
+      rest(keyB, "POST", "/recurring-bills", { name: `${MARKER} rent`, vendorId: ids.vendors, type: "unscheduled", lines: [{ accountId: expense.id, amount: "10", description: MARKER }] }),
+      "recurring bill"
+    );
+    const contractor = await ok(rest(keyB, "POST", "/vendors", { name: `${MARKER} contractor`, is1099Vendor: true, tin: "99-1234567" }), "1099 vendor");
+    await ok(
+      rest(keyB, "POST", "/expenses", { txnDate: "2026-05-05", bankAccountId: bank.id, vendorId: contractor, lines: [{ accountId: account(b, "6150").id, amount: "2500" }], post: true }),
+      "1099 payment"
+    );
     // A check waiting in B's print queue.
     ids.checks = await ok(
       rest(keyB, "POST", "/expenses", { type: "check", printLater: true, txnDate: "2026-05-05", bankAccountId: bank.id, payeeName: `${MARKER} check`, lines: [{ accountId: expense.id, amount: "15" }], post: true }),
@@ -260,6 +270,9 @@ async function main() {
     set_recurring_invoice_status: { status: "paused" },
     update_purchase_order: { vendorId: aVendor, poDate: "2026-05-01", lines: [{ accountId: aExpense, unitCost: "1" }] },
     create_bill_from_purchase_order: { billDate: "2026-05-05" },
+    update_recurring_bill: { name: "x", vendorId: aVendor, type: "unscheduled", lines: [{ accountId: aExpense, amount: "1" }] },
+    set_recurring_bill_status: { status: "paused" },
+    set_account_1099_box: { box: "nec_1" },
     match_bank_line: { glLineIds: [crypto.randomUUID()] },
     set_reconciliation_cleared: { glLineIds: [crypto.randomUUID()], cleared: true },
   };
@@ -355,6 +368,8 @@ async function main() {
     ["A's vendor credit applied to B's bill", "/vendor-credit-applications", { vendorCreditId: aCredit, billId: ids.bills }],
     ["vendor refund into B's bank account", "/vendor-refunds", { vendorId: aVendor, refundDate: "2026-05-03", method: "check", bankAccountId: bBank, amount: "1" }],
     ["vendor refund of B's vendor credit", "/vendor-refunds", { vendorId: aVendor, refundDate: "2026-05-03", method: "check", bankAccountId: aBank, amount: "1", vendorCreditId: ids["vendor-credits"] }],
+    ["recurring bill for B's vendor", "/recurring-bills", { name: "x", vendorId: ids.vendors, type: "unscheduled", lines: [{ accountId: aExpense, amount: "1" }] }],
+    ["recurring bill line on B's account", "/recurring-bills", { name: "y", vendorId: aVendor, type: "unscheduled", lines: [{ accountId: ids.accounts, amount: "1" }] }],
     ["purchase order for B's vendor", "/purchase-orders", { vendorId: ids.vendors, poDate: "2026-05-01", lines: [{ accountId: aExpense, unitCost: "1" }] }],
     ["purchase order line on B's account", "/purchase-orders", { vendorId: aVendor, poDate: "2026-05-01", lines: [{ accountId: ids.accounts, unitCost: "1" }] }],
     ["purchase order line with B's item", "/purchase-orders", { vendorId: aVendor, poDate: "2026-05-01", lines: [{ itemId: ids.items, accountId: aExpense, unitCost: "1" }] }],

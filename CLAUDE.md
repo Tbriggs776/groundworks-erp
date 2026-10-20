@@ -122,7 +122,7 @@ src/
                       account/security (own password, MFA, sessions),
                       clients (every workspace + company), support (staff only)
     api/v1/[...path]  REST (generated)        api/mcp  MCP server
-    api/cron/daily    recurring journals + invoices, auto-reversal, pruning   api/health  uptime
+    api/cron/daily    recurring journals, invoices + bills, auto-reversal, pruning   api/health  uptime
     signup, onboarding/{,team}   sign-up: workspace + first company, invites
     invite/[token]    accept an invitation
     auth/             login, callback, mfa (TOTP step), signout (route)
@@ -197,6 +197,9 @@ docs/compliance/      SOC 2 control map and checklist
 - What's billed on a purchase order comes from `src/lib/ap/po-billing.ts`
   (bill lines that point at PO lines, on bills not voided). POs approve
   through the bill thresholds (scope `ap_bill`) and never touch the ledger.
+- 1099 amounts come from `src/lib/ap/form-1099.ts` (accounts carry a
+  `form_1099_box`). Full TINs leave the app only through the audited CSV
+  export; reports and the API show the last 4.
 - Banking amounts are from the account holder's view: + money in, − money
   out (= debit − credit on the account). Reconciliation and overview
   balances use the natural sign (a credit card's balance owed is positive).
