@@ -313,13 +313,14 @@ function billLineRows(org: string, billId: string, lines: z.output<typeof BillLi
 }
 
 /**
- * `links.purchaseOrderId` is for callers inside the app (a purchase order
- * being billed); API callers use create_bill_from_purchase_order.
+ * `links` is for callers inside the app (a purchase order being billed, a
+ * recurring template running); API callers use the operations made for
+ * those.
  */
 export async function createBill(
   ctx: Ctx,
   input: CreateBillInput,
-  links: { purchaseOrderId?: string } = {}
+  links: { purchaseOrderId?: string; recurringBillId?: string } = {}
 ): Promise<BillDetail> {
   requirePermission(ctx.actor, "write", "bookkeeper", "create bills");
   const data = CreateBillSchema.parse(input);
@@ -336,6 +337,7 @@ export async function createBill(
       billNumber,
       ...header,
       purchaseOrderId,
+      recurringBillId: links.recurringBillId ?? null,
       status: "draft",
       ...creatorFields(ctx.actor),
     })

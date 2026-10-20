@@ -21,6 +21,9 @@ import type { NewAccount } from "@/lib/db/schema";
  *   4940 Purchase Discounts Earned (AP early-pay discounts)
  *   4950 Sales Discounts (AR early-pay discounts given)
  *
+ * Contract labor, contractors, and professional fees report on 1099-NEC
+ * box 1; rents (equipment and premises) on 1099-MISC box 1.
+ *
  * Consumed by `seedOrganizationDefaults`; each row becomes one `accounts`
  * INSERT.
  */
@@ -79,8 +82,8 @@ export const DEFAULT_COA: AccountSeed[] = [
   // --- COST OF GOODS SOLD ---
   { code: "5000", name: "Cost of Labor", category: "income_statement", subcategory: "cogs_labor", normalBalance: "debit" },
   { code: "5100", name: "Supplies & Materials", category: "income_statement", subcategory: "cogs_materials", normalBalance: "debit" },
-  { code: "5200", name: "Equipment Rental", category: "income_statement", subcategory: "cogs_equipment", normalBalance: "debit" },
-  { code: "5300", name: "Contract Labor", category: "income_statement", subcategory: "cogs_subcontractor", normalBalance: "debit" },
+  { code: "5200", name: "Equipment Rental", category: "income_statement", subcategory: "cogs_equipment", normalBalance: "debit", form1099Box: "misc_1" },
+  { code: "5300", name: "Contract Labor", category: "income_statement", subcategory: "cogs_subcontractor", normalBalance: "debit", form1099Box: "nec_1" },
   { code: "5400", name: "Shipping & Freight", category: "income_statement", subcategory: "cogs_other", normalBalance: "debit" },
   { code: "5900", name: "Other Costs of Goods Sold", category: "income_statement", subcategory: "cogs_other", normalBalance: "debit" },
 
@@ -88,16 +91,16 @@ export const DEFAULT_COA: AccountSeed[] = [
   { code: "6000", name: "Advertising & Marketing", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
   { code: "6050", name: "Auto & Travel", category: "income_statement", subcategory: "operating_expense", normalBalance: "debit" },
   { code: "6100", name: "Bank & Merchant Fees", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
-  { code: "6150", name: "Contractors", category: "income_statement", subcategory: "operating_expense", normalBalance: "debit", description: "1099 contractors not tied to cost of sales" },
+  { code: "6150", name: "Contractors", category: "income_statement", subcategory: "operating_expense", normalBalance: "debit", form1099Box: "nec_1", description: "1099 contractors not tied to cost of sales" },
   { code: "6200", name: "Dues & Subscriptions", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
   { code: "6250", name: "Software & SaaS", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
   { code: "6300", name: "Insurance", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
-  { code: "6350", name: "Legal & Professional Fees", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
+  { code: "6350", name: "Legal & Professional Fees", category: "income_statement", subcategory: "sga", normalBalance: "debit", form1099Box: "nec_1" },
   { code: "6400", name: "Meals", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
   { code: "6500", name: "Payroll Expenses", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
   { code: "6510", name: "Payroll Taxes", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
   { code: "6520", name: "Employee Benefits", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
-  { code: "6600", name: "Rent & Lease", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
+  { code: "6600", name: "Rent & Lease", category: "income_statement", subcategory: "sga", normalBalance: "debit", form1099Box: "misc_1" },
   { code: "6610", name: "Utilities", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
   { code: "6620", name: "Office Supplies", category: "income_statement", subcategory: "sga", normalBalance: "debit" },
   { code: "6630", name: "Telephone & Internet", category: "income_statement", subcategory: "sga", normalBalance: "debit" },

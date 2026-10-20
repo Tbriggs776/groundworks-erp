@@ -1,16 +1,18 @@
 import { relations } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   date,
   index,
   integer,
   numeric,
+  pgEnum,
   pgTable,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { apBillStatus, timestamps } from "./_shared";
+import { apBillStatus, recurringFrequency, recurringStatus, timestamps } from "./_shared";
 import { accounts } from "./accounts";
 import { agents } from "./agents";
 import { approvalThresholds } from "./approvals";
@@ -33,6 +35,78 @@ import { purchaseOrderLines, purchaseOrders } from "./purchase_orders";
  * source='ap'. Expense accounts are debited; the AP control account (2000)
  * is credited.
  */
+// ---------------------------------------------------------------------------
+// Recurring bills: a template plus a schedule.
+//   scheduled    the daily run creates the bill and submits it for approval
+//   reminder     the daily run creates a draft for someone to review
+//   unscheduled  never runs on its own; someone uses it by hand
+// Same schedule rules as recurring invoices (see ar.ts).
+// ---------------------------------------------------------------------------
+
+export const recurringBillType = pgEnum("recurring_bill_type", ["scheduled", "reminder", "unscheduled"]);
+
+export const recurringBills = pgTable(
+  "recurring_bills",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    vendorId: uuid("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "restrict" }),
+    type: recurringBillType("type").notNull().default("scheduled"),
+    frequency: recurringFrequency("frequency").notNull().default("monthly"),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date"),
+    maxOccurrences: integer("max_occurrences"),
+    occurrences: integer("occurrences").notNull().default(0),
+    daysInAdvance: integer("days_in_advance").notNull().default(0),
+    /** Date of the next bill. Null for unscheduled templates. */
+    nextRunDate: date("next_run_date"),
+    lastRunDate: date("last_run_date"),
+    lastBillId: uuid("last_bill_id").references((): AnyPgColumn => apBills.id, { onDelete: "set null" }),
+    /** Why the last run couldn't create or submit its bill, if it couldn't. */
+    lastError: text("last_error"),
+    currency: text("currency").notNull().default("USD"),
+    exchangeRate: numeric("exchange_rate", { precision: 20, scale: 10 }).notNull().default("1"),
+    totalAmount: numeric("total_amount", { precision: 20, scale: 4 }).notNull().default("0"),
+    description: text("description"),
+    notes: text("notes"),
+    status: recurringStatus("status").notNull().default("active"),
+    createdBy: uuid("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("recurring_bills_org_name_key").on(t.organizationId, t.name),
+    index("recurring_bills_due_idx").on(t.organizationId, t.status, t.nextRunDate),
+    index("recurring_bills_vendor_idx").on(t.organizationId, t.vendorId),
+  ]
+);
+
+export const recurringBillLines = pgTable(
+  "recurring_bill_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    recurringBillId: uuid("recurring_bill_id")
+      .notNull()
+      .references(() => recurringBills.id, { onDelete: "cascade" }),
+    lineNumber: integer("line_number").notNull(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "restrict" }),
+    amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
+    description: text("description"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("recurring_bill_lines_parent_line_key").on(t.recurringBillId, t.lineNumber)]
+);
+
 export const apBills = pgTable(
   "ap_bills",
   {
@@ -114,6 +188,11 @@ export const apBills = pgTable(
     // Metadata
     description: text("description"),
     notes: text("notes"),
+
+    /** Created from this recurring template. */
+    recurringBillId: uuid("recurring_bill_id").references((): AnyPgColumn => recurringBills.id, {
+      onDelete: "set null",
+    }),
 
     /** The purchase order this bill bills, if any. */
     purchaseOrderId: uuid("purchase_order_id").references(() => purchaseOrders.id, {
@@ -224,4 +303,6 @@ export const apBillLinesRelations = relations(apBillLines, ({ one }) => ({
 export type ApBill = typeof apBills.$inferSelect;
 export type NewApBill = typeof apBills.$inferInsert;
 export type ApBillLine = typeof apBillLines.$inferSelect;
+export type RecurringBill = typeof recurringBills.$inferSelect;
+export type RecurringBillLine = typeof recurringBillLines.$inferSelect;
 export type NewApBillLine = typeof apBillLines.$inferInsert;

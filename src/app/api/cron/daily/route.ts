@@ -8,6 +8,7 @@ import { pruneSessions } from "@/lib/security/sessions";
 import { runAutoReversalsForOrg } from "@/lib/gl/auto-reversal";
 import { runRecurringForOrg } from "@/lib/gl/recurring";
 import { runRecurringInvoicesForOrg } from "@/lib/ar/recurring-invoices";
+import { runRecurringBillsForOrg } from "@/lib/ap/recurring-bills";
 
 /**
  * Daily cron entry point. Called by Vercel Cron (see vercel.json).
@@ -22,6 +23,8 @@ import { runRecurringInvoicesForOrg } from "@/lib/ar/recurring-invoices";
  *   2. Generate recurring JEs due today
  *   3. Create recurring invoices due today (scheduled ones post; reminders
  *      wait in the review queue as drafts)
+ *   4. Create recurring bills due today (scheduled ones are submitted for
+ *      approval; reminders wait in the review queue as drafts)
  * Then, once: prune API idempotency keys older than 24 hours, finished
  * rate-limit windows, and session rows that ended over 90 days ago (the
  * audit log keeps the sign-in history).
@@ -37,6 +40,7 @@ type OrgResult = {
   autoReversals: { checked: number; generated: number; errors: number };
   recurring: { checked: number; generated: number; errors: number };
   recurringInvoices: { checked: number; created: number; posted: number; errors: number };
+  recurringBills: { checked: number; created: number; submitted: number; errors: number };
 };
 
 export async function POST(request: Request) {
@@ -59,6 +63,7 @@ export async function POST(request: Request) {
       runRecurringForOrg(org.id, asOfDate),
     ]);
     const recurringInvoices = await runRecurringInvoicesForOrg(org.id, asOfDate);
+    const recurringBills = await runRecurringBillsForOrg(org.id, asOfDate);
     results.push({
       organizationId: org.id,
       slug: org.slug,
@@ -78,6 +83,12 @@ export async function POST(request: Request) {
         posted: recurringInvoices.posted,
         errors: recurringInvoices.errors.length,
       },
+      recurringBills: {
+        checked: recurringBills.checked,
+        created: recurringBills.created,
+        submitted: recurringBills.submitted,
+        errors: recurringBills.errors.length,
+      },
     });
 
     // Log full error details server-side for debugging; don't leak to response.
@@ -92,6 +103,9 @@ export async function POST(request: Request) {
     }
     if (recurringInvoices.errors.length > 0) {
       console.warn(`[cron] ${org.slug} recurring invoice errors:`, recurringInvoices.errors);
+    }
+    if (recurringBills.errors.length > 0) {
+      console.warn(`[cron] ${org.slug} recurring bill errors:`, recurringBills.errors);
     }
   }
 

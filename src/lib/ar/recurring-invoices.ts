@@ -120,7 +120,7 @@ export function nextScheduleDate(date: string, frequency: Frequency, anchor: str
   return format(setDate(next, day), "yyyy-MM-dd");
 }
 
-function hasEnded(t: Pick<RecurringInvoice, "endDate" | "maxOccurrences" | "occurrences">, next: string | null) {
+export function hasEnded(t: Pick<RecurringInvoice, "endDate" | "maxOccurrences" | "occurrences">, next: string | null) {
   return Boolean((t.endDate && next && next > t.endDate) || (t.maxOccurrences !== null && t.occurrences >= t.maxOccurrences));
 }
 
