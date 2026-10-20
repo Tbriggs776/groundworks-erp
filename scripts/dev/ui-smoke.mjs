@@ -70,6 +70,9 @@ async function visit(path, name, signedOut = false) {
   const bad = status >= 400 || /Application error|Internal Server Error|Unhandled Runtime Error/.test(body) || (!signedOut && page.url().includes("/auth/login"));
   console.log(`${bad ? "✗" : "✓"} ${status} ${path}${page.url() !== BASE + path ? `  -> ${page.url().replace(BASE, "")}` : ""}`);
   if (bad) problems.push(`bad page ${path} (${status}) ${body.slice(0, 200)}`);
+  // A dropdown should show the chosen option's label, never its raw id.
+  const rawIds = (await page.locator('[role="combobox"]').allInnerTexts()).filter((t) => /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/.test(t));
+  if (rawIds.length) problems.push(`raw id in a dropdown on ${path}: ${rawIds[0]}`);
   if (name) await page.screenshot({ path: `${outDir}/${name}.png`, fullPage: true });
 }
 
@@ -77,7 +80,9 @@ const pages = [
   ["/dashboard", "dashboard"], ["/customers", "customers"], ["/items", "items"],
   ["/ar/invoices", "invoices"], ["/ar/invoices/new", "invoice-new"], ["/ar/payments", null],
   ["/ar/payments/new", "receive-payment"], ["/vendors", null], ["/ap/bills", null], ["/ap/bills/new", null],
-  ["/ap/payments", null], ["/accounts", null], ["/gl", null], ["/reports/ar-aging", "ar-aging"],
+  ["/ap/payments", null], ["/accounts", null], ["/gl", null], ["/gl/journals/new", "journal-new"],
+  ["/recurring/new", null], ["/allocations/new", null], ["/budgets/new", null], ["/rates", null],
+  ["/reports/ar-aging", "ar-aging"],
   ["/reports/ap-aging", null], ["/reports/income-statement", null], ["/reports/balance-sheet", null],
   ["/review", "review"], ["/settings/agents", "agents"], ["/settings/api-keys", "api-keys"],
   ["/activity", "activity"], ["/settings/approval-thresholds", null],
