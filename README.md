@@ -123,7 +123,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 199 operations: accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), reports (P&L by month, class, and budget; cash flow; 1099s; any report as CSV or PDF), review queue, activity |
+| Tools | 205 operations: accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; any report as CSV or PDF), review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -170,8 +170,10 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-24 suites: posting engine, recurring/allocations/budgets, reports,
-financial statements (P&L columns, budget vs actual, cash flow, exports), FX,
+25 suites: posting engine, recurring/allocations/budgets, reports,
+financial statements (P&L columns, budget vs actual, cash flow, contra
+accounts, exports), detail reports (sales by customer and item, expenses by
+vendor, open invoices, unpaid bills, audit trail), FX,
 parties, bills, bill payments, vendor credits and refunds (plus card
 payments and printed checks), purchase orders (approval, partial
 billing), recurring bills, 1099s, invoices and payments, sales (tax, receipts,

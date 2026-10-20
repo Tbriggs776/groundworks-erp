@@ -1,4 +1,5 @@
 import type Decimal from "decimal.js";
+import { formatMoney, money } from "@/lib/money";
 import { toCsv } from "@/lib/ui/csv";
 
 /**
@@ -24,8 +25,12 @@ export type ReportRow = {
   code?: string;
   /** Lets a screen link the row to its ledger. */
   accountId?: string;
+  /** Lets a screen link the row to its document. Screen only. */
+  href?: string;
   depth?: number;
 };
+
+export type ColumnKind = "money" | "number" | "text";
 
 export type ReportTable = {
   title: string;
@@ -33,11 +38,24 @@ export type ReportTable = {
   /** Heading of the label column ("Account", "Vendor", "Date"). */
   labelColumn: string;
   columns: string[];
+  /**
+   * Per column: money (the default: 2-place strings print as money), number
+   * (as given, right-aligned: quantities, days), or text (as given, left-aligned).
+   */
+  columnKinds?: ColumnKind[];
   rows: ReportRow[];
   notes?: string[];
 };
 
 export const fmt2 = (d: Decimal) => d.toFixed(2);
+
+export const columnKind = (t: ReportTable, column: number): ColumnKind => t.columnKinds?.[column] ?? "money";
+
+/** A cell for screen and PDF: money strings as money, anything else as is. */
+export function cellText(t: ReportTable, column: number, v: string | null): string {
+  if (v === null) return "";
+  return columnKind(t, column) === "money" && /^-?\d+\.\d{2}$/.test(v) ? formatMoney(money(v)) : v;
+}
 
 /** CSV of a report: label column (with account codes), then each value column. */
 export function reportCsv(t: ReportTable): string {

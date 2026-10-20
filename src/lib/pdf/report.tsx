@@ -1,25 +1,19 @@
 import type { ReactElement } from "react";
 import { format } from "date-fns";
-import type { ReportTable } from "@/lib/reports/table";
-import { formatMoney, money } from "@/lib/money";
+import { cellText, columnKind, type ReportTable } from "@/lib/reports/table";
 import type { Pdf, PdfCompany } from "./templates";
 
 /**
  * Any report table as a PDF: company name, title, and range on top, the
  * table with its heading repeated on every page, notes, and page numbers.
- * Wide tables (more than 5 value columns) print landscape.
+ * Wide tables (more than 5 value columns) print landscape. Text columns
+ * share the free width with the label column; the rest are fixed.
  */
 
 const INK = "#1c2541";
 const MUTED = "#6b7280";
 const RULE = "#d9dce3";
 const SHADE = "#f3f4f6";
-
-/** Money strings print as money; anything else (a date, a %, a number) as is. */
-function cell(v: string | null): string {
-  if (v === null) return "";
-  return /^-?\d+\.\d{2}$/.test(v) ? formatMoney(money(v)) : v;
-}
 
 export function reportDocument(P: Pdf, company: PdfCompany, t: ReportTable): ReactElement {
   const landscape = t.columns.length > 5;
@@ -34,8 +28,11 @@ export function reportDocument(P: Pdf, company: PdfCompany, t: ReportTable): Rea
     th: { flexDirection: "row", backgroundColor: SHADE, paddingVertical: 4, paddingHorizontal: 4, fontFamily: "Helvetica-Bold", fontSize: 7, color: MUTED },
     tr: { flexDirection: "row", paddingVertical: 2.5, paddingHorizontal: 4 },
     num: { width: valueWidth, textAlign: "right" },
+    text: { flex: 1, paddingLeft: 6 },
     footer: { position: "absolute", bottom: 22, left: 36, right: 36, flexDirection: "row", borderTopWidth: 0.5, borderTopColor: RULE, paddingTop: 5, fontSize: 7, color: MUTED },
   });
+  const labelFlex = t.columns.some((_, j) => columnKind(t, j) === "text") ? 2 : 1;
+  const col = (j: number) => (columnKind(t, j) === "text" ? s.text : s.num);
   return (
     <P.Document title={`${t.title} ${t.subtitle}`} author={company.name} creator="Groundworks">
       <P.Page size="LETTER" orientation={landscape ? "landscape" : "portrait"} style={s.page}>
@@ -45,9 +42,9 @@ export function reportDocument(P: Pdf, company: PdfCompany, t: ReportTable): Rea
           <P.Text style={s.subtitle}>{t.subtitle}</P.Text>
         </P.View>
         <P.View style={s.th} fixed>
-          <P.Text style={{ flex: 1 }}>{t.labelColumn.toUpperCase()}</P.Text>
-          {t.columns.map((c) => (
-            <P.Text key={c} style={s.num}>{c.toUpperCase()}</P.Text>
+          <P.Text style={{ flex: labelFlex }}>{t.labelColumn.toUpperCase()}</P.Text>
+          {t.columns.map((c, j) => (
+            <P.Text key={c} style={col(j)}>{c.toUpperCase()}</P.Text>
           ))}
         </P.View>
         {t.rows.map((r, i) => {
@@ -63,12 +60,12 @@ export function reportDocument(P: Pdf, company: PdfCompany, t: ReportTable): Rea
                 r.kind === "section" && i > 0 ? { marginTop: 6 } : {},
               ]}
             >
-              <P.Text style={{ flex: 1, paddingLeft: (r.depth ?? 0) * 10, fontFamily: strong ? "Helvetica-Bold" : "Helvetica" }}>
+              <P.Text style={{ flex: labelFlex, paddingLeft: (r.depth ?? 0) * 10, fontFamily: strong ? "Helvetica-Bold" : "Helvetica" }}>
                 {r.code ? `${r.code}  ` : ""}
                 {r.label}
               </P.Text>
               {t.columns.map((_, j) => (
-                <P.Text key={j} style={[s.num, strong ? { fontFamily: "Helvetica-Bold" } : {}]}>{cell(r.values[j] ?? null)}</P.Text>
+                <P.Text key={j} style={[col(j), strong ? { fontFamily: "Helvetica-Bold" } : {}]}>{cellText(t, j, r.values[j] ?? null)}</P.Text>
               ))}
             </P.View>
           );

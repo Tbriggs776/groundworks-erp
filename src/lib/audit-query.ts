@@ -18,6 +18,17 @@ export const ListActivitySchema = z.object({
   ...pagination,
 });
 
+/** The record an audit row is about, in words: its number or name when the metadata has one. */
+export function auditRef(metadata: unknown): string | undefined {
+  const m = (metadata ?? {}) as Record<string, unknown>;
+  const keys = [
+    "invoiceNumber", "billNumber", "paymentNumber", "creditNumber", "memoNumber", "receiptNumber", "refundNumber",
+    "estimateNumber", "poNumber", "txnNumber", "journalNumber", "number", "name", "email", "code", "report",
+  ];
+  for (const k of keys) if (typeof m[k] === "string" && m[k]) return m[k] as string;
+  return undefined;
+}
+
 export async function listActivity(ctx: Ctx, input: z.input<typeof ListActivitySchema> = {}) {
   requirePermission(ctx.actor, "read", "viewer", "read the activity log");
   const f = ListActivitySchema.parse(input);

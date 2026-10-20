@@ -9,6 +9,7 @@ import { money } from "@/lib/money";
 import { reportPdf } from "@/lib/pdf/documents";
 import { amount, flag, id, isoDate } from "@/lib/schemas";
 import { apAging, arAging, type AgingReport } from "./aging";
+import { auditTrail, AuditTrailSchema, expensesByVendor, openInvoices, salesByCustomer, salesByItem, unpaidBills } from "./detail";
 import { accountLedger, balanceSheet, trialBalance } from "./financial";
 import { budgetVsActual, cashFlow, profitAndLossByDimension, profitAndLossByPeriod, profitAndLossTable } from "./statements";
 import { fmt2, reportCsv, reportFileName, type ReportRow, type ReportTable } from "./table";
@@ -31,6 +32,12 @@ export const REPORT_KEYS = [
   "ap-aging",
   "account-ledger",
   "1099",
+  "sales-by-customer",
+  "sales-by-item",
+  "expenses-by-vendor",
+  "open-invoices",
+  "unpaid-bills",
+  "audit-trail",
 ] as const;
 export type ReportKey = (typeof REPORT_KEYS)[number];
 
@@ -38,7 +45,7 @@ export const ReportParamsSchema = z.object({
   report: z.enum(REPORT_KEYS).default("profit-and-loss").describe("Which report."),
   from: isoDate.optional(),
   to: isoDate.optional(),
-  asOf: isoDate.optional().describe("Balance sheet, trial balance, and agings."),
+  asOf: isoDate.optional().describe("Balance sheet, trial balance, agings, open invoices, and unpaid bills."),
   period: z.enum(["month", "quarter", "year"]).optional().describe("profit-and-loss-by-period columns."),
   dimensionId: id.optional().describe("profit-and-loss-by-class: the class or location dimension."),
   budgetId: id.optional().describe("budget-vs-actual: the budget."),
@@ -46,6 +53,8 @@ export const ReportParamsSchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100).optional().describe("1099: the tax year."),
   threshold: amount.optional().describe("1099: the reporting threshold."),
   includeZero: flag.optional().describe("trial-balance: include accounts with no activity."),
+  actorType: AuditTrailSchema.shape.actorType,
+  agentId: AuditTrailSchema.shape.agentId,
 });
 export type ReportParams = z.input<typeof ReportParamsSchema>;
 
@@ -173,6 +182,18 @@ export async function reportTable(ctx: Ctx, input: ReportParams): Promise<Report
       return accountLedgerTable(ctx, p);
     case "1099":
       return form1099Table(ctx, p);
+    case "sales-by-customer":
+      return salesByCustomer(ctx, p);
+    case "sales-by-item":
+      return salesByItem(ctx, p);
+    case "expenses-by-vendor":
+      return expensesByVendor(ctx, p);
+    case "open-invoices":
+      return openInvoices(ctx, p);
+    case "unpaid-bills":
+      return unpaidBills(ctx, p);
+    case "audit-trail":
+      return auditTrail(ctx, p);
   }
 }
 
