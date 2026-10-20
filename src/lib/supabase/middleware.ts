@@ -17,7 +17,7 @@ import { contentSecurityPolicy } from "@/lib/security/headers";
 const PUBLIC_PATHS = ["/", "/signup"];
 const PUBLIC_PREFIXES = ["/auth/"];
 /** Signed-in users skip these. */
-const SIGNED_OUT_ONLY = ["/auth/login", "/signup"];
+const SIGNED_OUT_ONLY = ["/auth/login", "/auth/forgot", "/signup"];
 
 export async function updateSession(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");

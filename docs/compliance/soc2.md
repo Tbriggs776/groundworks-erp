@@ -24,6 +24,7 @@ to own.
 | CC6.1 | Role-based access: workspace roles (owner, admin, member) and per-company roles (owner, admin, accountant, bookkeeper, viewer) | `src/lib/actor.ts`, `src/lib/workspace/service.ts` | People page; access review CSV |
 | CC6.1 | Least privilege for AI agents: own identity, role capped below admin, autonomy level, per-document posting limit, human review queue | `src/lib/agents/`, `src/lib/review-policy.ts` | Agents page; audit rows with `actor_type = agent` |
 | CC6.1 | Tenant isolation: every query scoped to the company; RLS on every table as a safety net | `src/lib/db/migrations/0019`, `0021`; `scripts/test-rls.ts` | CI run of the RLS suite |
+| CC6.1 | Passwords: at least 10 characters, hashed by Supabase Auth (bcrypt), sign-in attempts rate limited per IP by Supabase; setting a new password (My security or a reset link) signs out every other session and is audited | `src/lib/security/password.ts`, `src/app/(app)/account/security/actions.ts` | `auth.password.changed` events; Supabase Auth logs for failed sign-ins |
 | CC6.1 | Two-step verification (TOTP); a workspace can require it; enforced on every request, not just at sign-in | `src/lib/security/sessions.ts`, `src/app/auth/mfa` | Security policy page; `auth.mfa.verified` events |
 | CC6.1 | Session control: idle timeout, maximum session length, revocation, "sign out everywhere else"; strictest policy across workspaces wins | `src/lib/security/sessions.ts` | `auth.session.ended` events with the reason |
 | CC6.1 | API keys: random 40 character secrets, only SHA-256 stored, scoped, optional expiry with a workspace maximum, revocable, per-key rate limit | `src/lib/agents/keys.ts`, `src/lib/api/rate-limit.ts` | API Keys page; access review "live keys" list |
@@ -40,7 +41,8 @@ to own.
 
 Audit events worth knowing: `auth.signed_in`, `auth.signed_out`,
 `auth.session.ended` (with `idle_timeout`, `max_age`, `revoked_by_user`),
-`auth.mfa.verified`, `auth.sessions.revoked`, `workspace.created`,
+`auth.mfa.verified`, `auth.sessions.revoked`, `auth.password.changed`,
+`workspace.created`,
 `workspace.security_policy.updated` (before and after),
 `workspace.member.removed` / `restored` / `updated`, `membership.granted` /
 `updated` / `revoked`, `invitation.created` / `accepted` / `revoked`,
@@ -57,8 +59,13 @@ of them.
 - Point-in-time recovery (PITR) on the production project, and a restore
   test at least once a year
 - MFA on every Supabase dashboard account; least privilege for org members
-- Auth: enable TOTP MFA; use asymmetric JWT signing keys; custom SMTP for
-  sign-in emails from your domain
+- Auth: enable TOTP MFA; minimum password length 10; leaked password
+  protection (Pro plan); use asymmetric JWT signing keys; custom SMTP for
+  password-reset emails from your domain
+- Auth: "Confirm email" is off so new accounts get in at once. The trade:
+  sign-up doesn't prove the inbox. Invitations still do (the link goes to
+  that inbox), and a reset link to the real inbox takes an address back and
+  signs out everyone else. Turn it on if you'd rather verify up front
 - Network restrictions on the database; SSL enforced
 - Apply all migrations (0021 adds the workspace and session tables)
 

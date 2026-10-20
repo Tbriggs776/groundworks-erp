@@ -4,8 +4,9 @@
  * error, CSP violations included), and clicks through the main flows:
  * create + post an invoice, create an agent + key, approve from the
  * review queue, invite someone, add a company and switch to it, save the
- * security policy, complete an access review, export the audit log, and
- * sign out.
+ * security policy, complete an access review, export the audit log, set a
+ * password, sign out, sign back in with it, ask for a reset link, and sign
+ * up a new account with a password.
  *
  * Needs: the app running on :3100 built with
  * NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321, the fake auth server
@@ -48,7 +49,14 @@ await context.addCookies([{ name: "sb-localhost-auth-token", value: cookieValue,
 const page = await context.newPage();
 const problems = [];
 page.on("pageerror", (e) => problems.push(`pageerror on ${page.url()}: ${e.message}`));
-page.on("console", (m) => { if (m.type() === "error") problems.push(`console on ${page.url()}: ${m.text()}`); });
+// The wrong-password check expects one rejected sign-in request.
+let expectRejectedSignIn = false;
+const consoleProblem = (pg) => (m) => {
+  if (m.type() !== "error") return;
+  if (expectRejectedSignIn && m.location().url.includes("/auth/v1/token")) return;
+  problems.push(`console on ${pg.url()}: ${m.text()}`);
+};
+page.on("console", consoleProblem(page));
 
 async function visit(path, name, signedOut = false) {
   const res = await page.goto(BASE + path, { waitUntil: "networkidle" });
@@ -219,7 +227,15 @@ await page.setViewportSize({ width: 390, height: 844 });
 await visit("/dashboard", "dashboard-phone");
 await visit("/ar/invoices", "invoices-phone");
 
-// Flow 11: sign out records the session end and drops the cookies.
+// Flow 11: set a password on My security (it signs out other sessions).
+const password = `smoke-pass-${Date.now()}`;
+await page.goto(BASE + "/account/security", { waitUntil: "networkidle" });
+await page.getByLabel("New password", { exact: true }).fill(password);
+await page.getByRole("button", { name: "Save password" }).click();
+await page.getByText("Password saved.").waitFor({ timeout: 10000 });
+console.log("✓ flow: password set on My security");
+
+// Flow 12: sign out records the session end and drops the cookies.
 await page.setViewportSize({ width: 1360, height: 900 });
 await page.goto(BASE + "/dashboard", { waitUntil: "networkidle" });
 await page.getByRole("button", { name: "Sign out" }).first().click();
@@ -229,6 +245,51 @@ console.log(page.url().includes("/auth/login") ? "✓ flow: signed out" : `✗ f
 if (!page.url().includes("/auth/login")) problems.push("sign out flow");
 await visit("/signup", "signup", true);
 await visit("/auth/login", "login", true);
+
+// Flow 13: email + password sign-in. A wrong password is refused.
+await page.getByLabel("Email").fill(email);
+await page.getByLabel("Password", { exact: true }).fill("not-the-password");
+expectRejectedSignIn = true;
+await page.getByRole("button", { name: "Sign in", exact: true }).click();
+await page.getByText("That email and password don't match.").waitFor({ timeout: 10000 });
+expectRejectedSignIn = false;
+await page.getByLabel("Password", { exact: true }).fill(password);
+await page.getByRole("button", { name: "Sign in", exact: true }).click();
+await page.waitForURL(/\/dashboard$/, { timeout: 15000 });
+console.log("✓ flow: wrong password refused; right one signs in");
+await page.getByRole("button", { name: "Sign out" }).first().click();
+await page.waitForURL(/\/auth\/login/, { timeout: 10000 });
+
+// Flow 14: forgotten password sends a reset link.
+await visit("/auth/forgot", "forgot", true);
+await page.getByLabel("Email").fill(email);
+await page.getByRole("button", { name: "Email me a reset link" }).click();
+await page.getByText("Check your email.").waitFor({ timeout: 10000 });
+console.log("✓ flow: reset link requested");
+
+// Flow 15: sign up with a password: in at once, company carried to onboarding.
+const fresh = await browser.newContext({ viewport: { width: 1360, height: 900 } });
+const signup = await fresh.newPage();
+signup.on("pageerror", (e) => problems.push(`pageerror on ${signup.url()}: ${e.message}`));
+signup.on("console", consoleProblem(signup));
+await signup.goto(BASE + "/signup", { waitUntil: "networkidle" });
+await signup.getByLabel("Your name").fill("Sam Smoke");
+await signup.getByLabel("Email").fill(`ui-signup-${Date.now()}@example.com`);
+await signup.getByLabel("Password", { exact: true }).fill("short");
+await signup.getByLabel("Company name").fill("Smoke Test Co");
+const tooShort = await signup.getByLabel("Password", { exact: true }).evaluate((el) => !el.checkValidity());
+console.log(tooShort ? "✓ flow: a short password is refused" : "✗ flow: short password accepted");
+if (!tooShort) problems.push("password length rule");
+await signup.getByLabel("Password", { exact: true }).fill(`signup-pass-${Date.now()}`);
+await signup.screenshot({ path: `${outDir}/signup-filled.png`, fullPage: true });
+await signup.getByRole("button", { name: "Create account" }).click();
+await signup.waitForURL(/\/onboarding/, { timeout: 15000 });
+await signup.getByText("SET UP YOUR COMPANY").waitFor({ timeout: 10000 });
+const prefilled = (await signup.locator("#company-name").inputValue()) === "Smoke Test Co";
+await signup.screenshot({ path: `${outDir}/signup-onboarding.png`, fullPage: true });
+console.log(prefilled ? "✓ flow: sign-up with password lands on onboarding, company filled in" : "✗ flow: sign-up company not carried");
+if (!prefilled) problems.push("sign-up flow");
+await fresh.close();
 
 await browser.close();
 console.log(problems.length ? `\n${problems.length} problem(s):\n${problems.join("\n")}` : "\nNo problems.");

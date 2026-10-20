@@ -218,6 +218,11 @@ export async function revokeOtherSessions(userId: string, keepSessionId: string,
   });
 }
 
+/** A password was set or changed (Supabase Auth holds the hash; this is the record). */
+export async function auditPasswordChanged(userId: string, meta: RequestMeta, otherSessionsEnded: number): Promise<void> {
+  await db.transaction((tx) => auditForUser(tx, userId, "auth.password.changed", meta, { otherSessionsEnded }));
+}
+
 /**
  * Housekeeping (cron): forget sessions that ended, or went quiet, more
  * than 90 days ago. Sign-in history stays in the audit log.

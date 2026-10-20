@@ -113,9 +113,14 @@ npm run dev
 
 You need a Supabase project for auth. In the Supabase dashboard:
 
+- **Authentication → Sign In / Providers → Email**: turn **Confirm email**
+  off (new accounts sign in at once) and set the minimum password length
+  to 10 (matches `src/lib/security/password.ts`)
 - **Authentication → URL Configuration**: add `http://localhost:3000/**` to
-  the redirect URLs
+  the redirect URLs (password-reset links come back through `/auth/callback`)
 - **Authentication → Multi-Factor**: enable TOTP (authenticator apps)
+- **Authentication → Emails → SMTP**: use your own SMTP (Resend works) so
+  reset emails aren't held to Supabase's built-in hourly limit
 - Optional: enable Google / Azure providers and set
   `NEXT_PUBLIC_AUTH_PROVIDERS=google,azure`; SAML SSO with
   `NEXT_PUBLIC_AUTH_SSO=1`

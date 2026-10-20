@@ -1,6 +1,6 @@
 /**
- * Outbound email (invitations and other app notices). Sign-in links are
- * sent by Supabase Auth, not from here.
+ * Outbound email (invitations and other app notices). Password-reset links
+ * are sent by Supabase Auth, not from here.
  *
  * Uses Resend's HTTP API when RESEND_API_KEY and EMAIL_FROM are set. When
  * they aren't (local dev, tests), nothing is sent and the caller gets
@@ -69,14 +69,14 @@ export function invitationEmail(opts: {
     "",
     `Accept the invitation: ${opts.link}`,
     "",
-    "The link works once and expires in 7 days. Sign in with this email address to accept.",
+    "The link works once and expires in 7 days. Sign in (or create an account) with this email address to accept.",
     "If you weren't expecting this, you can ignore it.",
   ].join("\n");
   const html = `<!doctype html><html><body style="font-family:system-ui,sans-serif;color:#1B2A4E;line-height:1.5">
 <div style="font-family:Georgia,serif;letter-spacing:0.18em;font-weight:600;color:#1B2A4E;border-bottom:2px solid #C9A961;padding-bottom:8px;margin-bottom:16px">GROUNDWORKS</div>
 <p><strong>${escapeHtml(opts.inviter)}</strong> invited you to join <strong>${escapeHtml(opts.workspaceName)}</strong>${escapeHtml(companies)} on Groundworks.</p>
 <p><a href="${escapeHtml(opts.link)}" style="display:inline-block;background:#1B2A4E;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Accept invitation</a></p>
-<p style="color:#5C6880;font-size:13px">The link works once and expires in 7 days. Sign in with ${escapeHtml(opts.to)} to accept. If you weren't expecting this, you can ignore it.</p>
+<p style="color:#5C6880;font-size:13px">The link works once and expires in 7 days. Sign in (or create an account) with ${escapeHtml(opts.to)} to accept. If you weren't expecting this, you can ignore it.</p>
 </body></html>`;
   return { to: opts.to, subject, text, html };
 }
