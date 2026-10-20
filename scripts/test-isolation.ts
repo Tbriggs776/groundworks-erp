@@ -151,6 +151,22 @@ async function main() {
       rest(keyB, "POST", "/bill-payments", { vendorId: ids.vendors, paymentDate: "2026-05-04", method: "ach", bankAccountId: bank.id, applications: [{ billId: billToPay, amount: "80" }] }),
       "bill payment"
     );
+    // Banking: a posted expense, a rule, an imported line, a reconciliation in progress.
+    ids["bank-transactions"] = await ok(
+      rest(keyB, "POST", "/expenses", { txnDate: "2026-05-05", bankAccountId: bank.id, payeeName: `${MARKER} payee`, lines: [{ accountId: expense.id, amount: "25", description: MARKER }], post: true }),
+      "expense"
+    );
+    ids["bank-rules"] = await ok(
+      rest(keyB, "POST", "/bank-rules", { name: `${MARKER} rule`, conditions: [{ field: "description", op: "contains", value: "zzz" }], categoryAccountId: expense.id }),
+      "bank rule"
+    );
+    const imported = await rest(keyB, "POST", "/bank-statements", { accountId: bank.id, content: `Date,Description,Amount\n05/06/2026,${MARKER} line,-12.00\n`, applyRules: false });
+    assertEq(imported.status, 200, `B setup: statement import ${imported.text.slice(0, 160)}`);
+    ids["bank-lines"] = (await rest(keyB, "GET", `/bank-lines?accountId=${bank.id}`)).json.data[0].id;
+    ids.reconciliations = await ok(
+      rest(keyB, "POST", "/reconciliations", { accountId: bank.id, statementEndDate: "2026-05-31", statementEndingBalance: "0" }),
+      "reconciliation"
+    );
   }
   const secrets = [MARKER, b.org.id, ...Object.values(ids)];
   const tables = await tenantTables();
@@ -168,6 +184,8 @@ async function main() {
   const bodies: Record<string, Record<string, unknown>> = {
     update_invoice: { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: aIncome }] },
     update_bill: { vendorId: aVendor, billDate: "2026-05-01", lines: [{ accountId: aExpense, amount: "1" }] },
+    match_bank_line: { glLineIds: [crypto.randomUUID()] },
+    set_reconciliation_cleared: { glLineIds: [crypto.randomUUID()], cleared: true },
   };
   const bodyFor = (name: string) => ({ reason: "isolation test", date: "2026-05-05", ...bodies[name] });
   const aItem = (await rest(keyA, "POST", "/items", { name: "A's own item", salesPrice: "5", incomeAccountId: aIncome })).json.id as string;
@@ -219,6 +237,7 @@ async function main() {
   });
 
   section("Creates can't borrow the other workspace's records");
+  const bBank = account(b, "1010").id;
   const borrow: Array<[string, string, unknown]> = [
     ["invoice for B's customer", "/invoices", { customerId: ids.customers, invoiceDate: "2026-05-01", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: aIncome }] }],
     ["invoice line on B's item", "/invoices", { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ itemId: ids.items, quantity: 1 }] }],
@@ -230,6 +249,13 @@ async function main() {
     ["bill payment from B's bank account", "/bill-payments", { vendorId: aVendor, paymentDate: "2026-05-04", method: "ach", bankAccountId: ids.accounts, applications: [{ billId: ids.bills, amount: "1" }] }],
     ["journal entry on B's accounts", "/journal-entries", { date: "2026-05-03", description: "x", lines: [{ accountId: ids.accounts, debit: "1" }, { accountId: aBank, credit: "1" }] }],
     ["journal line tagged with B's customer", "/journal-entries", { date: "2026-05-03", description: "x", lines: [{ accountId: aExpense, debit: "1", customerId: ids.customers }, { accountId: aBank, credit: "1" }] }],
+    ["expense from B's bank account", "/expenses", { txnDate: "2026-05-05", bankAccountId: bBank, lines: [{ accountId: aExpense, amount: "1" }] }],
+    ["expense line on B's account", "/expenses", { txnDate: "2026-05-05", bankAccountId: aBank, lines: [{ accountId: ids.accounts, amount: "1" }] }],
+    ["deposit of B's customer payment", "/deposits", { txnDate: "2026-05-05", bankAccountId: aBank, paymentIds: [ids["customer-payments"]] }],
+    ["transfer into B's bank account", "/transfers", { txnDate: "2026-05-05", fromAccountId: aBank, toAccountId: bBank, amount: "1" }],
+    ["statement import into B's account", "/bank-statements", { accountId: bBank, content: "Date,Description,Amount\n05/06/2026,x,-1.00\n" }],
+    ["bank rule categorizing to B's account", "/bank-rules", { name: "x", conditions: [{ field: "description", op: "contains", value: "x" }], categoryAccountId: ids.accounts }],
+    ["reconciliation of B's account", "/reconciliations", { accountId: bBank, statementEndDate: "2026-05-31", statementEndingBalance: "0" }],
   ];
   for (const [label, path, body] of borrow) {
     await check(`refused: ${label}`, async () => {

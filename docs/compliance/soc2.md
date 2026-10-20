@@ -36,9 +36,10 @@ to own.
 | CC6.7 | Encryption in transit (TLS via Vercel, HSTS) and at rest (Supabase Postgres, AES-256) | Platform | Vendor SOC 2 reports |
 | CC7.1 | Vulnerability management: dependency audit in CI, weekly Dependabot updates | `.github/workflows/ci.yml`, `.github/dependabot.yml` | CI history; Dependabot PRs |
 | CC7.2 | Audit trail: append-only (a database trigger rejects edits), records who (person, agent, or system), which key, which channel, IP address, and device for every change and every sign-in; exportable | `src/lib/audit.ts`, `/workspace/audit` | CSV export (the export itself is audited) |
-| CC8.1 | Change management: CI on every PR (typecheck, lint, build, 15 e2e suites, audit), PR risk checklist, code owners | `.github/` | Merged PRs with green checks and approvals |
+| CC8.1 | Change management: CI on every PR (typecheck, lint, build, 16 e2e suites, audit), PR risk checklist, code owners | `.github/` | Merged PRs with green checks and approvals |
 | A1.2 | Health endpoint for uptime monitoring | `/api/health` | Monitor history |
 | PI1 | Accounting integrity: double-entry posting engine with 12 checks, posted journals immutable (DB triggers), corrections by reversal, period locks | `src/lib/gl/` | `scripts/test-posting.ts` |
+| PI1 | Bank reconciliation: statements imported with duplicate detection; each line matched, added, or excluded (and every step undoable and audited); a reconciliation completes only at a zero difference; reconciled items can't be voided or unmatched; only the latest reconciliation can be undone, by an admin, with a reason | `src/lib/banking/` | Reconciliation reports; `bank.*` events; `scripts/test-banking.ts` |
 
 Audit events worth knowing: `auth.signed_in`, `auth.signed_out`,
 `auth.session.ended` (with `idle_timeout`, `max_age`, `revoked_by_user`),
@@ -48,8 +49,10 @@ Audit events worth knowing: `auth.signed_in`, `auth.signed_out`,
 `workspace.member.removed` / `restored` / `updated`, `membership.granted` /
 `updated` / `revoked`, `invitation.created` / `accepted` / `revoked`,
 `api_key.created` / `revoked`, `agent.created` / `updated`,
-`workspace.access_review.completed`, `workspace.audit_log.exported`, plus
-every bookkeeping change (`ar.invoice.posted`, `gl.journal.drafted`, …).
+`workspace.access_review.completed`, `workspace.audit_log.exported`,
+`bank.statement.imported`, `bank.line.matched` / `added` / `excluded` /
+`undone`, `bank.reconciliation.completed` / `undone`, plus every bookkeeping
+change (`ar.invoice.posted`, `gl.journal.drafted`, …).
 
 ## Platform settings to turn on
 

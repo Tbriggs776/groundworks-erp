@@ -53,7 +53,7 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Stat label="Cash on hand" value={fmt(cash)} href="/accounts" hint={`${cashAccounts.length} bank & cash accounts`} />
+          <Stat label="Cash on hand" value={fmt(cash)} href="/banking" hint={`${cashAccounts.length} bank & cash accounts`} />
           <Stat
             label="Owed to you"
             value={fmt(ar.totals.total)}

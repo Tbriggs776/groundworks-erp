@@ -75,6 +75,9 @@ export const DEFAULT_NUMBER_SERIES: Array<{
   { code: "APPAY", description: "Bill Payments", prefix: "BPAY-", width: 6 },
   { code: "INV", description: "Invoices", prefix: "INV-", width: 6 },
   { code: "ARPAY", description: "Customer Payments", prefix: "PMT-", width: 6 },
+  { code: "EXP", description: "Expenses and Checks", prefix: "EXP-", width: 6 },
+  { code: "DEP", description: "Deposits", prefix: "DEP-", width: 6 },
+  { code: "XFER", description: "Transfers", prefix: "XFER-", width: 6 },
 ];
 
 export async function seedOrganizationDefaults(

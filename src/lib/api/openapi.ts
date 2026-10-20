@@ -103,7 +103,7 @@ export function openApiDocument(origin: string): Json {
     },
     servers: [{ url: `${origin}/api/v1` }],
     security: [{ bearerAuth: [] }],
-    tags: ["Context", "Accounting", "Sales", "Expenses", "Reports", "Review"].map((name) => ({ name })),
+    tags: ["Context", "Accounting", "Sales", "Expenses", "Banking", "Reports", "Review"].map((name) => ({ name })),
     paths,
     components: {
       securitySchemes: {

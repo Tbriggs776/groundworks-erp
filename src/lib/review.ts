@@ -5,6 +5,7 @@ import {
   apPayments,
   arInvoices,
   arPayments,
+  bankTransactions,
   customers,
   glJournals,
   glLines,
@@ -14,7 +15,8 @@ import { requirePermission, type Ctx } from "@/lib/actor";
 
 /**
  * THE REVIEW QUEUE — everything waiting on a human:
- *   - drafts an agent created (invoices, payments, bills, journal entries)
+ *   - drafts an agent created (invoices, payments, bills, journal entries,
+ *     bank transactions)
  *   - bills pending approval, whoever submitted them
  *
  * Agents in draft mode end every task here; this is where a person turns
@@ -22,7 +24,7 @@ import { requirePermission, type Ctx } from "@/lib/actor";
  */
 
 export type ReviewItem = {
-  type: "invoice" | "customer_payment" | "bill" | "bill_payment" | "journal_entry";
+  type: "invoice" | "customer_payment" | "bill" | "bill_payment" | "journal_entry" | "bank_transaction";
   id: string;
   number: string;
   party: string | null;
@@ -42,7 +44,7 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
   const org = ctx.actor.organizationId;
   const tx = ctx.tx;
 
-  const [invoices, custPayments, bills, billPayments, journals] = await Promise.all([
+  const [invoices, custPayments, bills, billPayments, journals, bankTxns] = await Promise.all([
     tx
       .select({ d: arInvoices, party: customers.name, agentName: agents.name })
       .from(arInvoices)
@@ -108,6 +110,24 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
         )
       )
       .orderBy(desc(glJournals.createdAt)),
+    tx
+      .select({
+        d: bankTransactions,
+        party: sql<string | null>`COALESCE(${vendors.name}, ${customers.name}, ${bankTransactions.payeeName})`,
+        agentName: agents.name,
+      })
+      .from(bankTransactions)
+      .leftJoin(vendors, eq(vendors.id, bankTransactions.vendorId))
+      .leftJoin(customers, eq(customers.id, bankTransactions.customerId))
+      .leftJoin(agents, eq(agents.id, bankTransactions.createdByAgentId))
+      .where(
+        and(
+          eq(bankTransactions.organizationId, org),
+          eq(bankTransactions.status, "draft"),
+          isNotNull(bankTransactions.createdByAgentId)
+        )
+      )
+      .orderBy(desc(bankTransactions.createdAt)),
   ]);
 
   const journalTotals = journals.length
@@ -197,6 +217,21 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
       agentName,
       createdAt: d.createdAt,
       href: `/gl/${d.id}`,
+    })),
+    ...bankTxns.map(({ d, party, agentName }) => ({
+      type: "bank_transaction" as const,
+      id: d.id,
+      number: d.txnNumber,
+      party,
+      date: d.txnDate,
+      amount: d.totalAmount,
+      currency: d.currency,
+      status: d.status,
+      reason: "agent_draft" as const,
+      agentId: d.createdByAgentId,
+      agentName,
+      createdAt: d.createdAt,
+      href: `/banking/transactions/${d.id}`,
     })),
   ];
   return items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());

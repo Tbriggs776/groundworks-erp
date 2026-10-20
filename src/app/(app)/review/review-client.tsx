@@ -16,6 +16,7 @@ const TYPE_LABEL: Record<ReviewItem["type"], string> = {
   bill: "Bill",
   bill_payment: "Bill payment",
   journal_entry: "Journal entry",
+  bank_transaction: "Bank transaction",
 };
 
 function approveLabel(item: ReviewItem): string {
