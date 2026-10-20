@@ -7,9 +7,10 @@
  *
  *   npx tsx scripts/test-isolation.ts
  */
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
-import { auditLog, memberships, workspaceMembers } from "../src/lib/db/schema";
+import { auditLog, dimensions, fiscalYears, memberships, workspaceMembers } from "../src/lib/db/schema";
+import { createBudget } from "../src/lib/gl/budgets";
 import { runAsWorkspace, workspaceActor } from "../src/lib/actor";
 import * as agentsSvc from "../src/lib/agents/service";
 import { handleMcp } from "../src/lib/api/mcp";
@@ -105,6 +106,7 @@ async function main() {
 
   // B's books: one of everything, named with a marker A must never see.
   const ids = {} as Record<string, string>;
+  let bBudgetId = "";
   {
     const income = account(b, "4100");
     const bank = account(b, "1010");
@@ -187,6 +189,9 @@ async function main() {
       rest(keyB, "POST", "/expenses", { txnDate: "2026-05-05", bankAccountId: bank.id, vendorId: contractor, lines: [{ accountId: account(b, "6150").id, amount: "2500" }], post: true }),
       "1099 payment"
     );
+    // A budget, for the report checks.
+    const [bYear] = await db.select().from(fiscalYears).where(eq(fiscalYears.organizationId, b.org.id));
+    bBudgetId = (await createBudget({ organizationId: b.org.id, fiscalYearId: bYear.id, code: "ISO", name: `${MARKER} budget` })).id;
     // A check waiting in B's print queue.
     ids.checks = await ok(
       rest(keyB, "POST", "/expenses", { type: "check", printLater: true, txnDate: "2026-05-05", bankAccountId: bank.id, payeeName: `${MARKER} check`, lines: [{ accountId: expense.id, amount: "15" }], post: true }),
@@ -323,6 +328,20 @@ async function main() {
     assert(!secrets.some((s) => inv.text.includes(s)) || inv.status === 404, "invoices leaked");
     const ledger = await rest(keyA, "GET", `/reports/account-ledger?accountId=${ids.accounts}&from=2026-01-01&to=2026-12-31`);
     assert(ledger.status === 404 || !ledger.text.includes(MARKER), `ledger ${ledger.status} ${ledger.text.slice(0, 120)}`);
+  });
+
+  await check("reports refuse B's dimension, budget, and account", async () => {
+    const [bClass] = await db.select().from(dimensions).where(and(eq(dimensions.organizationId, b.org.id), eq(dimensions.code, "CLASS")));
+    for (const path of [
+      `/reports/profit-and-loss-by-class?dimensionId=${bClass.id}`,
+      `/reports/budget-vs-actual?budgetId=${bBudgetId}`,
+      `/reports/export?report=account-ledger&accountId=${ids.accounts}`,
+      `/reports/export?report=budget-vs-actual&budgetId=${bBudgetId}&format=pdf`,
+    ]) {
+      const r = await rest(keyA, "GET", path);
+      assertEq(r.status, 404, path);
+      assert(!r.text.includes(MARKER), `${path} leaked`);
+    }
   });
 
   section("Creates can't borrow the other workspace's records");

@@ -7,6 +7,7 @@ import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { getGlDetail } from "@/lib/gl/reports";
 import { formatMoney, money } from "@/lib/money";
 import { GlDetailFilter } from "./filter";
+import { ExportLinks } from "../report-table";
 
 type SP = Promise<{ account?: string; from?: string; to?: string }>;
 
@@ -55,12 +56,15 @@ export default async function GlDetailPage({ searchParams }: { searchParams: SP 
       userEmail={user?.email}
     >
       <div className="space-y-5">
-        <GlDetailFilter
-          accounts={acctRows}
-          accountId={accountId}
-          fromDate={fromDate}
-          toDate={toDate}
-        />
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <GlDetailFilter
+            accounts={acctRows}
+            accountId={accountId}
+            fromDate={fromDate}
+            toDate={toDate}
+          />
+          {selected && <ExportLinks report="account-ledger" params={{ accountId: selected.id, from: fromDate, to: toDate }} />}
+        </div>
 
         {!selected && (
           <div className="text-sm text-muted-foreground">

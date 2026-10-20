@@ -197,6 +197,9 @@ docs/compliance/      SOC 2 control map and checklist
 - What's billed on a purchase order comes from `src/lib/ap/po-billing.ts`
   (bill lines that point at PO lines, on bills not voided). POs approve
   through the bill thresholds (scope `ap_bill`) and never touch the ledger.
+- Reports are `ReportTable`s (`src/lib/reports/table.ts`): build one in
+  `statements.ts` or `exports.ts` and the page (`ReportTableView`), CSV,
+  and PDF all render it. Downloads go through `exportReport`, which audits.
 - 1099 amounts come from `src/lib/ap/form-1099.ts` (accounts carry a
   `form_1099_box`). Full TINs leave the app only through the audited CSV
   export; reports and the API show the last 4.

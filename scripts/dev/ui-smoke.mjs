@@ -105,6 +105,8 @@ const pages = [
   ["/ap/vendor-refunds/new", null], ["/banking/checks", "print-checks"],
   ["/ap/purchase-orders", null], ["/ap/purchase-orders/new", "po-new"],
   ["/ap/recurring", null], ["/ap/recurring/new", "recurring-bill-new"], ["/reports/1099", "report-1099"],
+  ["/reports/cash-flow", "cash-flow"], ["/reports/profit-and-loss-by-period", "pnl-by-month"],
+  ["/reports/profit-and-loss-by-class", null], ["/reports/budget-vs-actual", null],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -365,6 +367,18 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   await page.screenshot({ path: `${outDir}/report-1099-mapped.png`, fullPage: true });
   console.log(mapped && csvOk ? "✓ flow: 1099 box mapped and the CSV exported" : `✗ flow: 1099 (mapped ${mapped}, csv ${csvOk})`);
   if (!(mapped && csvOk)) problems.push("1099 flow");
+
+  // Reports download as CSV and PDF.
+  await page.goto(BASE + "/reports/profit-and-loss-by-period", { waitUntil: "networkidle" });
+  const csvLink = await page.getByRole("link", { name: "CSV", exact: true }).getAttribute("href");
+  const pdfLink = await page.getByRole("link", { name: "PDF", exact: true }).getAttribute("href");
+  const pnlCsv = await page.request.get(BASE + csvLink);
+  const pnlPdf = await page.request.get(BASE + pdfLink);
+  const exportsOk =
+    pnlCsv.status() === 200 && (await pnlCsv.text()).startsWith("Account,") &&
+    pnlPdf.status() === 200 && (await pnlPdf.body()).subarray(0, 5).toString() === "%PDF-";
+  console.log(exportsOk ? "✓ flow: P&L by month downloads as CSV and PDF" : "✗ flow: report exports");
+  if (!exportsOk) problems.push(`report exports ${pnlCsv.status()} ${pnlPdf.status()}`);
 
   await page.goto(BASE + "/banking/transactions/new?type=check", { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Bank account" }).first().click();

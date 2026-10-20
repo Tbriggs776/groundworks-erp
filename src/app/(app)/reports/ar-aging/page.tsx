@@ -5,6 +5,7 @@ import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { arAging } from "@/lib/reports/aging";
 import { AgingTable } from "../aging-table";
 import { DateFilter } from "../date-filter";
+import { ExportLinks } from "../report-table";
 
 export default async function ArAgingPage({
   searchParams,
@@ -24,7 +25,10 @@ export default async function ArAgingPage({
   return (
     <AppShell title="AR Aging" crumb={`${organization.name} · Reports`} userEmail={user?.email}>
       <div className="space-y-5 max-w-6xl">
-        <DateFilter paramName="asOf" value={asOf} label="As of" />
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <DateFilter paramName="asOf" value={asOf} label="As of" />
+          <ExportLinks report="ar-aging" params={{ asOf }} />
+        </div>
         <AgingTable report={report} partyLabel="Customer" docHref={(id, kind) => (kind === "credit_memo" ? `/ar/credit-memos/${id}` : kind === "payment" ? `/ar/payments/${id}` : `/ar/invoices/${id}`)} />
       </div>
     </AppShell>

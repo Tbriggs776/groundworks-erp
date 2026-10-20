@@ -26,6 +26,8 @@ import {
   type StatementPdf,
 } from "./templates";
 import { checks, type CheckPdf } from "./checks";
+import { reportDocument } from "./report";
+import { reportFileName, type ReportTable } from "@/lib/reports/table";
 
 /**
  * Customer-facing PDFs: sales documents and statements. Each loads its
@@ -329,6 +331,14 @@ export async function purchaseOrderPdf(ctx: Ctx, poId: string): Promise<PdfFile>
   };
   const bytes = await render((P) => salesDocument(P, co, data));
   return { fileName: `PurchaseOrder_${d.poNumber}.pdf`, contentType: "application/pdf", bytes };
+}
+
+/** Any report table on the company's letterhead. */
+export async function reportPdf(ctx: Ctx, table: ReportTable): Promise<PdfFile> {
+  requirePermission(ctx.actor, "read", "viewer", "download reports");
+  const co = await company(ctx);
+  const bytes = await render((P) => reportDocument(P, co, table));
+  return { fileName: reportFileName(table, "pdf"), contentType: "application/pdf", bytes };
 }
 
 /** API shape: the file as base64 inside JSON. */

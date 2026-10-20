@@ -32,6 +32,8 @@ import { listDimensions, listPeriods, ListPeriodsSchema, whoami } from "@/lib/gl
 import * as parties from "@/lib/parties/service";
 import { AgingSchema, apAging, arAging } from "@/lib/reports/aging";
 import * as financial from "@/lib/reports/financial";
+import * as reportExports from "@/lib/reports/exports";
+import * as finStatements from "@/lib/reports/statements";
 import * as pdf from "@/lib/pdf/documents";
 import { listReviewQueue } from "@/lib/review";
 import * as taxLiability from "@/lib/sales-tax/liability";
@@ -2232,6 +2234,69 @@ export const OPERATIONS: Operation[] = [
     scope: "read",
     input: financial.RangeSchema,
     run: (ctx, input) => financial.profitAndLoss(ctx, input),
+  }),
+  op({
+    name: "report_profit_and_loss_by_period",
+    title: "Profit and loss by month, quarter, or year",
+    description:
+      "The P&L with a column per month (or quarter, or year) plus a Total, for a date range (default: year to date; at most 36 columns). Returns a report table: columns, and rows of kind section / account / subtotal / total with values as 2-place strings.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/profit-and-loss-by-period",
+    scope: "read",
+    input: finStatements.ProfitAndLossByPeriodSchema,
+    run: (ctx, input) => finStatements.profitAndLossByPeriod(ctx, input),
+  }),
+  op({
+    name: "report_profit_and_loss_by_class",
+    title: "Profit and loss by class or location",
+    description:
+      "The P&L with a column per value of a dimension (class, location, …), a column for lines without one, and a Total. dimensionId defaults to the first dimension (list_dimensions). Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/profit-and-loss-by-class",
+    scope: "read",
+    input: finStatements.ProfitAndLossByDimensionSchema,
+    run: (ctx, input) => finStatements.profitAndLossByDimension(ctx, input),
+  }),
+  op({
+    name: "report_budget_vs_actual",
+    title: "Budget vs actual",
+    description:
+      "The P&L against a budget for a date range: Actual, Budget, Over budget, and % of budget per account and subtotal. Budget amounts count the fiscal periods wholly inside the range. budgetId defaults to the newest budget. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/budget-vs-actual",
+    scope: "read",
+    input: finStatements.BudgetVsActualSchema,
+    run: (ctx, input) => finStatements.budgetVsActual(ctx, input),
+  }),
+  op({
+    name: "report_cash_flow",
+    title: "Statement of cash flows",
+    description:
+      "Cash flows for a date range by the indirect method: net income adjusted by changes in working capital (operating), fixed and other assets (investing), and debt and equity (financing), then cash at the start and end. Cash means accounts in the cash subcategory. `cash.reconciles` is false only if the ledger is out of balance. Returns a report table plus `cash`.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/cash-flow",
+    scope: "read",
+    input: finStatements.CashFlowSchema,
+    run: (ctx, input) => finStatements.cashFlow(ctx, input),
+  }),
+  op({
+    name: "export_report",
+    title: "Download a report as CSV or PDF",
+    description:
+      "Any report as a file: profit-and-loss, profit-and-loss-by-period, profit-and-loss-by-class, budget-vs-actual, cash-flow, balance-sheet, trial-balance, ar-aging, ap-aging, account-ledger (accountId), or 1099 (year; TINs masked). Pass the same filters the report takes. format csv or pdf (letterhead). Returns { fileName, contentType, sizeBytes, base64 }. Each download is audited.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/export",
+    scope: "read",
+    input: reportExports.ExportReportSchema,
+    run: async (ctx, input) => {
+      const f = await reportExports.exportReport(ctx, input);
+      return { fileName: f.fileName, contentType: f.contentType, sizeBytes: f.bytes.length, base64: f.bytes.toString("base64") };
+    },
   }),
   op({
     name: "report_balance_sheet",

@@ -5,6 +5,7 @@ import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { apAging } from "@/lib/reports/aging";
 import { AgingTable } from "../aging-table";
 import { DateFilter } from "../date-filter";
+import { ExportLinks } from "../report-table";
 
 export default async function ApAgingPage({
   searchParams,
@@ -24,7 +25,10 @@ export default async function ApAgingPage({
   return (
     <AppShell title="AP Aging" crumb={`${organization.name} · Reports`} userEmail={user?.email}>
       <div className="space-y-5 max-w-6xl">
-        <DateFilter paramName="asOf" value={asOf} label="As of" />
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <DateFilter paramName="asOf" value={asOf} label="As of" />
+          <ExportLinks report="ap-aging" params={{ asOf }} />
+        </div>
         <AgingTable report={report} partyLabel="Vendor" docHref={(id) => `/ap/bills/${id}`} />
       </div>
     </AppShell>
