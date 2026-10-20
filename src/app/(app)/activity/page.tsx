@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Bot, Cog, User } from "lucide-react";
 import { AppShell } from "@/components/app-shell/shell";
 import { runAs } from "@/lib/actor";
-import { listActivity } from "@/lib/audit-query";
+import { auditRef, listActivity } from "@/lib/audit-query";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -66,11 +66,7 @@ export default async function ActivityPage({
               {result.data.map((a) => {
                 const Icon = a.actorType === "agent" ? Bot : a.actorType === "system" || !a.userEmail ? Cog : User;
                 const who = a.agentName ?? a.userEmail ?? "System";
-                const meta = a.metadata as Record<string, unknown>;
-                const ref =
-                  (meta.invoiceNumber ?? meta.billNumber ?? meta.paymentNumber ?? meta.journalNumber ?? meta.name ?? meta.email ?? meta.code) as
-                    | string
-                    | undefined;
+                const ref = auditRef(a.metadata);
                 return (
                   <tr key={a.id} className="border-t border-border">
                     <td className="px-3 py-2 text-xs text-muted-foreground">{new Date(a.occurredAt).toLocaleString()}</td>

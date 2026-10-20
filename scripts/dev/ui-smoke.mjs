@@ -107,6 +107,9 @@ const pages = [
   ["/ap/recurring", null], ["/ap/recurring/new", "recurring-bill-new"], ["/reports/1099", "report-1099"],
   ["/reports/cash-flow", "cash-flow"], ["/reports/profit-and-loss-by-period", "pnl-by-month"],
   ["/reports/profit-and-loss-by-class", null], ["/reports/budget-vs-actual", null],
+  ["/reports/sales-by-customer", "sales-by-customer"], ["/reports/sales-by-item", "sales-by-item"],
+  ["/reports/expenses-by-vendor", "expenses-by-vendor"], ["/reports/open-invoices", "open-invoices"],
+  ["/reports/unpaid-bills", null], ["/reports/audit-trail", "audit-trail"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -379,6 +382,16 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
     pnlPdf.status() === 200 && (await pnlPdf.body()).subarray(0, 5).toString() === "%PDF-";
   console.log(exportsOk ? "✓ flow: P&L by month downloads as CSV and PDF" : "✗ flow: report exports");
   if (!exportsOk) problems.push(`report exports ${pnlCsv.status()} ${pnlPdf.status()}`);
+
+  // Open invoices link to their documents; the audit trail prints.
+  await page.goto(BASE + "/reports/open-invoices", { waitUntil: "networkidle" });
+  await page.getByRole("link", { name: /^Invoice / }).first().click();
+  await page.waitForURL(/\/ar\/invoices\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.goto(BASE + "/reports/audit-trail", { waitUntil: "networkidle" });
+  const trailPdf = await page.request.get(BASE + (await page.getByRole("link", { name: "PDF", exact: true }).getAttribute("href")));
+  const trailOk = trailPdf.status() === 200 && (await trailPdf.body()).subarray(0, 5).toString() === "%PDF-";
+  console.log(trailOk ? "✓ flow: open invoices link to invoices; the audit trail prints" : "✗ flow: open invoices / audit trail");
+  if (!trailOk) problems.push(`audit trail PDF ${trailPdf.status()}`);
 
   await page.goto(BASE + "/banking/transactions/new?type=check", { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Bank account" }).first().click();

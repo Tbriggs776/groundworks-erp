@@ -201,9 +201,12 @@ export async function getBalanceSheet(
     includeZero: false,
   });
 
+  // Amounts read on the section's side (assets debit, the rest credit), so a
+  // contra account (accumulated depreciation, owner's draw) shows negative.
   function buildSection(
     label: string,
-    subcats: Account["subcategory"][]
+    subcats: Account["subcategory"][],
+    side: "debit" | "credit"
   ): StatementSection {
     const subgroups: StatementSubgroup[] = [];
     let sectionTotal = money(0);
@@ -211,8 +214,7 @@ export async function getBalanceSheet(
       const rows = tb
         .filter((r) => r.subcategory === sc)
         .map<StatementRow>((r) => {
-          const display =
-            r.normalBalance === "debit" ? r.netDebit : r.netDebit.neg();
+          const display = side === "debit" ? r.netDebit : r.netDebit.neg();
           return {
             accountId: r.accountId,
             code: r.code,
@@ -232,9 +234,9 @@ export async function getBalanceSheet(
     return { label, subgroups, total: sectionTotal };
   }
 
-  const assets = buildSection("Assets", ASSET_SUBCATS);
-  const liabilities = buildSection("Liabilities", LIABILITY_SUBCATS);
-  const equity = buildSection("Equity", EQUITY_SUBCATS);
+  const assets = buildSection("Assets", ASSET_SUBCATS, "debit");
+  const liabilities = buildSection("Liabilities", LIABILITY_SUBCATS, "credit");
+  const equity = buildSection("Equity", EQUITY_SUBCATS, "credit");
 
   // Current-year P&L accounts roll into equity for a balanced sheet. Until
   // year-end close generates an explicit "Current Year Earnings" entry, we
@@ -312,7 +314,9 @@ export async function getIncomeStatement(
   opts: { fromDate: string; toDate: string }
 ): Promise<IncomeStatement> {
   // Period-scoped activity: get debits/credits for each account between
-  // fromDate and toDate (inclusive), posted only.
+  // fromDate and toDate (inclusive), ledger journals only. The journal join
+  // carries the date and status filter, so only lines that found their
+  // journal count.
   const rows = await db
     .select({
       accountId: accounts.id,
@@ -320,8 +324,8 @@ export async function getIncomeStatement(
       name: accounts.name,
       subcategory: accounts.subcategory,
       normalBalance: accounts.normalBalance,
-      totalDebit: sql<string>`COALESCE(SUM(${glLines.debitLocal}), 0)::text`,
-      totalCredit: sql<string>`COALESCE(SUM(${glLines.creditLocal}), 0)::text`,
+      totalDebit: sql<string>`COALESCE(SUM(${glLines.debitLocal}) FILTER (WHERE ${glJournals.id} IS NOT NULL), 0)::text`,
+      totalCredit: sql<string>`COALESCE(SUM(${glLines.creditLocal}) FILTER (WHERE ${glJournals.id} IS NOT NULL), 0)::text`,
     })
     .from(accounts)
     .leftJoin(
@@ -355,7 +359,7 @@ export async function getIncomeStatement(
     )
     .orderBy(asc(accounts.code));
 
-  function section(label: string, subcats: Account["subcategory"][]): StatementSection {
+  function section(label: string, subcats: Account["subcategory"][], side: "debit" | "credit"): StatementSection {
     const subgroups: StatementSubgroup[] = [];
     let total = money(0);
     for (const sc of subcats) {
@@ -363,10 +367,9 @@ export async function getIncomeStatement(
         .filter((r) => r.subcategory === sc)
         .map<StatementRow>((r) => {
           const netDebit = money(r.totalDebit).minus(money(r.totalCredit));
-          // For revenue (credit-normal), flip so revenue prints positive.
-          // For expenses (debit-normal), leave as-is (positive = expense).
-          const display =
-            r.normalBalance === "debit" ? netDebit : netDebit.neg();
+          // Revenue reads credit-positive and expenses debit-positive, by
+          // section, so a contra account (sales discounts) shows negative.
+          const display = side === "debit" ? netDebit : netDebit.neg();
           return {
             accountId: r.accountId,
             code: r.code,
@@ -384,11 +387,11 @@ export async function getIncomeStatement(
     return { label, subgroups, total };
   }
 
-  const revenue = section("Operating Revenue", REVENUE_SUBCATS);
-  const cogs = section("Cost of Goods Sold", COGS_SUBCATS);
-  const operatingExpenses = section("Operating Expenses", OPEX_SUBCATS);
-  const otherRevenue = section("Other Revenue", OTHER_REVENUE_SUBCATS);
-  const otherExpenses = section("Other Expense", OTHER_EXPENSE_SUBCATS);
+  const revenue = section("Operating Revenue", REVENUE_SUBCATS, "credit");
+  const cogs = section("Cost of Goods Sold", COGS_SUBCATS, "debit");
+  const operatingExpenses = section("Operating Expenses", OPEX_SUBCATS, "debit");
+  const otherRevenue = section("Other Revenue", OTHER_REVENUE_SUBCATS, "credit");
+  const otherExpenses = section("Other Expense", OTHER_EXPENSE_SUBCATS, "debit");
 
   // Merge other revenue into "other income/expense" section with expenses.
   // Convention: show income as negative expense so the section total nets

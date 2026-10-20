@@ -1,16 +1,10 @@
 import Link from "next/link";
-import { formatMoney, money } from "@/lib/money";
-import type { ReportTable } from "@/lib/reports/table";
-
-/** Money strings show as money; anything else (a date, a %, a number) as is. */
-function cell(v: string | null): string {
-  if (v === null) return "";
-  return /^-?\d+\.\d{2}$/.test(v) ? formatMoney(money(v)) : v;
-}
+import { cellText, columnKind, type ReportTable } from "@/lib/reports/table";
 
 /**
- * Any report table on screen, the same rows the CSV and PDF get. Account
- * rows link to their ledger for the report's range when `drill` is given.
+ * Any report table on screen, the same rows the CSV and PDF get. Rows with
+ * an `href` link to their document; account rows link to their ledger for
+ * the report's range when `drill` is given.
  */
 export function ReportTableView({
   table,
@@ -33,8 +27,8 @@ export function ReportTableView({
           <thead className="bg-muted/50">
             <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
               <th className="text-left font-medium px-3 py-2 min-w-56">{table.labelColumn}</th>
-              {table.columns.map((c) => (
-                <th key={c} className="text-right font-medium px-3 py-2 whitespace-nowrap">{c}</th>
+              {table.columns.map((c, j) => (
+                <th key={c} className={`${columnKind(table, j) === "text" ? "text-left" : "text-right"} font-medium px-3 py-2 whitespace-nowrap`}>{c}</th>
               ))}
             </tr>
           </thead>
@@ -48,9 +42,10 @@ export function ReportTableView({
               const strong = r.kind === "section" || r.kind === "subtotal" || r.kind === "total";
               const border = r.kind === "total" ? "border-t-2 border-border" : r.kind === "subtotal" ? "border-t border-border" : "";
               const href =
-                drill && r.accountId
+                r.href ??
+                (drill && r.accountId
                   ? `/reports/gl-detail?account=${r.accountId}${drill.from ? `&from=${drill.from}` : ""}${drill.to ? `&to=${drill.to}` : ""}`
-                  : null;
+                  : null);
               return (
                 <tr key={i} className={`${border} ${r.kind === "total" ? "bg-muted/30" : ""}`}>
                   <td className={`px-3 py-1.5 ${strong ? "font-semibold" : ""} ${r.kind === "section" ? "text-[11px] uppercase tracking-wider pt-3" : "text-xs"}`} style={{ paddingLeft: `${0.75 + (r.depth ?? 0) * 1.1}rem` }}>
@@ -62,8 +57,8 @@ export function ReportTableView({
                     )}
                   </td>
                   {table.columns.map((_, j) => (
-                    <td key={j} className={`px-3 py-1.5 text-right font-mono text-xs whitespace-nowrap ${strong ? "font-semibold" : ""}`}>
-                      {cell(r.values[j] ?? null)}
+                    <td key={j} className={`px-3 py-1.5 text-xs ${columnKind(table, j) === "text" ? "text-left" : "text-right font-mono whitespace-nowrap"} ${strong ? "font-semibold" : ""}`}>
+                      {cellText(table, j, r.values[j] ?? null)}
                     </td>
                   ))}
                 </tr>

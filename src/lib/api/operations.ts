@@ -32,6 +32,7 @@ import { listDimensions, listPeriods, ListPeriodsSchema, whoami } from "@/lib/gl
 import * as parties from "@/lib/parties/service";
 import { AgingSchema, apAging, arAging } from "@/lib/reports/aging";
 import * as financial from "@/lib/reports/financial";
+import * as reportDetail from "@/lib/reports/detail";
 import * as reportExports from "@/lib/reports/exports";
 import * as finStatements from "@/lib/reports/statements";
 import * as pdf from "@/lib/pdf/documents";
@@ -2284,10 +2285,82 @@ export const OPERATIONS: Operation[] = [
     run: (ctx, input) => finStatements.cashFlow(ctx, input),
   }),
   op({
+    name: "report_sales_by_customer",
+    title: "Sales by customer",
+    description:
+      "Sales per customer for a date range (default: year to date): income account postings net of credit memos, refunds, discounts, and voids, before sales tax, with each customer's share. A 'No customer' row holds income posted without one, so the total matches revenue on the P&L. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/sales-by-customer",
+    scope: "read",
+    input: reportDetail.SalesByCustomerSchema,
+    run: (ctx, input) => reportDetail.salesByCustomer(ctx, input),
+  }),
+  op({
+    name: "report_sales_by_item",
+    title: "Sales by product or service",
+    description:
+      "Quantity, amount, share, and average price per product or service for a date range: income lines on invoices and sales receipts less credit memos and refunds, by posting date (a void takes a sale back on the void's date). Lines without an item group under 'No item'. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/sales-by-item",
+    scope: "read",
+    input: reportDetail.SalesByItemSchema,
+    run: (ctx, input) => reportDetail.salesByItem(ctx, input),
+  }),
+  op({
+    name: "report_expenses_by_vendor",
+    title: "Expenses by vendor",
+    description:
+      "Spending per vendor for a date range: expense and COGS postings from bills, expenses, and checks, net of vendor credits and voids, with each vendor's share. A 'No vendor' row holds the rest (payroll, journal entries), so the total matches COGS plus expenses on the P&L. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/expenses-by-vendor",
+    scope: "read",
+    input: reportDetail.ExpensesByVendorSchema,
+    run: (ctx, input) => reportDetail.expensesByVendor(ctx, input),
+  }),
+  op({
+    name: "report_open_invoices",
+    title: "Open invoices",
+    description:
+      "Every open invoice as of a date (default today), grouped by customer, with date, due date, days past due, amount, and open balance; unused credit memos and unapplied payments show as negative balances. The detail behind the AR aging. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/open-invoices",
+    scope: "read",
+    input: reportDetail.OpenDocumentsSchema,
+    run: (ctx, input) => reportDetail.openInvoices(ctx, input),
+  }),
+  op({
+    name: "report_unpaid_bills",
+    title: "Unpaid bills",
+    description:
+      "Every unpaid bill as of a date (default today), grouped by vendor, with date, due date, days past due, amount, and open balance; unused vendor credits show as negative balances. The detail behind the AP aging. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/unpaid-bills",
+    scope: "read",
+    input: reportDetail.OpenDocumentsSchema,
+    run: (ctx, input) => reportDetail.unpaidBills(ctx, input),
+  }),
+  op({
+    name: "report_audit_trail",
+    title: "Audit trail",
+    description:
+      "The company's audit log for a date range (UTC days, default: year to date), oldest first: event, record, time, who, and channel. Filter by actorType (user, agent, system) or agentId. At most 5,000 events; a note says when there are more. For recent activity a page at a time, use list_activity.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/audit-trail",
+    scope: "read",
+    input: reportDetail.AuditTrailSchema,
+    run: (ctx, input) => reportDetail.auditTrail(ctx, input),
+  }),
+  op({
     name: "export_report",
     title: "Download a report as CSV or PDF",
     description:
-      "Any report as a file: profit-and-loss, profit-and-loss-by-period, profit-and-loss-by-class, budget-vs-actual, cash-flow, balance-sheet, trial-balance, ar-aging, ap-aging, account-ledger (accountId), or 1099 (year; TINs masked). Pass the same filters the report takes. format csv or pdf (letterhead). Returns { fileName, contentType, sizeBytes, base64 }. Each download is audited.",
+      "Any report as a file: profit-and-loss, profit-and-loss-by-period, profit-and-loss-by-class, budget-vs-actual, cash-flow, balance-sheet, trial-balance, ar-aging, ap-aging, account-ledger (accountId), 1099 (year; TINs masked), sales-by-customer, sales-by-item, expenses-by-vendor, open-invoices, unpaid-bills, or audit-trail. Pass the same filters the report takes. format csv or pdf (letterhead). Returns { fileName, contentType, sizeBytes, base64 }. Each download is audited.",
     group: "Reports",
     method: "GET",
     path: "/reports/export",

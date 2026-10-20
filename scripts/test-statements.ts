@@ -177,6 +177,63 @@ async function main() {
     await expectError(() => run(owner, (ctx) => reportTable(ctx, { report: "account-ledger", accountId: classDim.id })), "not_found");
   });
 
+  section("Contra accounts read on their section's side");
+  const april = { from: "2026-04-01", to: "2026-04-30" };
+  await check("April: a sale, a sales discount, depreciation, and an owner's draw", async () => {
+    await post("2026-04-02", "Sale", [
+      { accountId: cash.id, debit: "1000" },
+      { accountId: sales.id, credit: "1000" },
+    ]);
+    await post("2026-04-03", "Discount", [
+      { accountId: account(t, "4950").id, debit: "50" },
+      { accountId: cash.id, credit: "50" },
+    ]);
+    await post("2026-04-15", "Draw", [
+      { accountId: account(t, "3400").id, debit: "200" },
+      { accountId: cash.id, credit: "200" },
+    ]);
+    await post("2026-04-30", "Depreciation", [
+      { accountId: account(t, "6700").id, debit: "100" },
+      { accountId: account(t, "1590").id, credit: "100" },
+    ]);
+  });
+  await check("P&L: sales discounts reduce revenue (950), net income 850 on both income statements", async () => {
+    const r = await run(viewer, (ctx) => st.profitAndLossTable(ctx, april));
+    assertEq(r.rows.find((x) => x.code === "4950")?.values[0], "-50.00", "discount shows negative");
+    assertEq(row(r, "Total Operating Revenue")[0], "950.00", "revenue");
+    assertEq(row(r, "Net Income")[0], "850.00", "net income");
+    const is = await getIncomeStatement(t.org.id, { fromDate: april.from, toDate: april.to });
+    assertEq(is.revenue.total.toFixed(2), "950.00", "income statement revenue");
+    assertEq(is.netIncome.toFixed(2), "850.00", "income statement net income");
+  });
+  await check("balance sheet: accumulated depreciation and the draw show negative, and it balances", async () => {
+    const r = await run(viewer, (ctx) => reportTable(ctx, { report: "balance-sheet", asOf: "2026-04-30" }));
+    assertEq(r.rows.find((x) => x.code === "1590")?.values[0], "-100.00", "accumulated depreciation");
+    assertEq(r.rows.find((x) => x.code === "3400")?.values[0], "-200.00", "owner's draw");
+    assertEq(row(r, "Total Liabilities and Equity")[0], row(r, "Total Assets")[0], "balances");
+    assert(!r.notes?.length, `no out-of-balance note: ${r.notes?.join(" ")}`);
+  });
+  await check("statements as of March ignore April's entries", async () => {
+    const is = await getIncomeStatement(t.org.id, { fromDate: q1.from, toDate: q1.to });
+    assertEq(is.netIncome.toFixed(2), "1000.00", "Q1 net income unchanged");
+    const r = await run(viewer, (ctx) => reportTable(ctx, { report: "balance-sheet", asOf: "2026-03-31" }));
+    assertEq(row(r, "Total Assets")[0], "6200.00", "assets as of March 31");
+    assertEq(row(r, "Total Liabilities and Equity")[0], "6200.00", "still balances");
+  });
+  await check("cash flow: depreciation is added back under operating; the draw is financing", async () => {
+    const r = await run(viewer, (ctx) => st.cashFlow(ctx, april));
+    const opStart = r.rows.findIndex((x) => x.label === "Operating Activities");
+    const opEnd = r.rows.findIndex((x) => x.label === "Net cash from operating activities");
+    const dep = r.rows.findIndex((x) => x.code === "1590");
+    assert(dep > opStart && dep < opEnd, "1590 sits under operating");
+    assertEq(r.rows[dep].values[0], "100.00", "added back");
+    assertEq(row(r, "Net cash from operating activities")[0], "950.00", "850 + 100");
+    assertEq(row(r, "Net cash from investing activities")[0], "0.00", "nothing invested");
+    assertEq(row(r, "Net cash from financing activities")[0], "-200.00", "the draw");
+    assertEq(r.cash.netChange, "750.00", "1000 − 50 − 200");
+    assert(r.cash.reconciles, "ties to cash");
+  });
+
   finish();
 }
 

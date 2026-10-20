@@ -23,19 +23,19 @@ import { fmt2, type ReportRow, type ReportTable } from "./table";
 const today = () => format(new Date(), "yyyy-MM-dd");
 const yearStart = () => format(startOfYear(new Date()), "yyyy-MM-dd");
 
-const Range = {
+export const Range = {
   from: isoDate.optional().describe("Start date (inclusive). Defaults to Jan 1 of this year."),
   to: isoDate.optional().describe("End date (inclusive). Defaults to today."),
 };
 
-function range(f: { from?: string; to?: string }) {
+export function range(f: { from?: string; to?: string }) {
   const from = f.from ?? yearStart();
   const to = f.to ?? today();
   if (to < from) throw new AppError("invalid_input", "The end date can't be before the start date.");
   return { from, to };
 }
 
-function rangeLabel(from: string, to: string) {
+export function rangeLabel(from: string, to: string) {
   return `${format(parseISO(from), "MMM d, yyyy")} to ${format(parseISO(to), "MMM d, yyyy")}`;
 }
 
@@ -76,31 +76,34 @@ async function netByBucket(
   return out;
 }
 
-const SECTIONS: Array<{ key: string; label: string; total: string; subcats: Account["subcategory"][] }> = [
-  { key: "revenue", label: "Operating Revenue", total: "Total Operating Revenue", subcats: ["operating_revenue"] },
-  { key: "cogs", label: "Cost of Goods Sold", total: "Total COGS", subcats: ["cogs_labor", "cogs_materials", "cogs_equipment", "cogs_subcontractor", "cogs_other"] },
-  { key: "opex", label: "Operating Expenses", total: "Total Operating Expenses", subcats: ["operating_expense", "sga"] },
-  { key: "otherRevenue", label: "Other Revenue", total: "Total Other Revenue", subcats: ["other_revenue"] },
-  { key: "otherExpense", label: "Other Expense", total: "Total Other Expense", subcats: ["interest", "tax", "other_expense"] },
+type Side = "debit" | "credit";
+
+const SECTIONS: Array<{ key: string; label: string; total: string; side: Side; subcats: Account["subcategory"][] }> = [
+  { key: "revenue", label: "Operating Revenue", total: "Total Operating Revenue", side: "credit", subcats: ["operating_revenue"] },
+  { key: "cogs", label: "Cost of Goods Sold", total: "Total COGS", side: "debit", subcats: ["cogs_labor", "cogs_materials", "cogs_equipment", "cogs_subcontractor", "cogs_other"] },
+  { key: "opex", label: "Operating Expenses", total: "Total Operating Expenses", side: "debit", subcats: ["operating_expense", "sga"] },
+  { key: "otherRevenue", label: "Other Revenue", total: "Total Other Revenue", side: "credit", subcats: ["other_revenue"] },
+  { key: "otherExpense", label: "Other Expense", total: "Total Other Expense", side: "debit", subcats: ["interest", "tax", "other_expense"] },
 ];
 
 /**
  * P&L rows for any set of columns. `net` holds net debit per account per
- * bucket; display flips credit-normal accounts so revenue prints positive.
+ * bucket; revenue sections read credit-positive and expense sections
+ * debit-positive, so a contra account (sales discounts) shows negative.
  * Returns the rows and the net income per column.
  */
 function pnlRows(accts: PnlAccount[], net: Map<string, Map<string, Decimal>>, buckets: string[]): { rows: ReportRow[]; netIncome: Decimal[] } {
   const zero = () => buckets.map(() => money(0));
-  const display = (a: PnlAccount, b: string) => {
+  const display = (a: PnlAccount, b: string, side: Side) => {
     const n = net.get(a.id)?.get(b) ?? money(0);
-    return a.normalBalance === "debit" ? n : n.neg();
+    return side === "debit" ? n : n.neg();
   };
   const rows: ReportRow[] = [];
   const totals: Record<string, Decimal[]> = {};
   for (const s of SECTIONS) {
     const sectionAccounts = accts
       .filter((a) => s.subcats.includes(a.subcategory))
-      .map((a) => ({ a, values: buckets.map((b) => display(a, b)) }))
+      .map((a) => ({ a, values: buckets.map((b) => display(a, b, s.side)) }))
       .filter((x) => x.values.some((v) => !v.isZero()));
     const sum = zero();
     for (const x of sectionAccounts) x.values.forEach((v, i) => (sum[i] = sum[i].plus(v)));
@@ -328,13 +331,19 @@ const OPERATING: Account["subcategory"][] = ["receivables", "inventory", "other_
 const INVESTING: Account["subcategory"][] = ["fixed_assets", "other_asset"];
 const FINANCING: Account["subcategory"][] = ["lt_debt", "other_liability", "equity", "retained_earnings"];
 
+type CashFlowAccount = Pick<Account, "id" | "code" | "name" | "subcategory" | "normalBalance">;
+/** Accumulated depreciation and amortization: non-cash, so added back under operating. */
+const isContraLongTermAsset = (a: CashFlowAccount) => INVESTING.includes(a.subcategory) && a.normalBalance === "credit";
+
 export type CashFlow = ReportTable & {
   cash: { beginning: string; netChange: string; ending: string; reconciles: boolean };
 };
 
 /**
  * Net income, adjusted by the change in every balance sheet account other
- * than cash, grouped into operating, investing, and financing. Cash means
+ * than cash, grouped into operating, investing, and financing. Accumulated
+ * depreciation and amortization count as operating (a non-cash expense
+ * added back), not investing. Cash means
  * accounts in the cash subcategory (banks, petty cash, undeposited funds).
  * The net change always equals the change in those accounts' balances; a
  * mismatch would mean an unbalanced journal, and the table says so.
@@ -350,20 +359,20 @@ export async function cashFlow(ctx: Ctx, input: z.input<typeof CashFlowSchema> =
 
   const bs = await netByBucket(ctx, { from, to, bucket: sql`'all'`, category: "balance_sheet" });
   const bsAccounts = await ctx.tx
-    .select({ id: accounts.id, code: accounts.code, name: accounts.name, subcategory: accounts.subcategory })
+    .select({ id: accounts.id, code: accounts.code, name: accounts.name, subcategory: accounts.subcategory, normalBalance: accounts.normalBalance })
     .from(accounts)
     .where(and(eq(accounts.organizationId, org), eq(accounts.category, "balance_sheet")))
     .orderBy(asc(accounts.code));
 
   const rows: ReportRow[] = [];
-  const section = (label: string, total: string, subcats: Account["subcategory"][], lead?: ReportRow) => {
+  const section = (label: string, total: string, belongs: (a: CashFlowAccount) => boolean, lead?: ReportRow) => {
     rows.push({ kind: "section", label, values: [null] });
     let sum = money(0);
     if (lead) {
       rows.push(lead);
       sum = sum.plus(money(lead.values[0] ?? 0));
     }
-    for (const a of bsAccounts.filter((x) => subcats.includes(x.subcategory))) {
+    for (const a of bsAccounts.filter(belongs)) {
       const change = bs.get(a.id)?.get("all") ?? money(0);
       if (change.isZero()) continue;
       // More asset (net debit up) used cash; more liability or equity (net debit down) brought it in.
@@ -374,14 +383,14 @@ export async function cashFlow(ctx: Ctx, input: z.input<typeof CashFlowSchema> =
     rows.push({ kind: "subtotal", label: total, values: [fmt2(sum)] });
     return sum;
   };
-  const operating = section("Operating Activities", "Net cash from operating activities", OPERATING, {
-    kind: "account",
-    label: "Net Income",
-    depth: 1,
-    values: [fmt2(netIncome)],
-  });
-  const investing = section("Investing Activities", "Net cash from investing activities", INVESTING);
-  const financing = section("Financing Activities", "Net cash from financing activities", FINANCING);
+  const operating = section(
+    "Operating Activities",
+    "Net cash from operating activities",
+    (a) => OPERATING.includes(a.subcategory) || isContraLongTermAsset(a),
+    { kind: "account", label: "Net Income", depth: 1, values: [fmt2(netIncome)] }
+  );
+  const investing = section("Investing Activities", "Net cash from investing activities", (a) => INVESTING.includes(a.subcategory) && !isContraLongTermAsset(a));
+  const financing = section("Financing Activities", "Net cash from financing activities", (a) => FINANCING.includes(a.subcategory));
   const netChange = operating.plus(investing).plus(financing);
 
   const [cash] = await ctx.tx.execute<{ before: string; during: string }>(sql`
