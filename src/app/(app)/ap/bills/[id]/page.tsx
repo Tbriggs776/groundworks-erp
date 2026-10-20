@@ -10,8 +10,12 @@ import {
   apBills,
   vendors,
 } from "@/lib/db/schema";
-import { getUser, requireCurrentOrg } from "@/lib/auth";
+import { runAs } from "@/lib/actor";
+import { getBill } from "@/lib/ap/bills";
+import { creditsOnBill, listVendorCreditsAvailable } from "@/lib/ap/credits";
+import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { formatMoney, money } from "@/lib/money";
+import { UseVendorCredit, VendorCreditUses } from "../../credit-panels";
 import { BillActions } from "./bill-actions";
 
 export default async function BillDetailPage({
@@ -46,6 +50,16 @@ export default async function BillDetailPage({
     .orderBy(asc(apBillLines.lineNumber));
 
   const { bill, vendor } = result;
+  const actor = await requireActor();
+  const live = bill.status === "posted" || bill.status === "paid";
+  const [detail, applied, available] = live
+    ? await runAs(actor, async (ctx) => [
+        await getBill(ctx, { id: bill.id }),
+        await creditsOnBill(ctx, bill.id),
+        bill.status === "posted" ? await listVendorCreditsAvailable(ctx, { vendorId: bill.vendorId }) : [],
+      ] as const)
+    : [null, [], []];
+  const fmt = (v: string) => formatMoney(v, { currency: bill.currency });
 
   return (
     <AppShell
@@ -177,6 +191,30 @@ export default async function BillDetailPage({
             </tfoot>
           </table>
         </div>
+
+        {detail && (
+          <div className="flex flex-wrap justify-end gap-6 text-xs">
+            <span className="text-muted-foreground">
+              Paid and credited <span className="font-mono text-foreground">{fmt(money(bill.totalAmount).minus(money(detail.openBalance)).toFixed(2))}</span>
+            </span>
+            <span className="text-muted-foreground">
+              Balance due <span className="font-mono text-sm font-semibold text-foreground">{fmt(detail.openBalance)}</span>
+            </span>
+          </div>
+        )}
+        {detail && bill.status === "posted" && available.length > 0 && money(detail.openBalance).gt(0) && (
+          <UseVendorCredit
+            billId={bill.id}
+            openBalance={detail.openBalance}
+            currency={bill.currency}
+            credits={available.map((c) => ({ id: c.id, number: c.number, remaining: c.remaining }))}
+          />
+        )}
+        <VendorCreditUses
+          uses={applied.map((a) => ({ ...a, billId: bill.id, billNumber: bill.billNumber, vendorRefundId: null, refundNumber: null }))}
+          currency={bill.currency}
+          show="credit"
+        />
 
         {bill.notes && (
           <div>

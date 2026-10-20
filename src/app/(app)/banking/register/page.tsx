@@ -23,6 +23,8 @@ function sourceHref(s: RegisterRow["source"]): string {
       return `/ar/refunds/${s.id}`;
     case "sales_tax_payment":
       return `/sales-tax`;
+    case "vendor_refund":
+      return `/ap/vendor-refunds/${s.id}`;
     default:
       return `/gl/${s.id}`;
   }

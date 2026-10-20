@@ -2,6 +2,7 @@ import { differenceInCalendarDays, format, parseISO } from "date-fns";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { requirePermission, type Ctx } from "@/lib/actor";
+import { billSettledSql, vendorCreditLeftSql } from "@/lib/ap/balances";
 import { creditMemoLeftSql, invoiceSettledSql, paymentUnappliedSql } from "@/lib/ar/balances";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { isoDate } from "@/lib/schemas";
@@ -28,8 +29,8 @@ export type AgingBuckets = {
 
 export type AgingDocument = {
   id: string;
-  /** invoice / bill, or an unused customer credit (shown negative). */
-  kind: "invoice" | "bill" | "credit_memo" | "payment";
+  /** invoice / bill, or an unused customer or vendor credit (shown negative). */
+  kind: "invoice" | "bill" | "credit_memo" | "payment" | "vendor_credit";
   number: string;
   date: string;
   dueDate: string;
@@ -177,20 +178,23 @@ export async function apAging(ctx: Ctx, input: z.input<typeof AgingSchema> = {})
   const rows = await ctx.tx.execute<Row>(sql`
     SELECT b.id, 'bill' AS kind, b.bill_number AS number, b.bill_date::text AS doc_date,
            b.due_date::text AS due_date, b.total_amount::text AS total,
-           COALESCE((
-             SELECT SUM(a.applied_amount + a.discount_amount)
-               FROM ap_payment_applications a
-               JOIN ap_payments p ON p.id = a.payment_id
-              WHERE a.bill_id = b.id
-                AND p.status = 'posted'
-                AND p.payment_date <= ${asOf}::date
-           ), 0)::text AS applied,
+           ${billSettledSql(sql`b.id`, asOf)}::text AS applied,
            v.id AS party_id, v.name AS party_name
       FROM ap_bills b
       JOIN vendors v ON v.id = b.vendor_id
      WHERE b.organization_id = ${ctx.actor.organizationId}
        AND b.status IN ('posted', 'paid')
        AND b.bill_date <= ${asOf}::date
+    UNION ALL
+    -- Unused vendor credits show as negative amounts, aged from their date.
+    SELECT c.id, 'vendor_credit', c.credit_number, c.credit_date::text, c.credit_date::text,
+           (-${vendorCreditLeftSql(sql`c.id`, sql`c.total_amount`, asOf)})::text, '0',
+           v.id, v.name
+      FROM vendor_credits c
+      JOIN vendors v ON v.id = c.vendor_id
+     WHERE c.organization_id = ${ctx.actor.organizationId}
+       AND c.status IN ('open', 'applied')
+       AND c.credit_date <= ${asOf}::date
   `);
   return buildReport(asOf, rows);
 }

@@ -33,6 +33,8 @@ export default async function CompanyProfilePage() {
             website: p.website ?? "",
             taxId: p.taxId ?? "",
             documentFooter: p.documentFooter ?? "",
+            checkOffsetX: Number(p.checkOffsetX).toFixed(2),
+            checkOffsetY: Number(p.checkOffsetY).toFixed(2),
           }}
         />
       </div>

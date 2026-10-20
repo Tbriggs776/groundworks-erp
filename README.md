@@ -123,7 +123,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 152 operations: accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, bills, bill payments, banking (transactions, statement import, For review, rules, reconciliation), reports, review queue, activity |
+| Tools | 172 operations: accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), reports, review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -170,8 +170,9 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-19 suites: posting engine, recurring/allocations/budgets, reports, FX,
-parties, bills, bill payments, invoices and payments, sales (tax, receipts,
+20 suites: posting engine, recurring/allocations/budgets, reports, FX,
+parties, bills, bill payments, vendor credits and refunds (plus card
+payments and printed checks), invoices and payments, sales (tax, receipts,
 credit memos, credits, refunds, the liability report), estimates and
 recurring invoices (progress invoicing, the daily run), documents (company
 profile and logo, PDFs, statements), banking (transactions, statement

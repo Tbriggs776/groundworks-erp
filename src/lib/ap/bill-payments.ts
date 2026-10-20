@@ -19,7 +19,7 @@ import {
 import { writeAudit } from "@/lib/audit";
 import { AppError, invalidState, notFound } from "@/lib/errors";
 import { nextNumber } from "@/lib/gl/number-series";
-import { requirePostingAccount } from "@/lib/gl/lookups";
+import { requireBankingAccount } from "@/lib/banking/common";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { postOrQueueForReview, type ReviewNotice } from "@/lib/review-policy";
 import {
@@ -34,6 +34,7 @@ import {
   toPage,
   type Page,
 } from "@/lib/schemas";
+import { assertPrintLater } from "./checks";
 import {
   billAppliedTotal,
   postPaymentToGl,
@@ -64,7 +65,11 @@ export const CreateBillPaymentSchema = z.object({
   paymentDate: isoDate,
   method: z.enum(paymentMethod.enumValues),
   reference: optionalText(100).describe("Check number, ACH trace, or confirmation #."),
-  bankAccountId: id.describe("Bank / cash account the money leaves from."),
+  bankAccountId: id.describe("Bank, cash, or credit card account the money leaves from. Paying with a card adds to the card's balance."),
+  printLater: z
+    .boolean()
+    .optional()
+    .describe("Method check from a bank account: put it in the check print queue (print_checks gives it a number). Leave reference empty."),
   currency: currency.optional(),
   exchangeRate: amount.optional(),
   memo: optionalText(500),
@@ -220,10 +225,8 @@ export async function createBillPayment(
     .from(vendors)
     .where(and(eq(vendors.id, data.vendorId), eq(vendors.organizationId, org)));
   if (!vendor) throw notFound("Vendor");
-  await requirePostingAccount(ctx.tx, org, data.bankAccountId, {
-    cash: true,
-    label: "Payment bank account",
-  });
+  const bank = await requireBankingAccount(ctx.tx, org, data.bankAccountId, { label: "Payment account" });
+  if (data.printLater) assertPrintLater(bank, { isCheck: data.method === "check", reference: data.reference });
 
   const apps = data.applications.map((a) => ({
     billId: a.billId,
@@ -247,6 +250,7 @@ export async function createBillPayment(
       paymentDate: data.paymentDate,
       method: data.method,
       reference: data.reference,
+      toPrint: data.printLater ?? false,
       bankAccountId: data.bankAccountId,
       currency: data.currency ?? vendor.currency,
       exchangeRate: data.exchangeRate ?? "1",

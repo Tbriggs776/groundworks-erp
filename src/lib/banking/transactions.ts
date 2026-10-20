@@ -38,6 +38,7 @@ import {
   toPage,
   type Page,
 } from "@/lib/schemas";
+import { assertPrintLater } from "@/lib/ap/checks";
 import { DimensionTagSchema, requireBankingAccount } from "./common";
 import { linkPostedTransactionToStatement } from "./matching";
 import { bankTxnLabel, postBankTransactionToGl, voidBankTransactionFromGl } from "./posting";
@@ -74,6 +75,10 @@ export const CreateExpenseSchema = z.object({
   ...payee,
   method: z.enum(paymentMethod.enumValues).optional(),
   reference: optionalText(100).describe("Check number, card reference, or confirmation."),
+  printLater: z
+    .boolean()
+    .optional()
+    .describe("Type check from a bank account: put it in the check print queue (print_checks gives it a number). Leave reference empty."),
   memo: optionalText(500),
   currency: currency.optional(),
   exchangeRate: amount.optional(),
@@ -468,6 +473,7 @@ export async function createExpense(
   requirePermission(ctx.actor, "write", "bookkeeper", "record expenses and checks");
   const d = CreateExpenseSchema.parse(input);
   const bank = await requireBankingAccount(ctx.tx, ctx.actor.organizationId, d.bankAccountId, { label: "Payment account" });
+  if (d.printLater) assertPrintLater(bank, { isCheck: d.type === "check", reference: d.reference });
   await validatePayee(ctx, d);
   const lines = await validateLines(ctx, bank.id, d.lines);
   const total = sumMoney(lines.map((l) => l.amount));
@@ -483,6 +489,7 @@ export async function createExpense(
       payeeName: d.payeeName,
       method: d.method ?? (d.type === "check" ? "check" : undefined),
       reference: d.reference,
+      toPrint: d.printLater ?? false,
       memo: d.memo,
       currency: d.currency ?? bank.currency ?? "USD",
       exchangeRate: d.exchangeRate ?? "1",

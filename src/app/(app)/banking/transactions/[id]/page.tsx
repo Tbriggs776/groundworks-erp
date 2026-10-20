@@ -3,18 +3,19 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell/shell";
 import { CreatorChip } from "@/components/creator-chip";
 import { StatusBadge } from "@/components/status-badge";
-import { runAs } from "@/lib/actor";
+import { hasRole, runAs } from "@/lib/actor";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { getBankTransaction } from "@/lib/banking/transactions";
 import { toAppError } from "@/lib/errors";
 import { formatMoney } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
 import { Stat, TXN_TYPE_LABEL } from "../../ui";
+import { CheckControls } from "../../../ap/check-controls";
 import { TxnActions } from "./txn-actions";
 
 export default async function BankTransactionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { organization } = await requireCurrentOrg();
+  const { organization, role } = await requireCurrentOrg();
   const user = await getUser();
   const actor = await requireActor();
   const t = await runAs(actor, (ctx) => getBankTransaction(ctx, { id })).catch((e) => {
@@ -49,6 +50,9 @@ export default async function BankTransactionPage({ params }: { params: Promise<
           </div>
           <div className="flex flex-col items-end gap-2">
             <TxnActions txn={{ id: t.id, status: t.status, txnNumber: t.txnNumber }} />
+            {t.type === "check" && t.status === "posted" && (
+              <CheckControls kind="check" id={t.id} bankAccountId={t.bankAccountId} toPrint={t.toPrint} canEdit={hasRole(role, "bookkeeper")} />
+            )}
             <Link href="/banking/transactions" className="text-xs text-muted-foreground hover:text-foreground">
               ← Back to transactions
             </Link>

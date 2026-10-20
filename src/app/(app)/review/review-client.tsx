@@ -18,6 +18,8 @@ const TYPE_LABEL: Record<ReviewItem["type"], string> = {
   refund_receipt: "Refund",
   bill: "Bill",
   bill_payment: "Bill payment",
+  vendor_credit: "Vendor credit",
+  vendor_refund: "Vendor refund",
   journal_entry: "Journal entry",
   bank_transaction: "Bank transaction",
 };
