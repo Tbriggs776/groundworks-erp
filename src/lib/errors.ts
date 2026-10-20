@@ -82,9 +82,30 @@ export function rethrowUnique(err: unknown, message: string): never {
   throw err;
 }
 
+/**
+ * Postgres foreign_key_violation, including the tenant guards (migration
+ * 0022): a reference to something that isn't in this company. Reads as
+ * "not found" so another company's ids are never confirmed to exist.
+ */
+function foreignKeyViolation(err: unknown): AppError | null {
+  const e = err as { code?: string; message?: string; cause?: { code?: string; message?: string } };
+  const pg = e.code === "23503" ? e : e.cause?.code === "23503" ? e.cause : null;
+  if (!pg) return null;
+  const message = pg.message ?? "";
+  const guard = /^tenant_guard: (.*)$/.exec(message);
+  if (guard) return new AppError("not_found", `${guard[1].charAt(0).toUpperCase()}${guard[1].slice(1)}.`);
+  // The other direction: removing something that's still referenced.
+  if (message.startsWith("update or delete on table")) {
+    return new AppError("conflict", "This record is still in use, so it can't be removed.");
+  }
+  return new AppError("not_found", "A referenced record doesn't exist.");
+}
+
 /** Normalize anything thrown at a boundary into an AppError. */
 export function toAppError(err: unknown): AppError {
   if (err instanceof AppError) return err;
+  const fk = foreignKeyViolation(err);
+  if (fk) return fk;
   if (err instanceof ZodError) {
     const issues = err.issues.map((i) => ({
       path: i.path.join("."),

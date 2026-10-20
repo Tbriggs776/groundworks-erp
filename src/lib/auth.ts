@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { memberships, organizations, workspaceMembers, workspaces } from "@/lib/db/schema";
 import {
@@ -17,6 +17,7 @@ import {
   type WorkspaceRole,
 } from "@/lib/actor";
 import { checkSession, type SessionVerdict } from "@/lib/security/sessions";
+import { supportWorkspacesFor } from "@/lib/security/support";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -103,16 +104,26 @@ export async function requireUser(): Promise<SessionUser> {
 // Workspaces and companies the user can reach
 // ---------------------------------------------------------------------------
 
+/** Set when the access comes from an owner's support grant, not a seat. */
+export type SupportVia = { grantId: string; expiresAt: Date };
+
 export type WorkspaceMembership = {
   workspaceId: string;
   role: WorkspaceRole;
   workspace: typeof workspaces.$inferSelect;
+  support?: SupportVia;
 };
+
+/** Workspaces Groundworks support may open right now (none for everyone else). */
+const getSupportWorkspaces = cache(async () => {
+  const user = await getUser();
+  return user ? supportWorkspacesFor(user.id, user.aal) : [];
+});
 
 export const getUserWorkspaces = cache(async (): Promise<WorkspaceMembership[]> => {
   const user = await getUser();
   if (!user) return [];
-  return db
+  const own = await db
     .select({ workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role, workspace: workspaces })
     .from(workspaceMembers)
     .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
@@ -125,6 +136,15 @@ export const getUserWorkspaces = cache(async (): Promise<WorkspaceMembership[]> 
       )
     )
     .orderBy(asc(workspaces.name));
+  const support = (await getSupportWorkspaces())
+    .filter((g) => !own.some((w) => w.workspaceId === g.workspaceId))
+    .map((g): WorkspaceMembership => ({
+      workspaceId: g.workspaceId,
+      role: "member",
+      workspace: g.workspace,
+      support: { grantId: g.grantId, expiresAt: g.expiresAt },
+    }));
+  return [...own, ...support];
 });
 
 export type MembershipWithOrg = {
@@ -132,6 +152,7 @@ export type MembershipWithOrg = {
   organizationId: string;
   role: Role;
   organization: typeof organizations.$inferSelect;
+  support?: SupportVia;
 };
 
 /**
@@ -142,7 +163,7 @@ export type MembershipWithOrg = {
 export const getUserMemberships = cache(async (): Promise<MembershipWithOrg[]> => {
   const user = await getUser();
   if (!user) return [];
-  return db
+  const own = await db
     .select({
       membershipId: memberships.id,
       organizationId: memberships.organizationId,
@@ -169,6 +190,21 @@ export const getUserMemberships = cache(async (): Promise<MembershipWithOrg[]> =
       )
     )
     .orderBy(asc(organizations.name));
+  // Support: a read-only seat in every company of a granted workspace.
+  const grants = (await getUserWorkspaces()).filter((w) => w.support);
+  if (grants.length === 0) return own;
+  const companies = await db
+    .select()
+    .from(organizations)
+    .where(and(inArray(organizations.workspaceId, grants.map((g) => g.workspaceId)), isNull(organizations.deletedAt)))
+    .orderBy(asc(organizations.name));
+  return [
+    ...own,
+    ...companies.map((organization): MembershipWithOrg => {
+      const via = grants.find((g) => g.workspaceId === organization.workspaceId)!.support!;
+      return { membershipId: via.grantId, organizationId: organization.id, role: "viewer", organization, support: via };
+    }),
+  ];
 });
 
 /** Cookie holding the company the user last switched to. */
@@ -241,6 +277,7 @@ export async function requireActor(min: Role = "viewer"): Promise<Actor> {
     userId: user.id,
     role: current.role,
     meta: await getRequestMeta(),
+    support: Boolean(current.support),
   });
 }
 

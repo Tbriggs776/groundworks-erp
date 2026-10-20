@@ -23,7 +23,8 @@ to own.
 |---|---|---|---|
 | CC6.1 | Role-based access: workspace roles (owner, admin, member) and per-company roles (owner, admin, accountant, bookkeeper, viewer) | `src/lib/actor.ts`, `src/lib/workspace/service.ts` | People page; access review CSV |
 | CC6.1 | Least privilege for AI agents: own identity, role capped below admin, autonomy level, per-document posting limit, human review queue | `src/lib/agents/`, `src/lib/review-policy.ts` | Agents page; audit rows with `actor_type = agent` |
-| CC6.1 | Tenant isolation: every query scoped to the company; RLS on every table as a safety net | `src/lib/db/migrations/0019`, `0021`; `scripts/test-rls.ts` | CI run of the RLS suite |
+| CC6.1 | Tenant isolation: every query scoped to the company; RLS on every table; database guards refuse any reference to another company's row and any move between companies; every API operation is attacked from a second workspace in CI | `src/lib/db/migrations/0019`, `0021`, `0022`; `scripts/test-rls.ts`, `scripts/test-isolation.ts` | CI runs of the RLS and isolation suites |
+| CC6.1 | Vendor access: Groundworks support can't see a workspace unless its owner turns support access on, for 1 to 7 days; read-only; staff need two-step verification; every grant, revocation, and visit is logged where the owner sees it | `src/lib/security/support.ts`, Workspace → Security | `support_access.*` events; `scripts/test-support-access.ts` |
 | CC6.1 | Passwords: at least 10 characters, hashed by Supabase Auth (bcrypt), sign-in attempts rate limited per IP by Supabase; setting a new password (My security or a reset link) signs out every other session and is audited | `src/lib/security/password.ts`, `src/app/(app)/account/security/actions.ts` | `auth.password.changed` events; Supabase Auth logs for failed sign-ins |
 | CC6.1 | Two-step verification (TOTP); a workspace can require it; enforced on every request, not just at sign-in | `src/lib/security/sessions.ts`, `src/app/auth/mfa` | Security policy page; `auth.mfa.verified` events |
 | CC6.1 | Session control: idle timeout, maximum session length, revocation, "sign out everywhere else"; strictest policy across workspaces wins | `src/lib/security/sessions.ts` | `auth.session.ended` events with the reason |
@@ -35,14 +36,14 @@ to own.
 | CC6.7 | Encryption in transit (TLS via Vercel, HSTS) and at rest (Supabase Postgres, AES-256) | Platform | Vendor SOC 2 reports |
 | CC7.1 | Vulnerability management: dependency audit in CI, weekly Dependabot updates | `.github/workflows/ci.yml`, `.github/dependabot.yml` | CI history; Dependabot PRs |
 | CC7.2 | Audit trail: append-only (a database trigger rejects edits), records who (person, agent, or system), which key, which channel, IP address, and device for every change and every sign-in; exportable | `src/lib/audit.ts`, `/workspace/audit` | CSV export (the export itself is audited) |
-| CC8.1 | Change management: CI on every PR (typecheck, lint, build, 13 e2e suites, audit), PR risk checklist, code owners | `.github/` | Merged PRs with green checks and approvals |
+| CC8.1 | Change management: CI on every PR (typecheck, lint, build, 15 e2e suites, audit), PR risk checklist, code owners | `.github/` | Merged PRs with green checks and approvals |
 | A1.2 | Health endpoint for uptime monitoring | `/api/health` | Monitor history |
 | PI1 | Accounting integrity: double-entry posting engine with 12 checks, posted journals immutable (DB triggers), corrections by reversal, period locks | `src/lib/gl/` | `scripts/test-posting.ts` |
 
 Audit events worth knowing: `auth.signed_in`, `auth.signed_out`,
 `auth.session.ended` (with `idle_timeout`, `max_age`, `revoked_by_user`),
 `auth.mfa.verified`, `auth.sessions.revoked`, `auth.password.changed`,
-`workspace.created`,
+`support_access.granted` / `revoked` / `opened`, `workspace.created`,
 `workspace.security_policy.updated` (before and after),
 `workspace.member.removed` / `restored` / `updated`, `membership.granted` /
 `updated` / `revoked`, `invitation.created` / `accepted` / `revoked`,
@@ -67,7 +68,7 @@ of them.
   that inbox), and a reset link to the real inbox takes an address back and
   signs out everyone else. Turn it on if you'd rather verify up front
 - Network restrictions on the database; SSL enforced
-- Apply all migrations (0021 adds the workspace and session tables)
+- Apply all migrations (0022 adds the tenant guards, 0023 support access)
 
 **Vercel**
 - Team SSO or required 2FA; least privilege for members

@@ -31,6 +31,7 @@ export async function AppShell({ title, crumb, userEmail, children }: Props) {
         id: w.workspaceId,
         name: w.workspace.name,
         isAdmin: hasWorkspaceRole(w.role, "admin"),
+        support: Boolean(w.support),
         companies: memberships
           .filter((m) => m.organization.workspaceId === w.workspaceId)
           .map((m) => ({ id: m.organizationId, name: m.organization.name })),
@@ -47,6 +48,13 @@ export async function AppShell({ title, crumb, userEmail, children }: Props) {
       <Sidebar workspaceAdmin={workspaceAdmin} />
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <Topbar title={title} crumb={crumb} userEmail={userEmail} switcher={workspaces.length ? switcher : undefined} workspaceAdmin={workspaceAdmin} />
+        {currentWs?.support && (
+          <div role="status" className="border-b border-[var(--gw-amber-bright)]/25 bg-[var(--gw-amber)] px-4 py-2 text-xs text-[var(--gw-amber-bright)]">
+            Support view of {currentWs.workspace.name}: read-only, by the owner&apos;s permission, until{" "}
+            {currentWs.support.expiresAt.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC.
+            Each visit is in their audit log.
+          </div>
+        )}
         <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="mx-auto w-full max-w-[1600px]">{children}</div>
         </main>

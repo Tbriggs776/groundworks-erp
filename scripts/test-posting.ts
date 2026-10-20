@@ -24,6 +24,7 @@ import {
 } from "../src/lib/db/schema";
 import { generateFiscalYear } from "../src/lib/gl/fiscal-calendar";
 import { createAndPostJournal, reverseJournal } from "../src/lib/gl/posting";
+import { toAppError } from "../src/lib/errors";
 import { seedOrganizationDefaults } from "../src/lib/seed/org-defaults";
 import { deleteFixtures, testWorkspace } from "./lib/workspace";
 
@@ -189,22 +190,34 @@ async function main() {
         normalBalance: "debit",
       })
       .returning({ id: accounts.id });
-    const r = await createAndPostJournal({
-      organizationId: fixtures.org.id,
-      actorId: fixtures.actor.id,
-      journalDate: "2026-03-15",
-      sourceCodeId: fixtures.sourceCodeId,
-      source: "manual",
-      description: "Cross-tenant attempt",
-      lines: [
-        { accountId: foreign.id, debit: "10.00" },
-        { accountId: fixtures.cash.id, credit: "10.00" },
-      ],
-    });
-    await db.delete(organizations).where(eq(organizations.id, otherOrg.id));
-    if (r.ok) throw new Error("expected failure, got success");
-    if (r.code !== "account_missing")
-      throw new Error(`expected account_missing, got ${r.code}`);
+    // The database's tenant guard (migration 0022) refuses the line as the
+    // draft is written; the engine's own v0 check is the second wall.
+    let refusedBy = "";
+    try {
+      const r = await createAndPostJournal({
+        organizationId: fixtures.org.id,
+        actorId: fixtures.actor.id,
+        journalDate: "2026-03-15",
+        sourceCodeId: fixtures.sourceCodeId,
+        source: "manual",
+        description: "Cross-tenant attempt",
+        lines: [
+          { accountId: foreign.id, debit: "10.00" },
+          { accountId: fixtures.cash.id, credit: "10.00" },
+        ],
+      });
+      if (!r.ok && r.code === "account_missing") refusedBy = "v0";
+    } catch (e) {
+      const err = toAppError(e);
+      if (err.code === "not_found" && /not found in this company/.test(err.message)) refusedBy = "tenant guard";
+    } finally {
+      await db.delete(organizations).where(eq(organizations.id, otherOrg.id));
+    }
+    if (!refusedBy) throw new Error("cross-tenant line was not refused");
+    const [left] = await db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM gl_journals WHERE organization_id = ${fixtures.org.id} AND description = 'Cross-tenant attempt'`
+    );
+    if (left.n !== 0) throw new Error("a draft was left behind");
   });
 
   await check("manual post to control account is rejected", async () => {

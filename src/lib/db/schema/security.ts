@@ -82,5 +82,28 @@ export const apiRateLimits = pgTable(
   (t) => [primaryKey({ columns: [t.apiKeyId, t.windowStart] })]
 );
 
+/**
+ * SUPPORT ACCESS — a workspace owner lets Groundworks support look inside
+ * for a limited time (read-only). Off unless a live grant exists: nobody at
+ * Groundworks can open a workspace otherwise. Revoking or expiry ends it on
+ * the next click. Members can read their workspace's grants (RLS).
+ */
+export const supportAccessGrants = pgTable(
+  "support_access_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    grantedBy: uuid("granted_by").references(() => profiles.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: uuid("revoked_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("support_access_grants_ws_idx").on(t.workspaceId, t.expiresAt)]
+);
+
 export type UserSession = typeof userSessions.$inferSelect;
 export type AccessReview = typeof accessReviews.$inferSelect;
+export type SupportAccessGrant = typeof supportAccessGrants.$inferSelect;

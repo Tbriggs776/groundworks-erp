@@ -49,11 +49,14 @@ await context.addCookies([{ name: "sb-localhost-auth-token", value: cookieValue,
 const page = await context.newPage();
 const problems = [];
 page.on("pageerror", (e) => problems.push(`pageerror on ${page.url()}: ${e.message}`));
-// The wrong-password check expects one rejected sign-in request.
+// The wrong-password check expects one rejected sign-in request, and the
+// staff-only page one 404.
 let expectRejectedSignIn = false;
+let expect404 = false;
 const consoleProblem = (pg) => (m) => {
   if (m.type() !== "error") return;
   if (expectRejectedSignIn && m.location().url.includes("/auth/v1/token")) return;
+  if (expect404 && / 404 /.test(m.text())) return;
   problems.push(`console on ${pg.url()}: ${m.text()}`);
 };
 page.on("console", consoleProblem(page));
@@ -78,7 +81,7 @@ const pages = [
   ["/activity", "activity"], ["/settings/approval-thresholds", null],
   ["/workspace", "workspace"], ["/workspace/people", "people"], ["/workspace/security", "security-policy"],
   ["/workspace/access-review", "access-review"], ["/workspace/audit", "audit-log"], ["/workspace/companies/new", null],
-  ["/account/security", "my-security"],
+  ["/account/security", "my-security"], ["/clients", "clients"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -226,6 +229,31 @@ console.log("✓ flow: MFA turned off again");
 await page.setViewportSize({ width: 390, height: 844 });
 await visit("/dashboard", "dashboard-phone");
 await visit("/ar/invoices", "invoices-phone");
+
+// Flow 10b: Groundworks support access: the owner turns it on, then off.
+// /support is staff-only, so it's a 404 for this person.
+await page.goto(BASE + "/workspace/security", { waitUntil: "networkidle" });
+await page.getByRole("button", { name: "Allow for 1 day" }).click();
+await page.getByText(/^On$/).first().waitFor({ timeout: 10000 });
+await page.screenshot({ path: `${outDir}/support-access-on.png`, fullPage: true });
+await page.getByRole("button", { name: "Turn off now" }).click();
+await page.getByText(/^Off\.$/).first().waitFor({ timeout: 10000 });
+expect404 = true;
+const supportPage = await page.goto(BASE + "/support", { waitUntil: "networkidle" });
+expect404 = false;
+console.log(supportPage?.status() === 404 ? "✓ flow: support access on and off; /support is staff-only" : `✗ flow: /support answered ${supportPage?.status()}`);
+if (supportPage?.status() !== 404) problems.push("support page not staff-only");
+
+// Flow 10c: All companies lists every workspace and opens a company.
+await page.goto(BASE + "/clients", { waitUntil: "networkidle" });
+const openButtons = page.getByRole("button", { name: "Open", exact: true });
+const canOpen = await openButtons.count();
+if (canOpen > 0) {
+  await openButtons.first().click();
+  await page.waitForURL(/\/dashboard$/, { timeout: 15000 });
+}
+console.log(canOpen > 0 ? `✓ flow: All companies opens a company (${canOpen} to choose from)` : "✗ flow: All companies has nothing to open");
+if (canOpen === 0) problems.push("clients page");
 
 // Flow 11: set a password on My security (it signs out other sessions).
 const password = `smoke-pass-${Date.now()}`;

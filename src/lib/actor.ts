@@ -81,6 +81,8 @@ export type Actor = {
   /** Where the request came from, for the audit trail (when known). */
   ipAddress?: string | null;
   userAgent?: string | null;
+  /** Groundworks support, through an owner's grant: read-only. */
+  support?: boolean;
 };
 
 /** Client address + user agent, taken from request headers. */
@@ -116,22 +118,24 @@ export function systemActor(organizationId: string): Actor {
   };
 }
 
-/** Actor for a signed-in human using the web app. */
+/** Actor for a signed-in human using the web app. Support is read-only. */
 export function userActor(opts: {
   organizationId: string;
   userId: string;
   role: Role;
   meta?: RequestMeta;
+  support?: boolean;
 }): Actor {
   return {
     organizationId: opts.organizationId,
     kind: "user",
-    role: opts.role,
+    role: opts.support ? "viewer" : opts.role,
     userId: opts.userId,
     agentId: null,
     agentName: null,
     apiKeyId: null,
-    scopes: scopesForRole(opts.role),
+    scopes: opts.support ? ["read"] : scopesForRole(opts.role),
+    ...(opts.support ? { support: true } : {}),
     channel: "ui",
     maxPostAmount: null,
     requestId: randomUUID(),

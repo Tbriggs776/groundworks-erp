@@ -197,6 +197,9 @@ export async function createApiKey(
   if (ctx.actor.kind !== "user" || !ctx.actor.userId) {
     throw new AppError("forbidden", "Only a signed-in person can create API keys.");
   }
+  if (ctx.actor.support) {
+    throw new AppError("forbidden", "Support access is read-only and can't create API keys.");
+  }
 
   let scopes: Scope[];
   if (data.agentId) {
