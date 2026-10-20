@@ -190,6 +190,13 @@
       "when": 1792518146696,
       "tag": "0026_estimates_recurring_invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792521659821,
+      "tag": "0027_company_profiles",
+      "breakpoints": true
     }
   ]
 }

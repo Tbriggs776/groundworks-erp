@@ -197,6 +197,8 @@ async function main() {
       rest(keyB, "POST", "/estimates", { customerId: ids.customers, estimateDate: "2026-05-09", memo: MARKER, lines: [{ itemId: ids.items, quantity: 2, unitPrice: "30" }] }),
       "estimate"
     );
+    // B's letterhead: A must never see it, on screen or in a PDF.
+    await ok(rest(keyB, "PATCH", "/company-profile", { legalName: `${MARKER} letterhead`, documentFooter: MARKER }), "company profile");
     ids["recurring-invoices"] = await ok(
       rest(keyB, "POST", "/recurring-invoices", { name: `${MARKER} template`, customerId: ids.customers, type: "unscheduled", lines: [{ itemId: ids.items }] }),
       "recurring invoice"

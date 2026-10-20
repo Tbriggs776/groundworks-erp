@@ -9,7 +9,7 @@ import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { toAppError } from "@/lib/errors";
 import { creatorOf } from "@/lib/ui/creator";
 import { DocActions } from "../../doc-actions";
-import { DocLines, LedgerNotes, Notes } from "../../doc-view";
+import { DocLines, LedgerNotes, Notes, PdfLink } from "../../doc-view";
 
 export default async function SalesReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -48,6 +48,7 @@ export default async function SalesReceiptPage({ params }: { params: Promise<{ i
           </div>
           <div className="flex flex-col items-end gap-2">
             <DocActions kind="sales_receipt" id={r.id} status={r.status} number={r.receiptNumber} />
+            <PdfLink kind="sales-receipt" id={r.id} />
             <Link href="/ar/sales-receipts" className="text-xs text-muted-foreground hover:text-foreground">← Back to sales receipts</Link>
           </div>
         </div>

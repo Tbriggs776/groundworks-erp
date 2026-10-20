@@ -116,7 +116,8 @@ MCP /api/mcp  ────┘        one transaction per call; throw = roll back
 src/
   app/
     (app)/            authenticated UI: dashboard, ar/, ap/, banking/, sales-tax, items, gl,
-                      reports/, review, activity, settings/{agents,api-keys},
+                      reports/, review, activity, settings/{agents,api-keys,company},
+                      pdf/ (route handlers that return customer PDFs),
                       workspace/{people,security,access-review,audit,companies},
                       account/security (own password, MFA, sessions),
                       clients (every workspace + company), support (staff only)
@@ -135,6 +136,8 @@ src/
     api/              registry, REST, MCP, OpenAPI, executor (dry run + idempotency)
     agents/           key generation, authentication, agent + key service
     ar/ ap/ banking/ gl/ parties/ reports/ sales-tax/   domain services
+    company/          company profile + logo (letterhead)
+    pdf/              customer PDFs (@react-pdf/renderer, loaded on demand: ESM only)
     db/schema/ db/migrations/   seed/   supabase/   ui/ (server-only page helpers)
 scripts/
   test-*.ts           e2e suites (lib/harness.ts for shared setup)
@@ -178,7 +181,8 @@ docs/compliance/      SOC 2 control map and checklist
 - No DTOs: Drizzle-inferred types end-to-end. Don't `any`. Don't `@ts-ignore`.
 - Error handling at boundaries only (`toAppError`).
 - Never point a `<Link>` at a route handler with side effects (exports,
-  sign-out): Link prefetches. Use a plain `<a download>` or a POST form.
+  sign-out) or an expensive one (PDFs): Link prefetches. Use a plain `<a>`
+  or a POST form.
 - AR balances (invoice open, credit left, payment unapplied, customer
   balance) come from `src/lib/ar/balances.ts` only; never re-derive them
   from payment applications alone, or credits go missing. Sales documents

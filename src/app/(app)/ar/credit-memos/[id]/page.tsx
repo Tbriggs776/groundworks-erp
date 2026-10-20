@@ -12,7 +12,7 @@ import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
 import { CreditUses, ApplyCredit } from "../../credit-panels";
 import { DocActions } from "../../doc-actions";
-import { DocLines, LedgerNotes, Notes } from "../../doc-view";
+import { DocLines, LedgerNotes, Notes, PdfLink } from "../../doc-view";
 
 export default async function CreditMemoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -45,6 +45,7 @@ export default async function CreditMemoPage({ params }: { params: Promise<{ id:
           </div>
           <div className="flex flex-col items-end gap-2">
             <DocActions kind="credit_memo" id={m.id} status={m.status} number={m.memoNumber} />
+            <PdfLink kind="credit-memo" id={m.id} />
             <Link href="/ar/credit-memos" className="text-xs text-muted-foreground hover:text-foreground">← Back to credit memos</Link>
           </div>
         </div>
