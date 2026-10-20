@@ -87,6 +87,9 @@ export const bankTransactions = pgTable(
     /** Check number, card reference, or confirmation. */
     reference: text("reference"),
     memo: text("memo"),
+    /** Checks only: waiting in the print queue; printing gives it a number. */
+    toPrint: boolean("to_print").notNull().default(false),
+    printedAt: timestamp("printed_at", { withTimezone: true }),
 
     currency: text("currency").notNull().default("USD"),
     exchangeRate: numeric("exchange_rate", { precision: 20, scale: 10 }).notNull().default("1"),

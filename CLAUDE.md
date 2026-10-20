@@ -189,6 +189,11 @@ docs/compliance/      SOC 2 control map and checklist
   share line resolution, tax, and posting in `src/lib/ar/documents.ts`.
   What's billed on an estimate comes from `src/lib/ar/estimate-billing.ts`
   (invoice lines that point at estimate lines, on invoices not voided).
+- AP balances (bill open, vendor credit left, vendor balance) come from
+  `src/lib/ap/balances.ts` only: a bill is settled by payments and by
+  vendor credit applications. Printed checks (`src/lib/ap/checks.ts`) draw
+  only on bank accounts; printing writes the check number into
+  `reference` and moves `accounts.next_check_number`.
 - Banking amounts are from the account holder's view: + money in, − money
   out (= debit − credit on the account). Reconciliation and overview
   balances use the natural sign (a credit card's balance owed is positive).

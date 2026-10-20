@@ -17,6 +17,7 @@ export * from "./parties";
 export * from "./approvals";
 export * from "./ap";
 export * from "./ap_payments";
+export * from "./ap_credits";
 export * from "./ar";
 export * from "./sales";
 export * from "./security";

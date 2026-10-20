@@ -99,6 +99,8 @@ const pages = [
   ["/sales-tax", "sales-tax"], ["/settings/sales", null],
   ["/ar/estimates", null], ["/ar/estimates/new", "estimate-new"], ["/ar/recurring", null], ["/ar/recurring/new", "recurring-new"],
   ["/settings/company", "company-profile"], ["/ar/statements", "statements"],
+  ["/ap/vendor-credits", null], ["/ap/vendor-credits/new", "vendor-credit-new"], ["/ap/vendor-refunds", null],
+  ["/ap/vendor-refunds/new", null], ["/banking/checks", "print-checks"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -267,6 +269,64 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   const statementPdf = (await isPdf(statementHref)) && (await isPdf("/pdf/statements"));
   console.log(statementPdf ? "✓ flow: statement PDFs download (one customer and all)" : "✗ flow: statement PDFs");
   if (!statementPdf) problems.push("statement PDF " + statementHref);
+}
+
+// Flow V: a vendor credit, part of it refunded, then a check printed from
+// the print queue.
+{
+  const stamp = Date.now();
+  const vendorName = `Smoke Supply ${stamp}`;
+  await page.goto(BASE + "/vendors", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "New vendor" }).click();
+  await page.getByPlaceholder("ABC Office Supply").fill(vendorName);
+  await page.getByRole("dialog").getByRole("button", { name: "Create vendor" }).click();
+  await page.getByText(vendorName).first().waitFor({ timeout: 10000 });
+
+  await page.goto(BASE + "/ap/vendor-credits/new", { waitUntil: "networkidle" });
+  await page.getByLabel("Vendor", { exact: true }).selectOption({ label: vendorName });
+  await page.getByLabel("Line 1 account").selectOption({ label: "6200 · Dues & Subscriptions" });
+  await page.getByLabel("Line 1 amount").fill("50");
+  await page.getByRole("button", { name: "Save and post" }).click();
+  await page.waitForURL(/\/ap\/vendor-credits\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("Posted to the ledger").waitFor({ timeout: 10000 });
+  await page.screenshot({ path: `${outDir}/vendor-credit.png`, fullPage: true });
+  console.log("✓ flow: vendor credit of $50.00 posted");
+
+  await page.goto(BASE + "/ap/vendor-refunds/new", { waitUntil: "networkidle" });
+  await page.getByLabel("Vendor", { exact: true }).selectOption({ label: vendorName });
+  await page.getByLabel("Amount", { exact: true }).fill("20");
+  await page.getByRole("button", { name: "Save and post" }).click();
+  await page.waitForURL(/\/ap\/vendor-refunds\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("Posted to the ledger").waitFor({ timeout: 10000 });
+  const refund = await page.locator("main").innerText();
+  const refundOk = refund.includes("$20.00") && refund.includes("VC-");
+  console.log(refundOk ? "✓ flow: vendor refund of $20.00 posted against the credit" : "✗ flow: vendor refund");
+  if (!refundOk) problems.push("vendor refund: " + refund.slice(0, 300));
+
+  await page.goto(BASE + "/banking/transactions/new?type=check", { waitUntil: "networkidle" });
+  await page.getByRole("combobox", { name: "Bank account" }).first().click();
+  await page.getByRole("option", { name: "1010 · Checking" }).click();
+  await page.getByRole("combobox", { name: "Category" }).first().click();
+  await page.getByRole("option", { name: "6200 · Dues & Subscriptions" }).click();
+  await page.locator('main tbody input[inputmode="decimal"]').first().fill("1234.56");
+  await page.getByPlaceholder("Or type a name").fill(`Smoke Payee ${stamp}`);
+  await page.getByText("Print later (adds it to Print checks)").click();
+  await page.getByRole("button", { name: "Save and post" }).click();
+  await page.waitForURL(/\/banking\/transactions\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("Waiting to print").waitFor({ timeout: 10000 });
+
+  await page.goto(BASE + "/banking/checks", { waitUntil: "networkidle" });
+  await page.getByText(`Smoke Payee ${stamp}`).waitFor({ timeout: 10000 });
+  await page.getByRole("checkbox", { name: "Select all" }).click();
+  await page.getByRole("checkbox", { name: "Select all" }).click();
+  await page.getByRole("button", { name: /^Print \d+ checks?$/ }).click();
+  await page.getByRole("link", { name: "Open checks PDF" }).waitFor({ timeout: 15000 });
+  await page.screenshot({ path: `${outDir}/print-checks.png`, fullPage: true });
+  const checksHref = await page.getByRole("link", { name: "Open checks PDF" }).getAttribute("href");
+  const res = await page.request.get(BASE + checksHref);
+  const checksOk = res.status() === 200 && (await res.body()).subarray(0, 5).toString() === "%PDF-";
+  console.log(checksOk ? "✓ flow: queued check numbered and printed to PDF" : "✗ flow: print checks");
+  if (!checksOk) problems.push("print checks PDF " + checksHref + " " + res.status());
 }
 
 // Flow 2: create an agent and mint a key.

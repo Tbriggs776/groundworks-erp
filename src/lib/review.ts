@@ -9,6 +9,8 @@ import {
   creditMemos,
   customers,
   refundReceipts,
+  vendorCredits,
+  vendorRefunds,
   salesReceipts,
   glJournals,
   glLines,
@@ -37,6 +39,8 @@ export type ReviewItem = {
     | "refund_receipt"
     | "bill"
     | "bill_payment"
+    | "vendor_credit"
+    | "vendor_refund"
     | "journal_entry"
     | "bank_transaction";
   id: string;
@@ -58,7 +62,7 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
   const org = ctx.actor.organizationId;
   const tx = ctx.tx;
 
-  const [invoices, custPayments, bills, billPayments, journals, bankTxns, receipts, memos, refunds] = await Promise.all([
+  const [invoices, custPayments, bills, billPayments, journals, bankTxns, receipts, memos, refunds, vCredits, vRefunds] = await Promise.all([
     tx
       .select({ d: arInvoices, party: customers.name, agentName: agents.name })
       .from(arInvoices)
@@ -167,6 +171,20 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
       .leftJoin(agents, eq(agents.id, refundReceipts.createdByAgentId))
       .where(and(eq(refundReceipts.organizationId, org), eq(refundReceipts.status, "draft"), isNotNull(refundReceipts.createdByAgentId)))
       .orderBy(desc(refundReceipts.createdAt)),
+    tx
+      .select({ d: vendorCredits, party: vendors.name, agentName: agents.name })
+      .from(vendorCredits)
+      .innerJoin(vendors, eq(vendors.id, vendorCredits.vendorId))
+      .leftJoin(agents, eq(agents.id, vendorCredits.createdByAgentId))
+      .where(and(eq(vendorCredits.organizationId, org), eq(vendorCredits.status, "draft"), isNotNull(vendorCredits.createdByAgentId)))
+      .orderBy(desc(vendorCredits.createdAt)),
+    tx
+      .select({ d: vendorRefunds, party: vendors.name, agentName: agents.name })
+      .from(vendorRefunds)
+      .innerJoin(vendors, eq(vendors.id, vendorRefunds.vendorId))
+      .leftJoin(agents, eq(agents.id, vendorRefunds.createdByAgentId))
+      .where(and(eq(vendorRefunds.organizationId, org), eq(vendorRefunds.status, "draft"), isNotNull(vendorRefunds.createdByAgentId)))
+      .orderBy(desc(vendorRefunds.createdAt)),
   ]);
 
   const journalTotals = journals.length
@@ -316,6 +334,36 @@ export async function listReviewQueue(ctx: Ctx): Promise<ReviewItem[]> {
       agentName,
       createdAt: d.createdAt,
       href: `/ar/refunds/${d.id}`,
+    })),
+    ...vCredits.map(({ d, party, agentName }) => ({
+      type: "vendor_credit" as const,
+      id: d.id,
+      number: d.creditNumber,
+      party,
+      date: d.creditDate,
+      amount: d.totalAmount,
+      currency: d.currency,
+      status: d.status,
+      reason: "agent_draft" as const,
+      agentId: d.createdByAgentId,
+      agentName,
+      createdAt: d.createdAt,
+      href: `/ap/vendor-credits/${d.id}`,
+    })),
+    ...vRefunds.map(({ d, party, agentName }) => ({
+      type: "vendor_refund" as const,
+      id: d.id,
+      number: d.refundNumber,
+      party,
+      date: d.refundDate,
+      amount: d.amount,
+      currency: d.currency,
+      status: d.status,
+      reason: "agent_draft" as const,
+      agentId: d.createdByAgentId,
+      agentName,
+      createdAt: d.createdAt,
+      href: `/ap/vendor-refunds/${d.id}`,
     })),
   ];
   return items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());

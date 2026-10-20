@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   date,
   index,
   numeric,
@@ -54,8 +55,11 @@ export const apPayments = pgTable(
     method: paymentMethod("method").notNull(),
     /** Check number / ACH trace / wire confirmation — whatever the method uses. */
     reference: text("reference"),
+    /** A check waiting in the print queue; printing gives it a number. */
+    toPrint: boolean("to_print").notNull().default(false),
+    printedAt: timestamp("printed_at", { withTimezone: true }),
 
-    // The bank account being drawn on — must be isCash=true in accounts
+    // The bank, cash, or credit card account being drawn on
     bankAccountId: uuid("bank_account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "restrict" }),

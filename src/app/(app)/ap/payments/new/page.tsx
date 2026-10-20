@@ -1,13 +1,8 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNull, or, sql } from "drizzle-orm";
 import { AppShell } from "@/components/app-shell/shell";
 import { db } from "@/lib/db/client";
-import {
-  accounts,
-  apBills,
-  apPaymentApplications,
-  apPayments,
-  vendors,
-} from "@/lib/db/schema";
+import { billSettledSql } from "@/lib/ap/balances";
+import { accounts, apBills, vendors } from "@/lib/db/schema";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { money } from "@/lib/money";
 import { PaymentForm, type OpenBill } from "./payment-form";
@@ -16,10 +11,12 @@ export default async function NewPaymentPage() {
   const { organization } = await requireCurrentOrg();
   const user = await getUser();
 
-  // Pull open bills: status in ('posted','paid'), not voided, not deleted.
-  // We compute open balance by subtracting sum of POSTED payment applications.
+  // Open bills: posted or paid, less what payments and vendor credits settled.
   const billRows = await db
-    .select()
+    .select({
+      ...getTableColumns(apBills),
+      openBalance: sql<string>`(${apBills.totalAmount} - ${billSettledSql(sql`"ap_bills"."id"`)})::text`,
+    })
     .from(apBills)
     .where(
       and(
@@ -30,29 +27,8 @@ export default async function NewPaymentPage() {
     )
     .orderBy(desc(apBills.billDate));
 
-  // Aggregate prior applied amounts per bill
-  const priorAgg = await db
-    .select({
-      billId: apPaymentApplications.billId,
-      total: sql<string>`COALESCE(SUM(${apPaymentApplications.appliedAmount} + ${apPaymentApplications.discountAmount}), 0)::text`,
-    })
-    .from(apPaymentApplications)
-    .innerJoin(apPayments, eq(apPayments.id, apPaymentApplications.paymentId))
-    .where(
-      and(
-        eq(apPaymentApplications.organizationId, organization.id),
-        eq(apPayments.status, "posted")
-      )
-    )
-    .groupBy(apPaymentApplications.billId);
-  const priorByBill = new Map(priorAgg.map((r) => [r.billId, r.total]));
-
   const openBills: OpenBill[] = billRows
-    .map((b) => {
-      const prior = money(priorByBill.get(b.id) ?? "0");
-      const open = money(b.totalAmount).minus(prior);
-      return { ...b, openBalance: open.toFixed(2) };
-    })
+    .map((b) => ({ ...b, openBalance: money(b.openBalance).toFixed(2) }))
     .filter((b) => money(b.openBalance).gt(0));
 
   const openBillsByVendor: Record<string, OpenBill[]> = {};
@@ -80,7 +56,9 @@ export default async function NewPaymentPage() {
       .where(
         and(
           eq(accounts.organizationId, organization.id),
-          eq(accounts.isCash, true),
+          // Bank, cash, or credit card: bills can be paid with a card too.
+          or(eq(accounts.isCash, true), eq(accounts.isReconciliation, true)),
+          eq(accounts.accountType, "posting"),
           eq(accounts.isActive, true)
         )
       )
@@ -104,8 +82,7 @@ export default async function NewPaymentPage() {
         </p>
       ) : bankRows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No Cash/Bank accounts available. Flag at least one posting account
-          with <code>isCash=true</code> in the Chart of Accounts first.
+          No bank, cash, or credit card accounts yet. Add one in the Chart of Accounts first.
         </p>
       ) : (
         <PaymentForm

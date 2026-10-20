@@ -69,6 +69,8 @@ const NAV: NavGroup[] = [
       { label: "Vendors", href: "/vendors" },
       { label: "Bills", href: "/ap/bills" },
       { label: "Bill Payments", href: "/ap/payments" },
+      { label: "Vendor Credits", href: "/ap/vendor-credits" },
+      { label: "Vendor Refunds", href: "/ap/vendor-refunds" },
     ],
   },
   {
@@ -80,6 +82,7 @@ const NAV: NavGroup[] = [
       { label: "Transactions", href: "/banking/transactions" },
       { label: "Bank Rules", href: "/banking/rules" },
       { label: "Reconcile", href: "/banking/reconcile" },
+      { label: "Print Checks", href: "/banking/checks" },
     ],
   },
   {

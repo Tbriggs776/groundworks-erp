@@ -151,6 +151,29 @@ async function main() {
       rest(keyB, "POST", "/bill-payments", { vendorId: ids.vendors, paymentDate: "2026-05-04", method: "ach", bankAccountId: bank.id, applications: [{ billId: billToPay, amount: "80" }] }),
       "bill payment"
     );
+    // Vendor credits: one applied to a posted bill, its remainder refunded.
+    const billForCredit = await ok(
+      rest(keyB, "POST", "/bills", { vendorId: ids.vendors, billDate: "2026-05-01", lines: [{ accountId: expense.id, amount: "40" }] }),
+      "bill for credit"
+    );
+    for (const step of ["submit", "approve", "post"]) await ok(rest(keyB, "POST", `/bills/${billForCredit}/${step}`), `${step} bill for credit`);
+    ids["vendor-credits"] = await ok(
+      rest(keyB, "POST", "/vendor-credits", { vendorId: ids.vendors, creditDate: "2026-05-02", vendorReference: MARKER, lines: [{ accountId: expense.id, amount: "30" }], post: true }),
+      "vendor credit"
+    );
+    ids["vendor-credit-applications"] = await ok(
+      rest(keyB, "POST", "/vendor-credit-applications", { vendorCreditId: ids["vendor-credits"], billId: billForCredit, amount: "20" }),
+      "vendor credit application"
+    );
+    ids["vendor-refunds"] = await ok(
+      rest(keyB, "POST", "/vendor-refunds", { vendorId: ids.vendors, refundDate: "2026-05-03", method: "check", bankAccountId: bank.id, amount: "10", memo: MARKER, post: true }),
+      "vendor refund"
+    );
+    // A check waiting in B's print queue.
+    ids.checks = await ok(
+      rest(keyB, "POST", "/expenses", { type: "check", printLater: true, txnDate: "2026-05-05", bankAccountId: bank.id, payeeName: `${MARKER} check`, lines: [{ accountId: expense.id, amount: "15" }], post: true }),
+      "queued check"
+    );
     // Banking: a posted expense, a rule, an imported line, a reconciliation in progress.
     ids["bank-transactions"] = await ok(
       rest(keyB, "POST", "/expenses", { txnDate: "2026-05-05", bankAccountId: bank.id, payeeName: `${MARKER} payee`, lines: [{ accountId: expense.id, amount: "25", description: MARKER }], post: true }),
@@ -280,6 +303,10 @@ async function main() {
 
   section("Creates can't borrow the other workspace's records");
   const bBank = account(b, "1010").id;
+  // A's own posted bill and vendor credit, so the only foreign id is B's.
+  const aBill = (await rest(keyA, "POST", "/bills", { vendorId: aVendor, billDate: "2026-05-01", lines: [{ accountId: aExpense, amount: "5" }] })).json.id as string;
+  for (const step of ["submit", "approve", "post"]) await rest(keyA, "POST", `/bills/${aBill}/${step}`);
+  const aCredit = (await rest(keyA, "POST", "/vendor-credits", { vendorId: aVendor, creditDate: "2026-05-02", lines: [{ accountId: aExpense, amount: "1" }], post: true })).json.id as string;
   const borrow: Array<[string, string, unknown]> = [
     ["invoice for B's customer", "/invoices", { customerId: ids.customers, invoiceDate: "2026-05-01", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: aIncome }] }],
     ["invoice line on B's item", "/invoices", { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ itemId: ids.items, quantity: 1 }] }],
@@ -311,6 +338,14 @@ async function main() {
     ["invoice line billing B's estimate", "/invoices", { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ itemId: aItem, estimateLineId: bEstimateLine }] }],
     ["recurring invoice for B's customer", "/recurring-invoices", { name: "x", customerId: ids.customers, type: "unscheduled", lines: [{ itemId: aItem }] }],
     ["recurring invoice with B's item", "/recurring-invoices", { name: "y", customerId: aCustomer, type: "unscheduled", lines: [{ itemId: ids.items }] }],
+    ["vendor credit for B's vendor", "/vendor-credits", { vendorId: ids.vendors, creditDate: "2026-05-02", lines: [{ accountId: aExpense, amount: "1" }] }],
+    ["vendor credit line on B's account", "/vendor-credits", { vendorId: aVendor, creditDate: "2026-05-02", lines: [{ accountId: ids.accounts, amount: "1" }] }],
+    ["B's vendor credit applied to A's bill", "/vendor-credit-applications", { vendorCreditId: ids["vendor-credits"], billId: aBill }],
+    ["A's vendor credit applied to B's bill", "/vendor-credit-applications", { vendorCreditId: aCredit, billId: ids.bills }],
+    ["vendor refund into B's bank account", "/vendor-refunds", { vendorId: aVendor, refundDate: "2026-05-03", method: "check", bankAccountId: bBank, amount: "1" }],
+    ["vendor refund of B's vendor credit", "/vendor-refunds", { vendorId: aVendor, refundDate: "2026-05-03", method: "check", bankAccountId: aBank, amount: "1", vendorCreditId: ids["vendor-credits"] }],
+    ["printing B's queued check", "/checks/print", { bankAccountId: aBank, firstCheckNumber: 1, checks: [{ kind: "check", id: ids.checks }] }],
+    ["printing on B's bank account", "/checks/print", { bankAccountId: bBank, firstCheckNumber: 1, checks: [{ kind: "check", id: ids.checks }] }],
   ];
   for (const [label, path, body] of borrow) {
     await check(`refused: ${label}`, async () => {

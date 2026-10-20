@@ -11,8 +11,10 @@ import {
   apPayments,
   vendors,
 } from "@/lib/db/schema";
+import { hasRole } from "@/lib/actor";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
+import { CheckControls } from "../../check-controls";
 import { PaymentActions } from "./void-button";
 
 export default async function PaymentDetailPage({
@@ -21,7 +23,7 @@ export default async function PaymentDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { organization } = await requireCurrentOrg();
+  const { organization, role } = await requireCurrentOrg();
   const user = await getUser();
 
   const [result] = await db
@@ -73,7 +75,7 @@ export default async function PaymentDetailPage({
               {p.reference && (
                 <>
                   <span>·</span>
-                  <span>Ref: <span className="font-mono text-foreground">{p.reference}</span></span>
+                  <span>{p.method === "check" ? "Check" : "Ref"}: <span className="font-mono text-foreground">{p.reference}</span></span>
                 </>
               )}
               <span>·</span>
@@ -88,6 +90,9 @@ export default async function PaymentDetailPage({
           </div>
           <div className="flex flex-col items-end gap-2">
             <PaymentActions paymentId={p.id} status={p.status} />
+            {p.method === "check" && p.status === "posted" && (
+              <CheckControls kind="bill_payment" id={p.id} bankAccountId={p.bankAccountId} toPrint={p.toPrint} canEdit={hasRole(role, "bookkeeper")} />
+            )}
             <Link
               href="/ap/payments"
               className="text-xs text-muted-foreground hover:text-foreground"

@@ -49,6 +49,7 @@ export function PaymentForm({
   const [paymentDate, setPaymentDate] = useState(today);
   const [method, setMethod] = useState<PaymentInput["method"]>("check");
   const [reference, setReference] = useState("");
+  const [printLater, setPrintLater] = useState(false);
   const [bankAccountId, setBankAccountId] = useState(bankAccounts[0]?.id ?? "");
   const [memo, setMemo] = useState("");
 
@@ -105,7 +106,8 @@ export function PaymentForm({
         vendorId,
         paymentDate,
         method,
-        reference,
+        reference: printLater ? undefined : reference,
+        printLater: method === "check" && printLater,
         bankAccountId,
         currency,
         exchangeRate: "1",
@@ -201,7 +203,7 @@ export function PaymentForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
-            Bank account
+            Pay from (bank or credit card)
           </Label>
           <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
             <SelectTrigger>
@@ -221,10 +223,22 @@ export function PaymentForm({
             Reference (check # / ACH trace)
           </Label>
           <Input
-            value={reference}
+            value={printLater ? "" : reference}
             onChange={(e) => setReference(e.target.value)}
-            placeholder="1234"
+            placeholder={printLater ? "Given when it prints" : "1234"}
+            disabled={printLater}
           />
+          {method === "check" && (
+            <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={printLater}
+                onChange={(e) => setPrintLater(e.target.checked)}
+                className="h-3.5 w-3.5 accent-[var(--primary)]"
+              />
+              Print later (adds it to Print checks)
+            </label>
+          )}
         </div>
       </div>
 

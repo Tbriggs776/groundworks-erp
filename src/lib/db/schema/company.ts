@@ -1,4 +1,4 @@
-import { jsonb, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { jsonb, numeric, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { timestamps } from "./_shared";
 import { organizations } from "./identity";
 
@@ -37,6 +37,9 @@ export const companyProfiles = pgTable(
     documentFooter: text("document_footer"),
     logoData: text("logo_data"),
     logoContentType: text("logo_content_type"),
+    /** Printed checks shift right / down by this much (inches) to fit the printer. */
+    checkOffsetX: numeric("check_offset_x", { precision: 5, scale: 2 }).notNull().default("0"),
+    checkOffsetY: numeric("check_offset_y", { precision: 5, scale: 2 }).notNull().default("0"),
     ...timestamps,
   },
   (t) => [uniqueIndex("company_profiles_org_key").on(t.organizationId)]

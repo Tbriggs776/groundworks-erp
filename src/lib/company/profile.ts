@@ -4,7 +4,8 @@ import { companyProfiles, organizations, type CompanyAddress, type CompanyProfil
 import { auditFields, requirePermission, type Ctx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
 import { AppError } from "@/lib/errors";
-import { optionalText } from "@/lib/schemas";
+import { money } from "@/lib/money";
+import { amount, optionalText } from "@/lib/schemas";
 
 /**
  * The company profile printed on PDFs: legal name, address, contact
@@ -23,6 +24,8 @@ const AddressSchema = z.object({
   country: optionalText(100),
 });
 
+const checkOffset = amount.refine((v) => money(v).abs().lte(1), { message: "Keep check offsets within an inch either way." });
+
 export const UpdateCompanyProfileSchema = z.object({
   legalName: optionalText(200).describe("Name printed on documents. Defaults to the company's name."),
   address: AddressSchema.optional(),
@@ -35,6 +38,8 @@ export const UpdateCompanyProfileSchema = z.object({
   website: optionalText(200),
   taxId: optionalText(100).describe("Tax or registration number, printed under the address."),
   documentFooter: optionalText(1000).describe("Printed at the bottom of every PDF: payment instructions, a thank-you."),
+  checkOffsetX: checkOffset.optional().describe("Printed checks: move right (inches; negative moves left)."),
+  checkOffsetY: checkOffset.optional().describe("Printed checks: move down (inches; negative moves up)."),
 });
 export type UpdateCompanyProfileInput = z.input<typeof UpdateCompanyProfileSchema>;
 
@@ -76,6 +81,8 @@ function view(profile: CompanyProfile | null, companyName: string, organizationI
     documentFooter: null,
     logoData: null,
     logoContentType: null,
+    checkOffsetX: "0",
+    checkOffsetY: "0",
     createdAt: new Date(0),
     updatedAt: new Date(0),
     deletedAt: null,
@@ -115,6 +122,8 @@ export async function updateCompanyProfile(ctx: Ctx, input: UpdateCompanyProfile
     ...(d.website !== undefined ? { website: d.website } : {}),
     ...(d.taxId !== undefined ? { taxId: d.taxId } : {}),
     ...(d.documentFooter !== undefined ? { documentFooter: d.documentFooter } : {}),
+    ...(d.checkOffsetX !== undefined ? { checkOffsetX: money(d.checkOffsetX).toFixed(2) } : {}),
+    ...(d.checkOffsetY !== undefined ? { checkOffsetY: money(d.checkOffsetY).toFixed(2) } : {}),
   };
   await upsert(ctx, values);
   const after = await getCompanyProfile(ctx);

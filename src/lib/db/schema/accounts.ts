@@ -106,6 +106,8 @@ export const accounts = pgTable(
     isControl: boolean("is_control").notNull().default(false),
     isCash: boolean("is_cash").notNull().default(false),
     isReconciliation: boolean("is_reconciliation").notNull().default(false),
+    /** Bank accounts that print checks: the number the next printed check gets. */
+    nextCheckNumber: integer("next_check_number"),
     isStatistical: boolean("is_statistical").notNull().default(false),
     debitCreditEnforced: debitCreditEnforced("debit_credit_enforced")
       .notNull()

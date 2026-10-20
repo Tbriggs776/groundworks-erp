@@ -1,9 +1,6 @@
 import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
-  apBills,
-  apPaymentApplications,
-  apPayments,
   customerType,
   customers,
   taxCodes,
@@ -16,6 +13,7 @@ import {
 } from "@/lib/db/schema";
 import { auditFields, requirePermission, type Ctx, type Tx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
+import { vendorBalanceSql } from "@/lib/ap/balances";
 import { customerBalanceSql } from "@/lib/ar/balances";
 import { AppError, notFound, rethrowUnique } from "@/lib/errors";
 import {
@@ -319,16 +317,8 @@ export async function updateCustomer(ctx: Ctx, input: UpdateCustomerInput): Prom
 
 export type VendorRow = Vendor & { openBalance: string };
 
-const vendorOpenBalance = sql<string>`COALESCE((
-  SELECT SUM(b.total_amount - COALESCE((
-    SELECT SUM(a.applied_amount + a.discount_amount)
-      FROM ${apPaymentApplications} a
-      JOIN ${apPayments} p ON p.id = a.payment_id
-     WHERE a.bill_id = b.id AND p.status = 'posted'
-  ), 0))
-    FROM ${apBills} b
-   WHERE b.vendor_id = "vendors"."id" AND b.status IN ('posted', 'paid')
-), 0)::text`;
+/** Owed to the vendor: bills open minus unused vendor credits. */
+const vendorOpenBalance = sql<string>`${vendorBalanceSql(sql`"vendors"."id"`)}::text`;
 
 export async function listVendors(
   ctx: Ctx,

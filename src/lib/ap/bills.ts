@@ -4,8 +4,6 @@ import { z } from "zod";
 import {
   apBillLines,
   apBills,
-  apPaymentApplications,
-  apPayments,
   vendors,
   type ApBill,
   type ApBillLine,
@@ -36,6 +34,7 @@ import {
   toPage,
 } from "@/lib/schemas";
 import { canApproveAtRole, resolveApprovalRouting } from "./approval";
+import { billSettledSql } from "./balances";
 import { billAppliedTotal } from "./payments";
 import { postBillToGl, voidBillFromGl } from "./posting";
 
@@ -120,12 +119,7 @@ export async function listBills(
   const f = ListBillsSchema.parse(input);
   const org = ctx.actor.organizationId;
 
-  const paidSoFar = sql<string>`COALESCE((
-    SELECT SUM(a.applied_amount + a.discount_amount)
-      FROM ${apPaymentApplications} a
-      JOIN ${apPayments} p ON p.id = a.payment_id
-     WHERE a.bill_id = "ap_bills"."id" AND p.status = 'posted'
-  ), 0)`;
+  const paidSoFar = billSettledSql(sql`"ap_bills"."id"`);
 
   const rows = await ctx.tx
     .select({
@@ -580,7 +574,7 @@ export async function voidBill(
   const applied = await billAppliedTotal(ctx.tx, billId);
   if (applied.gt(0)) {
     throw invalidState(
-      `Bill ${bill.billNumber} has ${applied.toFixed(2)} in posted payments. Void those payments first.`
+      `Bill ${bill.billNumber} has ${applied.toFixed(2)} in posted payments and vendor credits. Void those payments and unapply the credits first.`
     );
   }
 

@@ -8,6 +8,7 @@ import { getEstimate } from "@/lib/ar/estimates";
 import { getInvoice } from "@/lib/ar/invoices";
 import { getSalesReceipt } from "@/lib/ar/sales-receipts";
 import { customerStatement, listStatements, ListStatementsSchema, StatementSchema, type Statement } from "@/lib/ar/statements";
+import { amountInWords, checkPrint, type CheckRef } from "@/lib/ap/checks";
 import { loadCompanyProfile } from "@/lib/company/profile";
 import { formatMoney, money } from "@/lib/money";
 import { id } from "@/lib/schemas";
@@ -23,6 +24,7 @@ import {
   type SalesDocPdf,
   type StatementPdf,
 } from "./templates";
+import { checks, type CheckPdf } from "./checks";
 
 /**
  * Customer-facing PDFs: sales documents and statements. Each loads its
@@ -265,6 +267,26 @@ export async function statementsPdf(ctx: Ctx, input: z.input<typeof ListStatemen
   const co = await company(ctx);
   const bytes = await render((P) => statements(P, co, list.map(statementData)));
   return { fileName: `Statements_${list[0].to}.pdf`, contentType: "application/pdf", bytes };
+}
+
+/**
+ * Checks on voucher stock, one per page, in the order given. Each prints
+ * with its number when it has one (after print_checks), else unnumbered.
+ */
+export async function checksPdf(ctx: Ctx, refs: CheckRef[]): Promise<PdfFile> {
+  requirePermission(ctx.actor, "read", "viewer", "print checks");
+  const list: CheckPdf[] = [];
+  for (const ref of refs) {
+    const c = await checkPrint(ctx, ref);
+    list.push({ ...c, amountWords: amountInWords(c.amount) });
+  }
+  const co = await company(ctx);
+  const { profile } = await loadCompanyProfile(ctx);
+  const offset = { x: Number(profile?.checkOffsetX ?? 0), y: Number(profile?.checkOffsetY ?? 0) };
+  const bytes = await render((P) => checks(P, co, list, offset));
+  const first = list[0]?.checkNumber;
+  const name = list.length === 1 ? `Check_${first ?? "unnumbered"}` : `Checks_${first ?? "unnumbered"}_${list[list.length - 1]?.checkNumber ?? ""}`;
+  return { fileName: `${name.replace(/_$/, "")}.pdf`, contentType: "application/pdf", bytes };
 }
 
 /** API shape: the file as base64 inside JSON. */

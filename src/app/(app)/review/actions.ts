@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { serviceAction, type ActionResult } from "@/lib/action";
 import * as billPayments from "@/lib/ap/bill-payments";
 import * as bills from "@/lib/ap/bills";
+import * as vendorCredits from "@/lib/ap/vendor-credits";
+import * as vendorRefunds from "@/lib/ap/vendor-refunds";
 import * as invoices from "@/lib/ar/invoices";
 import * as creditMemos from "@/lib/ar/credit-memos";
 import * as customerPayments from "@/lib/ar/payments";
@@ -36,6 +38,10 @@ export async function approveItem(type: ReviewItem["type"], id: string, status: 
         return { id: (await creditMemos.postCreditMemo(ctx, { id })).id };
       case "refund_receipt":
         return { id: (await refunds.postRefund(ctx, { id })).id };
+      case "vendor_credit":
+        return { id: (await vendorCredits.postVendorCredit(ctx, { id })).id };
+      case "vendor_refund":
+        return { id: (await vendorRefunds.postVendorRefund(ctx, { id })).id };
       case "bill":
         // Walk the bill as far as this person may take it.
         if (status === "draft") await bills.submitBill(ctx, { id });
@@ -67,6 +73,10 @@ export async function dismissItem(type: ReviewItem["type"], id: string, status: 
         return creditMemos.deleteDraftCreditMemo(ctx, { id });
       case "refund_receipt":
         return refunds.deleteDraftRefund(ctx, { id });
+      case "vendor_credit":
+        return vendorCredits.deleteDraftVendorCredit(ctx, { id });
+      case "vendor_refund":
+        return vendorRefunds.deleteDraftVendorRefund(ctx, { id });
       case "bill":
         if (status === "pending_approval") {
           return { id: (await bills.rejectBill(ctx, { id, reason: "Rejected from the review queue" })).id };

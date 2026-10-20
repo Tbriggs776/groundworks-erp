@@ -57,6 +57,7 @@ export function BankTxnForm({
   const [payeeName, setPayeeName] = useState("");
   const [method, setMethod] = useState("credit_card");
   const [reference, setReference] = useState("");
+  const [printLater, setPrintLater] = useState(false);
   const [memo, setMemo] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentIds, setPaymentIds] = useState<Set<string>>(new Set());
@@ -115,7 +116,8 @@ export function BankTxnForm({
                 bankAccountId,
                 ...payeeFields,
                 method: type === "check" ? "check" : (method as "credit_card"),
-                reference: reference || undefined,
+                reference: (type === "check" && printLater) || !reference ? undefined : reference,
+                printLater: type === "check" && printLater,
                 memo: memo || undefined,
                 lines: lineInput,
                 post,
@@ -178,7 +180,18 @@ export function BankTxnForm({
         )}
         <div>
           <FieldLabel>{type === "check" ? "Check number" : "Reference"}</FieldLabel>
-          <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={type === "check" ? "1001" : "Optional"} />
+          <Input
+            value={type === "check" && printLater ? "" : reference}
+            onChange={(e) => setReference(e.target.value)}
+            placeholder={type === "check" ? (printLater ? "Given when it prints" : "1001") : "Optional"}
+            disabled={type === "check" && printLater}
+          />
+          {type === "check" && (
+            <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <input type="checkbox" checked={printLater} onChange={(e) => setPrintLater(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--primary)]" />
+              Print later (adds it to Print checks)
+            </label>
+          )}
         </div>
         {type === "transfer" && (
           <div>

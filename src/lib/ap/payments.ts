@@ -1,10 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import {
-  apBills,
-  apPaymentApplications,
-  apPayments,
-  type ApPayment,
-} from "@/lib/db/schema";
+import { apBills, type ApPayment } from "@/lib/db/schema";
 import { auditFields, type Ctx, type Tx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
 import { AppError } from "@/lib/errors";
@@ -13,13 +8,10 @@ import {
   reverseJournal,
   type JournalLineInput,
 } from "@/lib/gl/posting";
-import {
-  accountByCode,
-  controlAccount,
-  requirePostingAccount,
-  sourceCodeId,
-} from "@/lib/gl/lookups";
-import { money, sumMoney, toDbMoney } from "@/lib/money";
+import { requireBankingAccount } from "@/lib/banking/common";
+import { accountByCode, controlAccount, sourceCodeId } from "@/lib/gl/lookups";
+import { money, toDbMoney } from "@/lib/money";
+import { billSettled } from "./balances";
 
 /**
  * AP payment posting. For a given draft payment:
@@ -41,10 +33,7 @@ export async function postPaymentToGl(
   const organizationId = actor.organizationId;
 
   const apControl = await controlAccount(tx, organizationId, "payables");
-  await requirePostingAccount(tx, organizationId, payment.bankAccountId, {
-    cash: true,
-    label: "Payment bank account",
-  });
+  await requireBankingAccount(tx, organizationId, payment.bankAccountId, { label: "Payment account" });
 
   const discountTotal = money(payment.discountAmount);
   const discountAccount = discountTotal.gt(0)
@@ -127,29 +116,17 @@ export async function postPaymentToGl(
   return { journalId: result.journalId, journalNumber: result.journalNumber };
 }
 
-/** Sum of applied + discount from POSTED payments against a bill. */
-export async function billAppliedTotal(
-  tx: Tx,
-  billId: string
-): Promise<ReturnType<typeof money>> {
-  const rows = await tx
-    .select({
-      appliedAmount: apPaymentApplications.appliedAmount,
-      discountAmount: apPaymentApplications.discountAmount,
-    })
-    .from(apPaymentApplications)
-    .innerJoin(apPayments, eq(apPayments.id, apPaymentApplications.paymentId))
-    .where(
-      and(
-        eq(apPaymentApplications.billId, billId),
-        eq(apPayments.status, "posted")
-      )
-    );
-  return sumMoney(rows.flatMap((r) => [r.appliedAmount, r.discountAmount]));
+/**
+ * What's been settled against a bill: posted payments (cash + discount)
+ * plus vendor credits applied. See ./balances.ts.
+ */
+export async function billAppliedTotal(tx: Tx, billId: string): Promise<ReturnType<typeof money>> {
+  return billSettled(tx, billId);
 }
 
 /**
- * Recompute a bill's paid status based on sum of POSTED payment applications.
+ * Recompute a bill's paid status from what's settled (posted payments and
+ * vendor credits).
  * Flips status 'posted' ↔ 'paid' as appropriate. Also clears paidAt if a
  * previously-paid bill drops below full coverage (e.g. a payment voided).
  */

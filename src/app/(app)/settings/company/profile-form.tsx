@@ -21,6 +21,8 @@ type Fields = {
   website: string;
   taxId: string;
   documentFooter: string;
+  checkOffsetX: string;
+  checkOffsetY: string;
 };
 
 const label = "text-xs uppercase tracking-wider text-muted-foreground mb-1.5";
@@ -65,6 +67,8 @@ export function CompanyProfileForm({
           website: f.website,
           taxId: f.taxId,
           documentFooter: f.documentFooter,
+          checkOffsetX: f.checkOffsetX || "0",
+          checkOffsetY: f.checkOffsetY || "0",
         }),
       "Saved."
     );
@@ -179,6 +183,19 @@ export function CompanyProfileForm({
               <Label className={label}>Tax ID</Label>
               <Input value={f.taxId} onChange={set("taxId")} placeholder="Optional: EIN or sales tax permit, printed under the address" />
             </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Label className={label}>Checks: move right (in)</Label>
+              <Input inputMode="decimal" value={f.checkOffsetX} onChange={set("checkOffsetX")} aria-label="Check offset right" />
+            </div>
+            <div>
+              <Label className={label}>Checks: move down (in)</Label>
+              <Input inputMode="decimal" value={f.checkOffsetY} onChange={set("checkOffsetY")} aria-label="Check offset down" />
+            </div>
+            <p className="text-[11px] text-muted-foreground sm:pt-6">
+              If printed checks land off the lines, nudge them here. Negative numbers move left or up.
+            </p>
           </div>
           <div>
             <Label className={label}>Footer on every document</Label>
