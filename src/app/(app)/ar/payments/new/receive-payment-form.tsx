@@ -53,6 +53,7 @@ export function ReceivePaymentForm({
     (depositAccounts.find((a) => a.code === "1250") ?? depositAccounts[0])?.id ?? ""
   );
   const [memo, setMemo] = useState("");
+  const [received, setReceived] = useState("");
   const [invoices, setInvoices] = useState<OpenInvoice[]>([]);
   const [apply, setApply] = useState<Record<string, Apply>>({});
 
@@ -79,6 +80,14 @@ export function ReceivePaymentForm({
 
   const applied = invoices.filter((i) => money(apply[i.id]?.amount || "0").gt(0));
   const total = sumMoney(applied.map((i) => apply[i.id].amount));
+  const receivedAmt = (() => {
+    try {
+      return received ? money(received) : total;
+    } catch {
+      return money(0);
+    }
+  })();
+  const extra = receivedAmt.minus(total);
   const customer = customers.find((c) => c.id === customerId);
   const currency = customer?.currency ?? "USD";
 
@@ -104,7 +113,8 @@ export function ReceivePaymentForm({
         reference,
         depositAccountId,
         memo,
-        applications: applied.map((i) => ({
+        amount: received || undefined,
+        applications: applied.length === 0 ? undefined : applied.map((i) => ({
           invoiceId: i.id,
           amount: apply[i.id].amount,
           discountAmount: apply[i.id].discount || "0",
@@ -206,12 +216,30 @@ export function ReceivePaymentForm({
               <tfoot>
                 <tr className="bg-muted/30 border-t-2 border-border">
                   <td colSpan={3} className="px-3 py-2 text-right text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Amount received
+                    Applied to invoices
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-sm font-semibold">
+                  <td className="px-3 py-2 text-right font-mono text-sm">
                     {formatMoney(total, { currency })}
                   </td>
                   <td></td>
+                </tr>
+                <tr className="bg-muted/30">
+                  <td colSpan={3} className="px-3 pb-2 text-right text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Amount received
+                  </td>
+                  <td className="px-3 pb-2">
+                    <input
+                      inputMode="decimal"
+                      aria-label="Amount received"
+                      value={received}
+                      onChange={(e) => setReceived(e.target.value)}
+                      className={`${cell} font-semibold`}
+                      placeholder={total.toFixed(2)}
+                    />
+                  </td>
+                  <td className="px-3 pb-2 text-[11px] text-muted-foreground">
+                    {extra.gt(0) ? `${formatMoney(extra, { currency })} stays as credit` : ""}
+                  </td>
                 </tr>
               </tfoot>
             </table>
@@ -222,10 +250,10 @@ export function ReceivePaymentForm({
       {err && <p className="text-sm text-destructive">{err}</p>}
 
       <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-border">
-        <Button onClick={() => submit(true)} disabled={pending || applied.length === 0 || !depositAccountId}>
+        <Button onClick={() => submit(true)} disabled={pending || !receivedAmt.gt(0) || extra.lt(0) || !depositAccountId}>
           {pending ? "Saving…" : "Save and post"}
         </Button>
-        <Button variant="outline" onClick={() => submit(false)} disabled={pending || applied.length === 0 || !depositAccountId}>
+        <Button variant="outline" onClick={() => submit(false)} disabled={pending || !receivedAmt.gt(0) || extra.lt(0) || !depositAccountId}>
           Save draft
         </Button>
         <Button variant="ghost" onClick={() => router.back()}>Cancel</Button>

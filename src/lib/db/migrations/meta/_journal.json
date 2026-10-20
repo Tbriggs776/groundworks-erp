@@ -176,6 +176,13 @@
       "when": 1792507295284,
       "tag": "0024_banking",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792512914652,
+      "tag": "0025_sales_tax_credits",
+      "breakpoints": true
     }
   ]
 }

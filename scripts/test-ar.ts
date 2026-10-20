@@ -174,14 +174,14 @@ async function main() {
     assertEq(money(inv.openBalance).toFixed(2), "500.00", "openBalance");
   });
 
-  await check("auto-apply beyond the open balance is refused", async () => {
-    await expectError(
-      () =>
-        t.run(bookkeeper, (ctx) =>
-          payments.createCustomerPayment(ctx, { customerId, paymentDate: "2026-03-21", method: "ach", amount: "600" })
-        ),
-      "invalid_input"
+  await check("auto-apply beyond the open balance keeps the extra as a customer credit", async () => {
+    const p = await t.run(bookkeeper, (ctx) =>
+      payments.createCustomerPayment(ctx, { customerId, paymentDate: "2026-03-21", method: "ach", amount: "600" })
     );
+    const applied = p.applications.reduce((s, a) => s.plus(a.amount), money(0));
+    assertEq(money(p.unappliedAmount).plus(applied).toFixed(2), "600.00", "applied + credit = amount");
+    assert(money(p.unappliedAmount).gt(0), "some of it is credit");
+    await t.run(bookkeeper, (ctx) => payments.deleteDraftCustomerPayment(ctx, { id: p.id }));
   });
 
   let discountPaymentId = "";

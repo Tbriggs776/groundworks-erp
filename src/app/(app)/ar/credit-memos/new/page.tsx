@@ -1,0 +1,24 @@
+import { AppShell } from "@/components/app-shell/shell";
+import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { salesFormData } from "@/lib/ui/form-data";
+import { SalesDocForm } from "../../sales-doc-form";
+
+export default async function NewCreditMemoPage({ searchParams }: { searchParams: Promise<{ customerId?: string }> }) {
+  const { customerId } = await searchParams;
+  const { organization } = await requireCurrentOrg();
+  const user = await getUser();
+  await requireActor("bookkeeper");
+  const data = await salesFormData(organization.id);
+  return (
+    <AppShell title="New Credit Memo" crumb={`${organization.name} · Sales`} userEmail={user?.email}>
+      <SalesDocForm
+        kind="credit_memo"
+        customers={data.customers}
+        items={data.items}
+        incomeAccounts={data.incomeAccounts}
+        taxRates={data.taxRates}
+        defaultCustomerId={customerId}
+      />
+    </AppShell>
+  );
+}

@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./_shared";
 import { organizations } from "./identity";
+import { taxCodes } from "./tax";
 
 /**
  * CUSTOMERS / VENDORS — the "party" master records. They share a similar
@@ -81,6 +82,10 @@ export const customers = pgTable(
     currency: text("currency").notNull().default("USD"),
     creditLimit: numeric("credit_limit", { precision: 20, scale: 4 }),
     taxExempt: boolean("tax_exempt").notNull().default(false),
+    /** Why: resale certificate, nonprofit, government… Printed on documents. */
+    taxExemptReason: text("tax_exempt_reason"),
+    /** Sales tax rate new documents for this customer start with. */
+    defaultTaxCodeId: uuid("default_tax_code_id").references(() => taxCodes.id, { onDelete: "set null" }),
     taxId: text("tax_id"),
 
     // Free-form metadata

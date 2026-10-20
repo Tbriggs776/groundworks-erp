@@ -171,6 +171,7 @@ function ItemForm({
   const [expenseAccountId, setExpenseAccountId] = useState(initial?.expenseAccountId ?? "");
   const [purchaseCost, setPurchaseCost] = useState(initial?.purchaseCost ?? "");
   const [isActive, setIsActive] = useState(initial?.isActive ?? true);
+  const [taxable, setTaxable] = useState(initial?.taxable ?? true);
 
   function submit() {
     setErr(null);
@@ -184,6 +185,7 @@ function ItemForm({
         incomeAccountId,
         purchaseCost: purchaseCost || null,
         expenseAccountId: expenseAccountId || null,
+        taxable,
         isActive,
       };
       const r = initial ? await updateItem(initial.id, payload) : await createItem(payload);
@@ -255,10 +257,16 @@ function ItemForm({
               <Input inputMode="decimal" value={purchaseCost} onChange={(e) => setPurchaseCost(e.target.value)} className="font-mono text-right" placeholder="0.00" />
             </div>
           </div>
-          <label className="flex items-center gap-2 text-xs cursor-pointer">
-            <Checkbox checked={isActive} onCheckedChange={(c) => setIsActive(!!c)} />
-            <span>Active</span>
-          </label>
+          <div className="flex flex-wrap gap-6">
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <Checkbox checked={taxable} onCheckedChange={(c) => setTaxable(!!c)} />
+              <span>Taxable (charge sales tax when sold)</span>
+            </label>
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <Checkbox checked={isActive} onCheckedChange={(c) => setIsActive(!!c)} />
+              <span>Active</span>
+            </label>
+          </div>
           {err && <p className="text-xs text-destructive">{err}</p>}
         </div>
         <DialogFooter>

@@ -13,6 +13,9 @@ import { approveItem, dismissItem } from "./actions";
 const TYPE_LABEL: Record<ReviewItem["type"], string> = {
   invoice: "Invoice",
   customer_payment: "Payment received",
+  sales_receipt: "Sales receipt",
+  credit_memo: "Credit memo",
+  refund_receipt: "Refund",
   bill: "Bill",
   bill_payment: "Bill payment",
   journal_entry: "Journal entry",

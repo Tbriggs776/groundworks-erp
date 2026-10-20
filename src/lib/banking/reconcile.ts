@@ -524,7 +524,10 @@ export type RegisterRow = {
   /** Running balance after this line, natural sign. */
   balance: string;
   clearing: "cleared" | "reconciled" | null;
-  source: { type: "bank_transaction" | "customer_payment" | "bill_payment" | "journal"; id: string };
+  source: {
+    type: "bank_transaction" | "customer_payment" | "bill_payment" | "sales_receipt" | "refund_receipt" | "sales_tax_payment" | "journal";
+    id: string;
+  };
 };
 
 /** Every ledger line on the account, newest first, with a running balance and cleared state. */
@@ -547,6 +550,9 @@ export async function getAccountRegister(ctx: Ctx, input: z.input<typeof Registe
     bank_txn_id: string | null;
     ar_payment_id: string | null;
     ap_payment_id: string | null;
+    sales_receipt_id: string | null;
+    refund_id: string | null;
+    tax_payment_id: string | null;
   }>(sql`
     WITH lines AS (
       SELECT l.id AS gl_line_id, j.id AS journal_id, j.journal_number, j.journal_date AS date,
@@ -567,7 +573,10 @@ export async function getAccountRegister(ctx: Ctx, input: z.input<typeof Registe
     SELECT lines.*,
            (SELECT bt.id FROM bank_transactions bt WHERE bt.gl_journal_id = lines.journal_id OR bt.void_gl_journal_id = lines.journal_id LIMIT 1) AS bank_txn_id,
            (SELECT p.id FROM ar_payments p WHERE p.gl_journal_id = lines.journal_id OR p.void_gl_journal_id = lines.journal_id LIMIT 1) AS ar_payment_id,
-           (SELECT p.id FROM ap_payments p WHERE p.gl_journal_id = lines.journal_id OR p.void_gl_journal_id = lines.journal_id LIMIT 1) AS ap_payment_id
+           (SELECT p.id FROM ap_payments p WHERE p.gl_journal_id = lines.journal_id OR p.void_gl_journal_id = lines.journal_id LIMIT 1) AS ap_payment_id,
+           (SELECT r.id FROM sales_receipts r WHERE r.gl_journal_id = lines.journal_id OR r.void_gl_journal_id = lines.journal_id LIMIT 1) AS sales_receipt_id,
+           (SELECT r.id FROM refund_receipts r WHERE r.gl_journal_id = lines.journal_id OR r.void_gl_journal_id = lines.journal_id LIMIT 1) AS refund_id,
+           (SELECT t.id FROM sales_tax_payments t WHERE t.gl_journal_id = lines.journal_id OR t.void_gl_journal_id = lines.journal_id LIMIT 1) AS tax_payment_id
       FROM lines
      WHERE (${f.from ?? null}::date IS NULL OR lines.date >= ${f.from ?? null}::date)
        AND (${f.to ?? null}::date IS NULL OR lines.date <= ${f.to ?? null}::date)
@@ -592,7 +601,13 @@ export async function getAccountRegister(ctx: Ctx, input: z.input<typeof Registe
           ? { type: "customer_payment" as const, id: r.ar_payment_id }
           : r.ap_payment_id
             ? { type: "bill_payment" as const, id: r.ap_payment_id }
-            : { type: "journal" as const, id: r.journal_id },
+            : r.sales_receipt_id
+              ? { type: "sales_receipt" as const, id: r.sales_receipt_id }
+              : r.refund_id
+                ? { type: "refund_receipt" as const, id: r.refund_id }
+                : r.tax_payment_id
+                  ? { type: "sales_tax_payment" as const, id: r.tax_payment_id }
+                  : { type: "journal" as const, id: r.journal_id },
     })),
     f.limit,
     f.offset

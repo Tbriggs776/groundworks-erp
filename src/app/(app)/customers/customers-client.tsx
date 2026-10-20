@@ -42,9 +42,11 @@ const TYPE_LABEL: Record<string, string> = {
 export function CustomersClient({
   customers,
   truncated,
+  taxRates = [],
 }: {
   customers: CustomerRow[];
   truncated: boolean;
+  taxRates?: Array<{ id: string; name: string }>;
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -157,7 +159,7 @@ export function CustomersClient({
         {truncated && " (showing the first 200; search to narrow)"}.
       </div>
 
-      <CustomerForm open={open} onOpenChange={setOpen} initial={editing} />
+      <CustomerForm open={open} onOpenChange={setOpen} initial={editing} taxRates={taxRates} />
     </div>
   );
 }
@@ -166,10 +168,12 @@ function CustomerForm({
   open,
   onOpenChange,
   initial,
+  taxRates,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   initial: Customer | null;
+  taxRates: Array<{ id: string; name: string }>;
 }) {
   const isEdit = !!initial;
   const [pending, start] = useTransition();
@@ -187,6 +191,8 @@ function CustomerForm({
   const [currency, setCurrency] = useState(initial?.currency ?? "USD");
   const [creditLimit, setCreditLimit] = useState(initial?.creditLimit ?? "");
   const [taxExempt, setTaxExempt] = useState(initial?.taxExempt ?? false);
+  const [taxExemptReason, setTaxExemptReason] = useState(initial?.taxExemptReason ?? "");
+  const [defaultTaxCodeId, setDefaultTaxCodeId] = useState(initial?.defaultTaxCodeId ?? "");
   const [taxId, setTaxId] = useState(initial?.taxId ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [isActive, setIsActive] = useState(initial?.isActive ?? true);
@@ -205,6 +211,8 @@ function CustomerForm({
         currency: currency.toUpperCase(),
         creditLimit: creditLimit || null,
         taxExempt,
+        taxExemptReason: taxExempt ? taxExemptReason : "",
+        defaultTaxCodeId: defaultTaxCodeId || null,
         taxId,
         notes,
         isActive,
@@ -289,6 +297,27 @@ function CustomerForm({
               <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Tax ID (EIN / SSN)</Label>
               <Input value={taxId} onChange={(e) => setTaxId(e.target.value)} />
             </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Default sales tax rate</Label>
+              <select
+                value={defaultTaxCodeId}
+                onChange={(e) => setDefaultTaxCodeId(e.target.value)}
+                className="w-full text-sm bg-background border border-border rounded-md px-2 py-2"
+              >
+                <option value="">None</option>
+                {taxRates.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+            {taxExempt && (
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Exemption reason</Label>
+                <Input value={taxExemptReason} onChange={(e) => setTaxExemptReason(e.target.value)} placeholder="Resale, nonprofit, government…" />
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center pt-1">
             <label className="flex items-center gap-2 text-xs cursor-pointer">

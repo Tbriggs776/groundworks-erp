@@ -5,11 +5,14 @@ import { AppShell } from "@/components/app-shell/shell";
 import { CreatorChip } from "@/components/creator-chip";
 import { StatusBadge } from "@/components/status-badge";
 import { runAs } from "@/lib/actor";
+import { listCustomerCredits } from "@/lib/ar/credits";
 import { getInvoice } from "@/lib/ar/invoices";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
+import { CreditsOnInvoice, UseCredit } from "../../credit-panels";
+import { DocLines } from "../../doc-view";
 import { InvoiceActions } from "./invoice-actions";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
@@ -23,6 +26,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
     throw e;
   });
   const creator = await creatorOf(inv);
+  const credits = inv.status === "open" ? await runAs(actor, (ctx) => listCustomerCredits(ctx, { customerId: inv.customerId })) : [];
   const fmt = (v: string) => formatMoney(v, { currency: inv.currency });
   const paid = money(inv.totalAmount).minus(money(inv.openBalance));
   const overdue = inv.status === "open" && inv.dueDate < format(new Date(), "yyyy-MM-dd");
@@ -92,53 +96,27 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           </div>
         )}
 
-        <div className="gw-table-wrap rounded-md border border-border overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                <th className="text-left font-medium px-3 py-2 w-10">#</th>
-                <th className="text-left font-medium px-3 py-2">Product / service</th>
-                <th className="text-right font-medium px-3 py-2 w-20">Qty</th>
-                <th className="text-right font-medium px-3 py-2 w-28">Rate</th>
-                <th className="text-right font-medium px-3 py-2 w-32">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inv.lines.map((l) => (
-                <tr key={l.id} className="border-t border-border">
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{l.lineNumber}</td>
-                  <td className="px-3 py-2">
-                    {l.itemName && <div className="text-sm">{l.itemName}</div>}
-                    {l.description && l.description !== l.itemName && (
-                      <div className="text-xs text-muted-foreground">{l.description}</div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">{money(l.quantity).toString()}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">{fmt(l.unitPrice)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">{fmt(l.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-border bg-muted/30">
-                <td colSpan={4} className="px-3 py-2 text-right text-[10px] uppercase tracking-wider text-muted-foreground">Total</td>
-                <td className="px-3 py-2 text-right font-mono text-sm font-semibold">{fmt(inv.totalAmount)}</td>
-              </tr>
-              {(inv.status === "open" || inv.status === "paid") && (
-                <>
-                  <tr>
-                    <td colSpan={4} className="px-3 py-1 text-right text-[10px] uppercase tracking-wider text-muted-foreground">Paid</td>
-                    <td className="px-3 py-1 text-right font-mono text-xs">{fmt(paid.toFixed(4))}</td>
-                  </tr>
-                  <tr>
-                    <td colSpan={4} className="px-3 py-1 pb-2 text-right text-[10px] uppercase tracking-wider text-muted-foreground">Balance due</td>
-                    <td className="px-3 py-1 pb-2 text-right font-mono text-sm font-semibold">{fmt(inv.openBalance)}</td>
-                  </tr>
-                </>
-              )}
-            </tfoot>
-          </table>
-        </div>
+        <DocLines
+          lines={inv.lines}
+          subtotal={inv.subtotalAmount}
+          taxLines={inv.taxLines}
+          taxExempt={inv.taxExempt}
+          total={inv.totalAmount}
+          currency={inv.currency}
+          extraRows={
+            inv.status === "open" || inv.status === "paid"
+              ? [
+                  { label: "Paid and credited", value: fmt(paid.toFixed(4)) },
+                  { label: "Balance due", value: fmt(inv.openBalance), strong: true },
+                ]
+              : []
+          }
+        />
+
+        {inv.status === "open" && credits.length > 0 && money(inv.openBalance).gt(0) && (
+          <UseCredit invoiceId={inv.id} credits={credits} openBalance={inv.openBalance} currency={inv.currency} />
+        )}
+        <CreditsOnInvoice credits={inv.credits} currency={inv.currency} />
 
         {inv.payments.length > 0 && (
           <div className="space-y-2">

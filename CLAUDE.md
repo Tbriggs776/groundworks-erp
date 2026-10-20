@@ -115,7 +115,7 @@ MCP /api/mcp  ────┘        one transaction per call; throw = roll back
 ```
 src/
   app/
-    (app)/            authenticated UI: dashboard, ar/, ap/, banking/, items, gl,
+    (app)/            authenticated UI: dashboard, ar/, ap/, banking/, sales-tax, items, gl,
                       reports/, review, activity, settings/{agents,api-keys},
                       workspace/{people,security,access-review,audit,companies},
                       account/security (own password, MFA, sessions),
@@ -134,7 +134,7 @@ src/
                       password rules, support access
     api/              registry, REST, MCP, OpenAPI, executor (dry run + idempotency)
     agents/           key generation, authentication, agent + key service
-    ar/ ap/ banking/ gl/ parties/ reports/   domain services
+    ar/ ap/ banking/ gl/ parties/ reports/ sales-tax/   domain services
     db/schema/ db/migrations/   seed/   supabase/   ui/ (server-only page helpers)
 scripts/
   test-*.ts           e2e suites (lib/harness.ts for shared setup)
@@ -179,6 +179,10 @@ docs/compliance/      SOC 2 control map and checklist
 - Error handling at boundaries only (`toAppError`).
 - Never point a `<Link>` at a route handler with side effects (exports,
   sign-out): Link prefetches. Use a plain `<a download>` or a POST form.
+- AR balances (invoice open, credit left, payment unapplied, customer
+  balance) come from `src/lib/ar/balances.ts` only; never re-derive them
+  from payment applications alone, or credits go missing. Sales documents
+  share line resolution, tax, and posting in `src/lib/ar/documents.ts`.
 - Banking amounts are from the account holder's view: + money in, − money
   out (= debit − credit on the account). Reconciliation and overview
   balances use the natural sign (a credit card's balance owed is positive).

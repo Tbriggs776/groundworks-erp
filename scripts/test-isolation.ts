@@ -167,6 +167,31 @@ async function main() {
       rest(keyB, "POST", "/reconciliations", { accountId: bank.id, statementEndDate: "2026-05-31", statementEndingBalance: "0" }),
       "reconciliation"
     );
+    // Sales tax and the other sales documents.
+    ids["tax-agencies"] = await ok(rest(keyB, "POST", "/tax-agencies", { name: `${MARKER} agency` }), "tax agency");
+    ids["tax-rates"] = await ok(
+      rest(keyB, "POST", "/tax-rates", { name: `${MARKER} rate`, agencyId: ids["tax-agencies"], ratePercent: "5" }),
+      "tax rate"
+    );
+    ids["sales-receipts"] = await ok(
+      rest(keyB, "POST", "/sales-receipts", { customerId: ids.customers, receiptDate: "2026-05-06", method: "cash", taxCodeId: ids["tax-rates"], lines: [{ itemId: ids.items }], post: true }),
+      "sales receipt"
+    );
+    ids["credit-memos"] = await ok(
+      rest(keyB, "POST", "/credit-memos", { customerId: ids.customers, memoDate: "2026-05-07", lines: [{ itemId: ids.items, quantity: 1, unitPrice: "20" }], post: true }),
+      "credit memo"
+    );
+    const memo = await rest(keyB, "GET", `/credit-memos/${ids["credit-memos"]}`);
+    ids["credit-applications"] = memo.json.uses[0]?.id;
+    assert(ids["credit-applications"], "B setup: the credit memo auto-applied to B's open invoice");
+    ids.refunds = await ok(
+      rest(keyB, "POST", "/refunds", { kind: "items", customerId: ids.customers, refundDate: "2026-05-08", method: "check", bankAccountId: bank.id, lines: [{ itemId: ids.items, unitPrice: "10" }], post: true }),
+      "refund"
+    );
+    ids["tax-payments"] = await ok(
+      rest(keyB, "POST", "/tax-payments", { agencyId: ids["tax-agencies"], paymentDate: "2026-05-31", periodEnd: "2026-05-31", amount: "1", bankAccountId: bank.id }),
+      "tax payment"
+    );
   }
   const secrets = [MARKER, b.org.id, ...Object.values(ids)];
   const tables = await tenantTables();
@@ -256,6 +281,14 @@ async function main() {
     ["statement import into B's account", "/bank-statements", { accountId: bBank, content: "Date,Description,Amount\n05/06/2026,x,-1.00\n" }],
     ["bank rule categorizing to B's account", "/bank-rules", { name: "x", conditions: [{ field: "description", op: "contains", value: "x" }], categoryAccountId: ids.accounts }],
     ["reconciliation of B's account", "/reconciliations", { accountId: bBank, statementEndDate: "2026-05-31", statementEndingBalance: "0" }],
+    ["sales receipt for B's customer", "/sales-receipts", { customerId: ids.customers, receiptDate: "2026-05-06", method: "cash", lines: [{ itemId: aItem }] }],
+    ["sales receipt taxed at B's rate", "/sales-receipts", { receiptDate: "2026-05-06", method: "cash", taxCodeId: ids["tax-rates"], lines: [{ itemId: aItem }] }],
+    ["credit memo for B's customer", "/credit-memos", { customerId: ids.customers, memoDate: "2026-05-07", lines: [{ itemId: aItem }] }],
+    ["refund from B's bank account", "/refunds", { kind: "items", customerId: aCustomer, refundDate: "2026-05-08", method: "check", bankAccountId: bBank, lines: [{ itemId: aItem }] }],
+    ["B's credit applied to A's invoice", "/credit-applications", { creditMemoId: ids["credit-memos"], invoiceId: aInvoice }],
+    ["tax payment to B's agency", "/tax-payments", { agencyId: ids["tax-agencies"], paymentDate: "2026-05-31", periodEnd: "2026-05-31", amount: "1", bankAccountId: aBank }],
+    ["tax rate under B's agency", "/tax-rates", { name: "x", agencyId: ids["tax-agencies"], ratePercent: "1" }],
+    ["customer defaulting to B's tax rate", "/customers", { name: "x", defaultTaxCodeId: ids["tax-rates"] }],
   ];
   for (const [label, path, body] of borrow) {
     await check(`refused: ${label}`, async () => {

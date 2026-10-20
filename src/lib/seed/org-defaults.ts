@@ -78,6 +78,10 @@ export const DEFAULT_NUMBER_SERIES: Array<{
   { code: "EXP", description: "Expenses and Checks", prefix: "EXP-", width: 6 },
   { code: "DEP", description: "Deposits", prefix: "DEP-", width: 6 },
   { code: "XFER", description: "Transfers", prefix: "XFER-", width: 6 },
+  { code: "SR", description: "Sales Receipts", prefix: "SR-", width: 6 },
+  { code: "CM", description: "Credit Memos", prefix: "CM-", width: 6 },
+  { code: "RR", description: "Refund Receipts", prefix: "RR-", width: 6 },
+  { code: "STP", description: "Sales Tax Payments", prefix: "STP-", width: 6 },
 ];
 
 export async function seedOrganizationDefaults(
