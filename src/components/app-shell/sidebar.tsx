@@ -97,7 +97,7 @@ const NAV: NavGroup[] = [
       { label: "Allocations", href: "/allocations" },
       { label: "Budgets", href: "/budgets" },
       { label: "Classes & Locations", href: "/dimensions" },
-      { label: "Period Close", href: "/periods" },
+      { label: "Close Books", href: "/periods" },
       { label: "Exchange Rates", href: "/rates" },
       { label: "FX Revaluation", href: "/rates/revaluation" },
     ],
@@ -123,6 +123,7 @@ const NAV: NavGroup[] = [
       { label: "Trial Balance", href: "/reports/trial-balance" },
       { label: "GL Detail", href: "/reports/gl-detail" },
       { label: "Audit Trail", href: "/reports/audit-trail" },
+      { label: "Changes After Close", href: "/reports/changes-after-close" },
     ],
   },
   {

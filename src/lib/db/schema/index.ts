@@ -7,6 +7,7 @@ export * from "./finance";
 export * from "./accounts";
 export * from "./dimensions";
 export * from "./periods";
+export * from "./close";
 export * from "./journal_meta";
 export * from "./journals";
 export * from "./recurring";

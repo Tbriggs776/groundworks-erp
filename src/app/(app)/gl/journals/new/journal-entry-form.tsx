@@ -55,6 +55,10 @@ export function JournalEntryForm({
   const [sourceCodeId, setSourceCodeId] = useState(defaultSourceCodeId);
   const [reasonCodeId, setReasonCodeId] = useState<string | "">("");
   const [description, setDescription] = useState("");
+  const [adjusting, setAdjusting] = useState(false);
+  const [closedPeriod, setClosedPeriod] = useState(false);
+  const [closingPassword, setClosingPassword] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
   const [lines, setLines] = useState<Line[]>([newLine(), newLine()]);
 
   const totals = useMemo(() => {
@@ -88,6 +92,9 @@ export function JournalEntryForm({
         reasonCodeId: reasonCodeId || null,
         description,
         currency: "USD",
+        adjusting,
+        closingPassword: closedPeriod ? closingPassword : undefined,
+        overrideReason: closedPeriod ? overrideReason : undefined,
         lines: lines
           .filter((l) => l.accountId)
           .map((l) => ({
@@ -153,6 +160,29 @@ export function JournalEntryForm({
           onChange={(e) => setDescription(e.target.value)}
           placeholder="e.g. March rent payment"
         />
+      </div>
+
+      <div className="max-w-2xl space-y-2 text-sm">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" className="h-4 w-4 accent-primary" checked={adjusting} onChange={(e) => setAdjusting(e.target.checked)} />
+          Adjusting entry <span className="text-xs text-muted-foreground">(posts into a soft-closed period)</span>
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" className="h-4 w-4 accent-primary" checked={closedPeriod} onChange={(e) => setClosedPeriod(e.target.checked)} />
+          Posting into a hard-closed period
+        </label>
+        {closedPeriod && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Closing password</Label>
+              <Input type="password" value={closingPassword} onChange={(e) => setClosingPassword(e.target.value)} autoComplete="off" />
+            </div>
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Reason</Label>
+              <Input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
+            </div>
+          </div>
+        )}
       </div>
 
       {reasonCodes.length > 0 && (

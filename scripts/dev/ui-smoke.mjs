@@ -110,6 +110,7 @@ const pages = [
   ["/reports/sales-by-customer", "sales-by-customer"], ["/reports/sales-by-item", "sales-by-item"],
   ["/reports/expenses-by-vendor", "expenses-by-vendor"], ["/reports/open-invoices", "open-invoices"],
   ["/reports/unpaid-bills", null], ["/reports/audit-trail", "audit-trail"],
+  ["/periods", "close-books"], ["/reports/changes-after-close", null],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -392,6 +393,24 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   const trailOk = trailPdf.status() === 200 && (await trailPdf.body()).subarray(0, 5).toString() === "%PDF-";
   console.log(trailOk ? "✓ flow: open invoices link to invoices; the audit trail prints" : "✗ flow: open invoices / audit trail");
   if (!trailOk) problems.push(`audit trail PDF ${trailPdf.status()}`);
+
+  // Close January from its checklist (with a note for the open items), then reopen it.
+  await page.goto(BASE + "/periods", { waitUntil: "networkidle" });
+  await page.getByRole("link", { name: /^Checklist/ }).first().click();
+  await page.waitForURL(/\/periods\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText(/^Checks as of/).waitFor({ timeout: 10000 });
+  await page.screenshot({ path: `${outDir}/period-checklist.png`, fullPage: true });
+  const closeBtn = page.getByRole("button", { name: "Close", exact: true });
+  if (await closeBtn.count()) {
+    const note = page.getByPlaceholder("Why it's closing anyway");
+    if (await note.count()) await note.fill("Smoke test close");
+    await closeBtn.click();
+    await page.getByText(/^Closed FY/).waitFor({ timeout: 15000 });
+  }
+  await page.getByPlaceholder("Why it's reopening").fill("Smoke test reopen");
+  await page.getByRole("button", { name: "Reopen", exact: true }).click();
+  await page.getByText(/^Reopened FY/).waitFor({ timeout: 15000 });
+  console.log("✓ flow: a period closes from its checklist and reopens");
 
   await page.goto(BASE + "/banking/transactions/new?type=check", { waitUntil: "networkidle" });
   await page.getByRole("combobox", { name: "Bank account" }).first().click();

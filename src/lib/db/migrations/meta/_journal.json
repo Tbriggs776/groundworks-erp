@@ -218,6 +218,13 @@
       "when": 1792528535448,
       "tag": "0030_recurring_bills_1099",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792538744043,
+      "tag": "0031_month_end_close",
+      "breakpoints": true
     }
   ]
 }

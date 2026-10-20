@@ -27,6 +27,7 @@ import * as bankReview from "@/lib/banking/review";
 import * as bankRules from "@/lib/banking/rules";
 import * as bankTxns from "@/lib/banking/transactions";
 import * as accounts from "@/lib/gl/accounts";
+import * as closeSvc from "@/lib/gl/close";
 import * as journals from "@/lib/gl/journals";
 import { listDimensions, listPeriods, ListPeriodsSchema, whoami } from "@/lib/gl/reference";
 import * as parties from "@/lib/parties/service";
@@ -109,7 +110,7 @@ export const OPERATIONS: Operation[] = [
     name: "list_periods",
     title: "List fiscal periods",
     description:
-      "Monthly fiscal periods with their status (open, soft_closed, hard_closed). Postings must fall in an open period; check here when a post fails with a period error.",
+      "Monthly fiscal periods with their status (open, soft_closed, hard_closed). Postings must fall in an open period; check here when a post fails with a period error. A soft-closed period takes only adjusting entries (create_journal_entry with adjusting=true).",
     group: "Context",
     method: "GET",
     path: "/periods",
@@ -117,6 +118,100 @@ export const OPERATIONS: Operation[] = [
     input: ListPeriodsSchema,
     run: (ctx, input) => listPeriods(ctx, input),
   }),
+  // ---------------------------------------------------------- Month-end close
+  op({
+    name: "get_close_checklist",
+    title: "Month-end close checklist",
+    description:
+      "Before a period closes: whether bank and card accounts are reconciled through its last day, nothing waits in For review, no drafts are dated in or before it, AR and AP tie to their control accounts, Undeposited Funds and holding accounts are empty, recurring templates have run, and the company's own checklist items are signed off. Each open check lists what to fix with a link. `alsoCloses` names earlier open periods that close with it. Use it to prepare a close; only a person closes.",
+    group: "Accounting",
+    method: "GET",
+    path: "/periods/{id}/checklist",
+    scope: "read",
+    input: closeSvc.PeriodIdSchema,
+    run: (ctx, input) => closeSvc.closeChecklist(ctx, input),
+  }),
+  op({
+    name: "close_period",
+    title: "Close the books through a period",
+    description:
+      "People only (admins and owners; agents get forbidden). Closes this period and any earlier one still open. soft: only adjusting and reversing entries post. hard: nothing posts without the closing password, which this call needs too; hard closing a fiscal year's last period closes the year. With open checklist items, a note is required.",
+    group: "Accounting",
+    method: "POST",
+    path: "/periods/{id}/close",
+    scope: "admin",
+    input: closeSvc.ClosePeriodSchema,
+    run: (ctx, input) => closeSvc.closePeriod(ctx, input),
+  }),
+  op({
+    name: "reopen_period",
+    title: "Reopen a period",
+    description:
+      "People only (admins and owners). Reopens this period and every closed period after it. A reason is required; reopening a hard-closed period takes the closing password. Logged, and anything posted afterwards shows on the changes after close report.",
+    group: "Accounting",
+    method: "POST",
+    path: "/periods/{id}/reopen",
+    scope: "admin",
+    input: closeSvc.ReopenPeriodSchema,
+    run: (ctx, input) => closeSvc.reopenPeriod(ctx, input),
+  }),
+  op({
+    name: "set_close_task",
+    title: "Sign off a close checklist item",
+    description: "People only. Mark one of the company's checklist items done (done=true, optional note) or not done for an open period.",
+    group: "Accounting",
+    method: "POST",
+    path: "/periods/{id}/tasks",
+    scope: "write",
+    input: closeSvc.SetCloseTaskSchema,
+    run: (ctx, input) => closeSvc.setCloseTask(ctx, input),
+  }),
+  op({
+    name: "list_close_tasks",
+    title: "List close checklist items",
+    description: "The company's own month-end checklist items (beyond the automatic checks), active and retired.",
+    group: "Accounting",
+    method: "GET",
+    path: "/close-tasks",
+    scope: "read",
+    input: Empty,
+    run: (ctx) => closeSvc.listCloseTasks(ctx),
+  }),
+  op({
+    name: "create_close_task",
+    title: "Add a close checklist item",
+    description: "People only (accountant and up). A recurring month-end step, like \"Review payroll\" or \"Accrue utilities\", signed off each period.",
+    group: "Accounting",
+    method: "POST",
+    path: "/close-tasks",
+    scope: "write",
+    input: closeSvc.CreateCloseTaskSchema,
+    run: (ctx, input) => closeSvc.createCloseTask(ctx, input),
+  }),
+  op({
+    name: "update_close_task",
+    title: "Edit a close checklist item",
+    description: "People only (accountant and up). Rename it, or isActive=false to retire it from future checklists.",
+    group: "Accounting",
+    method: "PATCH",
+    path: "/close-tasks/{id}",
+    scope: "write",
+    input: closeSvc.UpdateCloseTaskSchema,
+    run: (ctx, input) => closeSvc.updateCloseTask(ctx, input),
+  }),
+  op({
+    name: "report_changes_after_close",
+    title: "Changes after close",
+    description:
+      "Journals posted into a period after it was first closed, by journal date in the range (default: year to date): adjusting entries, override posts into hard-closed periods, and anything posted while a period was reopened. Who posted each, and its total. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/changes-after-close",
+    scope: "read",
+    input: closeSvc.ChangesAfterCloseSchema,
+    run: (ctx, input) => closeSvc.changesAfterClose(ctx, input),
+  }),
+
   op({
     name: "list_dimensions",
     title: "List classes, locations, departments, projects",
@@ -205,7 +300,7 @@ export const OPERATIONS: Operation[] = [
   op({
     name: "create_journal_entry",
     title: "Create a journal entry",
-    description: `A manual double-entry journal: at least two lines, each with a debit OR a credit, debits equal to credits. Use for adjustments, accruals, reclasses, and opening balances; use invoices / bills / payments for everyday transactions so subledgers stay right. Control accounts (AR, AP) can't be used here. Saved as a draft unless post=true. ${POSTING_NOTE}`,
+    description: `A manual double-entry journal: at least two lines, each with a debit OR a credit, debits equal to credits. Use for adjustments, accruals, reclasses, and opening balances; use invoices / bills / payments for everyday transactions so subledgers stay right. Control accounts (AR, AP) can't be used here. Saved as a draft unless post=true. Month-end adjustments into a soft-closed period need adjusting=true; a hard-closed period takes a person's closingPassword (agents can't). ${POSTING_NOTE}`,
     group: "Accounting",
     method: "POST",
     path: "/journal-entries",
@@ -216,12 +311,13 @@ export const OPERATIONS: Operation[] = [
   op({
     name: "post_journal_entry",
     title: "Post a draft journal entry",
-    description: "Post a draft manual journal to the ledger. Runs every posting validation (balance, open period, account rules).",
+    description:
+      "Post a draft manual or adjusting journal to the ledger. Runs every posting validation (balance, open period, account rules). A soft-closed period takes only adjusting entries; a hard-closed one takes a person's closingPassword (agents can't).",
     group: "Accounting",
     method: "POST",
     path: "/journal-entries/{id}/post",
     scope: "post",
-    input: ById,
+    input: journals.PostJournalEntrySchema,
     run: (ctx, input) => journals.postJournalEntry(ctx, input),
   }),
   op({
@@ -2360,7 +2456,7 @@ export const OPERATIONS: Operation[] = [
     name: "export_report",
     title: "Download a report as CSV or PDF",
     description:
-      "Any report as a file: profit-and-loss, profit-and-loss-by-period, profit-and-loss-by-class, budget-vs-actual, cash-flow, balance-sheet, trial-balance, ar-aging, ap-aging, account-ledger (accountId), 1099 (year; TINs masked), sales-by-customer, sales-by-item, expenses-by-vendor, open-invoices, unpaid-bills, or audit-trail. Pass the same filters the report takes. format csv or pdf (letterhead). Returns { fileName, contentType, sizeBytes, base64 }. Each download is audited.",
+      "Any report as a file: profit-and-loss, profit-and-loss-by-period, profit-and-loss-by-class, budget-vs-actual, cash-flow, balance-sheet, trial-balance, ar-aging, ap-aging, account-ledger (accountId), 1099 (year; TINs masked), sales-by-customer, sales-by-item, expenses-by-vendor, open-invoices, unpaid-bills, audit-trail, or changes-after-close. Pass the same filters the report takes. format csv or pdf (letterhead). Returns { fileName, contentType, sizeBytes, base64 }. Each download is audited.",
     group: "Reports",
     method: "GET",
     path: "/reports/export",

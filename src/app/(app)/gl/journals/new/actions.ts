@@ -14,6 +14,9 @@ export type PostJeInput = {
   description: string;
   reasonCodeId?: string | null;
   currency?: string;
+  adjusting?: boolean;
+  closingPassword?: string;
+  overrideReason?: string;
   lines: Array<{ accountId: string; debit: string; credit: string; memo?: string }>;
 };
 
@@ -27,6 +30,9 @@ export async function postManualJournal(
       description: input.description,
       reasonCodeId: input.reasonCodeId ?? undefined,
       currency: input.currency,
+      adjusting: input.adjusting,
+      closingPassword: input.closingPassword || undefined,
+      overrideReason: input.overrideReason || undefined,
       lines: input.lines.map((l) => ({
         accountId: l.accountId,
         debit: l.debit || undefined,

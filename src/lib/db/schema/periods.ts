@@ -66,6 +66,10 @@ export const fiscalPeriods = pgTable(
     closedBy: uuid("closed_by").references(() => profiles.id, {
       onDelete: "set null",
     }),
+    /** When the period was first closed. Never cleared, so "changes after close" survives a reopen. */
+    firstClosedAt: timestamp("first_closed_at", { withTimezone: true }),
+    /** Why it was closed with open checklist items. */
+    closeNote: text("close_note"),
     ...timestamps,
   },
   (t) => [

@@ -9,7 +9,7 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
-import { auditLog, dimensions, fiscalYears, memberships, workspaceMembers } from "../src/lib/db/schema";
+import { auditLog, dimensions, fiscalPeriods, fiscalYears, memberships, workspaceMembers } from "../src/lib/db/schema";
 import { createBudget } from "../src/lib/gl/budgets";
 import { runAsWorkspace, workspaceActor } from "../src/lib/actor";
 import * as agentsSvc from "../src/lib/agents/service";
@@ -243,6 +243,10 @@ async function main() {
       rest(keyB, "POST", "/estimates", { customerId: ids.customers, estimateDate: "2026-05-09", memo: MARKER, lines: [{ itemId: ids.items, quantity: 2, unitPrice: "30" }] }),
       "estimate"
     );
+    // Month-end close: a checklist item, and a period A must not close or read.
+    ids["close-tasks"] = await ok(rest(keyB, "POST", "/close-tasks", { title: `${MARKER} close step` }), "close task");
+    const [bPeriod] = await db.select().from(fiscalPeriods).where(eq(fiscalPeriods.organizationId, b.org.id)).orderBy(fiscalPeriods.startDate).limit(1);
+    ids.periods = bPeriod.id;
     // B's letterhead: A must never see it, on screen or in a PDF.
     await ok(rest(keyB, "PATCH", "/company-profile", { legalName: `${MARKER} letterhead`, documentFooter: MARKER }), "company profile");
     ids["recurring-invoices"] = await ok(
@@ -280,6 +284,8 @@ async function main() {
     set_account_1099_box: { box: "nec_1" },
     match_bank_line: { glLineIds: [crypto.randomUUID()] },
     set_reconciliation_cleared: { glLineIds: [crypto.randomUUID()], cleared: true },
+    close_period: { note: "isolation test" },
+    set_close_task: { taskId: crypto.randomUUID() },
   };
   const bodyFor = (name: string) => ({ reason: "isolation test", date: "2026-05-05", ...bodies[name] });
   const aItem = (await rest(keyA, "POST", "/items", { name: "A's own item", salesPrice: "5", incomeAccountId: aIncome })).json.id as string;
@@ -350,7 +356,9 @@ async function main() {
   const aBill = (await rest(keyA, "POST", "/bills", { vendorId: aVendor, billDate: "2026-05-01", lines: [{ accountId: aExpense, amount: "5" }] })).json.id as string;
   for (const step of ["submit", "approve", "post"]) await rest(keyA, "POST", `/bills/${aBill}/${step}`);
   const aCredit = (await rest(keyA, "POST", "/vendor-credits", { vendorId: aVendor, creditDate: "2026-05-02", lines: [{ accountId: aExpense, amount: "1" }], post: true })).json.id as string;
+  const [aPeriod] = await db.select().from(fiscalPeriods).where(eq(fiscalPeriods.organizationId, a.org.id)).orderBy(fiscalPeriods.startDate).limit(1);
   const borrow: Array<[string, string, unknown]> = [
+    ["sign-off with B's checklist item", `/periods/${aPeriod.id}/tasks`, { taskId: ids["close-tasks"] }],
     ["invoice for B's customer", "/invoices", { customerId: ids.customers, invoiceDate: "2026-05-01", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: aIncome }] }],
     ["invoice line on B's item", "/invoices", { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ itemId: ids.items, quantity: 1 }] }],
     ["invoice line on B's account", "/invoices", { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: ids.accounts }] }],

@@ -72,6 +72,16 @@ const JournalLineSchema = z
     { message: "Each line needs a positive debit or a positive credit, not both." }
   );
 
+/** Posting into a hard-closed period: people only, with the closing password. */
+const closedPeriodOverride = {
+  closingPassword: z
+    .string()
+    .max(200)
+    .optional()
+    .describe("People only: the closing password, to post into a hard-closed period."),
+  overrideReason: optionalText(500).describe("Why this posts into a hard-closed period."),
+};
+
 export const CreateJournalEntrySchema = z.object({
   date: isoDate.describe("Posting date; must fall in an open fiscal period."),
   description: z.string().trim().min(1).max(500),
@@ -88,8 +98,15 @@ export const CreateJournalEntrySchema = z.object({
     .boolean()
     .optional()
     .describe("Post immediately. Without this the entry is saved as a draft for review."),
+  adjusting: z
+    .boolean()
+    .optional()
+    .describe("An adjusting entry: the only kind (with reversals) that posts into a soft-closed period."),
+  ...closedPeriodOverride,
 });
 export type CreateJournalEntryInput = z.input<typeof CreateJournalEntrySchema>;
+
+export const PostJournalEntrySchema = z.object({ id, ...closedPeriodOverride });
 
 export const ListJournalsSchema = z.object({
   status: z.enum(journalStatus.enumValues).optional(),
@@ -226,18 +243,28 @@ export async function getJournal(ctx: Ctx, input: { id: string }): Promise<Journ
 }
 
 /** Post a draft inside ctx.tx; validation failures become AppErrors. */
-async function postJournalDraft(ctx: Ctx, journalId: string, label: string) {
+async function postJournalDraft(
+  ctx: Ctx,
+  journalId: string,
+  label: string,
+  override: { closingPassword?: string; overrideReason?: string | null } = {}
+) {
   const [{ total }] = await ctx.tx
     .select({ total: sql<string>`COALESCE(SUM(${glLines.debitLocal}), 0)::text` })
     .from(glLines)
     .where(eq(glLines.journalId, journalId));
   requirePostingWithinLimit(ctx.actor, total, label);
+  if (override.closingPassword && ctx.actor.kind !== "user") {
+    throw new AppError("forbidden", "Only a person can post into a hard-closed period.");
+  }
 
   const result = await postDraft(ctx.tx, {
     journalId,
     actorId: ctx.actor.userId,
     actor: ctx.actor,
     organizationId: ctx.actor.organizationId,
+    overridePassword: override.closingPassword,
+    overrideReason: override.overrideReason ?? undefined,
   });
   if (!result.ok) {
     throw new AppError("posting_failed", result.error, {
@@ -270,7 +297,7 @@ export async function createJournalEntry(
     actor: ctx.actor,
     journalDate: data.date,
     sourceCodeId: data.sourceCodeId ?? (await lookupSourceCode(ctx.tx, org, "GJ")),
-    source: "manual",
+    source: data.adjusting ? "adjusting" : "manual",
     description: data.description,
     reasonCodeId: data.reasonCodeId,
     currency: data.currency,
@@ -293,7 +320,7 @@ export async function createJournalEntry(
       ctx,
       async (c) => {
         requirePermission(c.actor, "post", "accountant", "post journal entries");
-        await postJournalDraft(c, draft.journalId, `Journal entry ${draft.journalNumber}`);
+        await postJournalDraft(c, draft.journalId, `Journal entry ${draft.journalNumber}`, data);
         return getJournal(c, { id: draft.journalId });
       },
       () => getJournal(ctx, { id: draft.journalId })
@@ -314,19 +341,20 @@ export async function createJournalEntry(
   return getJournal(ctx, { id: draft.journalId });
 }
 
-export async function postJournalEntry(ctx: Ctx, input: { id: string }): Promise<JournalDetail> {
+export async function postJournalEntry(ctx: Ctx, input: z.input<typeof PostJournalEntrySchema>): Promise<JournalDetail> {
   requirePermission(ctx.actor, "post", "accountant", "post journal entries");
-  const { id: journalId } = IdSchema.parse(input);
+  const data = PostJournalEntrySchema.parse(input);
+  const journalId = data.id;
   const journal = await getJournal(ctx, { id: journalId });
   if (journal.status !== "draft" && journal.status !== "pending_approval") {
     throw invalidState(`Journal ${journal.journalNumber} is ${journal.status}, not a draft.`);
   }
-  if (journal.source !== "manual") {
+  if (journal.source !== "manual" && journal.source !== "adjusting") {
     throw invalidState(
       `Journal ${journal.journalNumber} belongs to the ${journal.source} subledger; post it from its source document.`
     );
   }
-  await postJournalDraft(ctx, journalId, `Journal entry ${journal.journalNumber}`);
+  await postJournalDraft(ctx, journalId, `Journal entry ${journal.journalNumber}`, data);
   return getJournal(ctx, { id: journalId });
 }
 
@@ -367,7 +395,7 @@ export async function deleteDraftJournal(ctx: Ctx, input: { id: string }): Promi
   if (journal.status !== "draft") {
     throw invalidState(`Only drafts can be deleted; ${journal.journalNumber} is ${journal.status}.`);
   }
-  if (journal.source !== "manual") {
+  if (journal.source !== "manual" && journal.source !== "adjusting") {
     throw invalidState(`Journal ${journal.journalNumber} belongs to the ${journal.source} subledger.`);
   }
   await ctx.tx.delete(glJournals).where(eq(glJournals.id, journalId));

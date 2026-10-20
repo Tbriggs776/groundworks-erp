@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { FiscalPeriod, FiscalYear } from "@/lib/db/schema";
-import { generateFiscalYear, transitionPeriodStatus } from "./actions";
+import { generateFiscalYear } from "./actions";
 
 type YearWithPeriods = FiscalYear & { periods: FiscalPeriod[] };
 
@@ -82,7 +83,8 @@ function PeriodsTable({ periods }: { periods: FiscalPeriod[] }) {
             <th className="text-left font-medium px-3 py-2">Code</th>
             <th className="text-left font-medium px-3 py-2 w-48">Range</th>
             <th className="text-left font-medium px-3 py-2 w-32">Status</th>
-            <th className="text-right font-medium px-3 py-2 w-48">Actions</th>
+            <th className="text-left font-medium px-3 py-2">Closed</th>
+            <th className="text-right font-medium px-3 py-2 w-32"></th>
           </tr>
         </thead>
         <tbody>
@@ -100,8 +102,14 @@ function PeriodsTable({ periods }: { periods: FiscalPeriod[] }) {
               <td className="px-3 py-2">
                 <StatusBadge status={p.status} />
               </td>
-              <td className="px-3 py-2">
-                <PeriodActions period={p} />
+              <td className="px-3 py-2 text-xs text-muted-foreground">
+                {p.closedAt ? new Date(p.closedAt).toLocaleDateString() : ""}
+                {p.closeNote && <span title={p.closeNote}> · with a note</span>}
+              </td>
+              <td className="px-3 py-2 text-right">
+                <Link href={`/periods/${p.id}`} className="text-xs text-primary hover:underline whitespace-nowrap">
+                  Checklist →
+                </Link>
               </td>
             </tr>
           ))}
@@ -130,140 +138,6 @@ function StatusBadge({ status }: { status: FiscalPeriod["status"] }) {
     <Badge variant="destructive" className="text-[9px]">
       Hard Closed
     </Badge>
-  );
-}
-
-function PeriodActions({ period }: { period: FiscalPeriod }) {
-  const [pending, start] = useTransition();
-  const [hardOpen, setHardOpen] = useState(false);
-
-  function to(toStatus: FiscalPeriod["status"], opts?: { password?: string; reason?: string }) {
-    start(async () => {
-      const r = await transitionPeriodStatus({
-        periodId: period.id,
-        toStatus,
-        ...opts,
-      });
-      if (!r.ok) alert(r.error);
-    });
-  }
-
-  if (period.status === "open") {
-    return (
-      <div className="flex justify-end">
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={pending}
-          onClick={() => to("soft_closed")}
-        >
-          Soft close
-        </Button>
-      </div>
-    );
-  }
-  if (period.status === "soft_closed") {
-    return (
-      <div className="flex justify-end gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={pending}
-          onClick={() => to("open")}
-        >
-          Reopen
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={pending}
-          onClick={() => setHardOpen(true)}
-        >
-          Hard close
-        </Button>
-        <HardCloseDialog
-          open={hardOpen}
-          onOpenChange={setHardOpen}
-          onSubmit={(password, reason) => {
-            setHardOpen(false);
-            to("hard_closed", { password, reason });
-          }}
-        />
-      </div>
-    );
-  }
-  return (
-    <div className="flex justify-end">
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled={pending}
-        onClick={() => {
-          const password = prompt("Override password:");
-          const reason = prompt("Reason for reopening:");
-          if (password && reason) to("soft_closed", { password, reason });
-        }}
-      >
-        Reopen
-      </Button>
-    </div>
-  );
-}
-
-function HardCloseDialog({
-  open,
-  onOpenChange,
-  onSubmit,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (password: string, reason: string) => void;
-}) {
-  const [password, setPassword] = useState("");
-  const [reason, setReason] = useState("");
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="font-heading tracking-[0.12em]">
-            HARD CLOSE PERIOD
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            Hard-closed periods reject new posts unless an override password
-            is provided. Reason is recorded in the audit trail.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
-              Override password
-            </Label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
-              Reason
-            </Label>
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!password || !reason.trim()}
-            onClick={() => onSubmit(password, reason.trim())}
-          >
-            Hard close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
