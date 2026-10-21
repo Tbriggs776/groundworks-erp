@@ -99,6 +99,7 @@ async function newUser(tag: string): Promise<string> {
 
 async function main() {
   process.env.EMAIL_TRANSPORT = "memory";
+  process.env.FILE_STORAGE = "memory";
   const a = await createTestOrg("iso-a-");
   const b = await createTestOrg("iso-b-");
   console.log(`\nWorkspace A: ${a.org.slug}\nWorkspace B: ${b.org.slug}`);
@@ -226,6 +227,15 @@ async function main() {
       .returning();
     await db.insert(bankFeedAccounts).values({ organizationId: b.org.id, connectionId: feed.id, externalId: `${MARKER}-acct`, name: `${MARKER} checking`, accountId: bank.id });
     ids["bank-feeds"] = feed.id;
+    // A receipt in B's inbox, and a file on B's expense.
+    ids.attachments = await ok(
+      rest(keyB, "POST", "/attachments", { fileName: `${MARKER}.pdf`, contentBase64: Buffer.from(`%PDF-1.4 ${MARKER}`).toString("base64"), note: MARKER }),
+      "receipt"
+    );
+    await ok(
+      rest(keyB, "POST", "/attachments", { fileName: `${MARKER}-2.pdf`, contentBase64: Buffer.from(`%PDF-1.4 ${MARKER} 2`).toString("base64"), entityType: "bank_transaction", entityId: ids["bank-transactions"] }),
+      "attachment on an expense"
+    );
     // Sales tax and the other sales documents.
     ids["tax-agencies"] = await ok(rest(keyB, "POST", "/tax-agencies", { name: `${MARKER} agency` }), "tax agency");
     ids["tax-rates"] = await ok(
@@ -301,6 +311,8 @@ async function main() {
     set_reconciliation_cleared: { glLineIds: [crypto.randomUUID()], cleared: true },
     close_period: { note: "isolation test" },
     set_close_task: { taskId: crypto.randomUUID() },
+    link_attachment: { entityType: null, entityId: null },
+    create_expense_from_receipt: { bankAccountId: aBank, categoryAccountId: aExpense, txnDate: "2026-05-05", amount: "1" },
   };
   const bodyFor = (name: string) => ({ reason: "isolation test", date: "2026-05-05", ...bodies[name] });
   const aItem = (await rest(keyA, "POST", "/items", { name: "A's own item", salesPrice: "5", incomeAccountId: aIncome })).json.id as string;
