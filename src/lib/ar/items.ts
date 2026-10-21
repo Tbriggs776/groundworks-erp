@@ -6,6 +6,7 @@ import { writeAudit } from "@/lib/audit";
 import { AppError, notFound, rethrowUnique } from "@/lib/errors";
 import { accountByCode, requireLineAccounts } from "@/lib/gl/lookups";
 import { createInventoryAdjustment } from "@/lib/inventory/adjustments";
+import { lotExpiresField, lotNumberField } from "@/lib/inventory/lots";
 import {
   flag,
   id,
@@ -61,6 +62,8 @@ export const CreateItemSchema = z.object({
       unitCost: nonNegativeAmount.optional().describe("Cost per unit. Defaults to purchaseCost."),
       asOf: isoDate.describe("Date the quantity was on hand. Sales before it can't draw on it."),
       offsetAccountId: id.optional().describe("Credited for the stock's value. Default 3300 Opening Balance Equity."),
+      lotNumber: lotNumberField.describe("Specific identification only (required then): the lot the opening stock is in."),
+      lotExpiresOn: lotExpiresField,
     })
     .optional()
     .describe("Inventory items: stock on hand when you start tracking. Posts an opening stock adjustment (needs the post scope)."),
@@ -227,7 +230,7 @@ export async function createItem(ctx: Ctx, input: CreateItemInput): Promise<Item
     const offset = o.offsetAccountId ?? (await accountByCode(ctx.tx, org, "3300", "opening stock")).id;
     await createInventoryAdjustment(
       ctx,
-      { adjustmentDate: o.asOf, offsetAccountId: offset, memo: `Opening stock: ${row.name}`, lines: [{ itemId: row.id, quantity: o.quantity, unitCost }] },
+      { adjustmentDate: o.asOf, offsetAccountId: offset, memo: `Opening stock: ${row.name}`, lines: [{ itemId: row.id, quantity: o.quantity, unitCost, lotNumber: o.lotNumber, lotExpiresOn: o.lotExpiresOn }] },
       { kind: "opening" }
     );
   }

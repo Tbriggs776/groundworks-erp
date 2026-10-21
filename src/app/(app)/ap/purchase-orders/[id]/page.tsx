@@ -14,6 +14,7 @@ import { formatMoney, money } from "@/lib/money";
 import { addressLines } from "@/lib/pdf/templates";
 import { creatorOf } from "@/lib/ui/creator";
 import { PdfLink } from "../../../ar/doc-view";
+import { lotChoices } from "@/lib/ui/form-data";
 import { PurchaseOrderActions } from "./po-actions";
 
 export default async function PurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
@@ -69,7 +70,11 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
                 label: l.description ?? l.itemName ?? "Line",
                 amount: l.amount,
                 remaining: l.remaining,
+                unitCost: l.unitCost,
+                remainingQuantity: l.remainingQuantity,
+                itemId: l.itemType === "inventory" ? l.itemId : null,
               }))}
+              lots={await lotChoices(organization.id)}
               canApprove={hasRole(role, "accountant")}
             />
             <div className="flex gap-2">
@@ -133,7 +138,14 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
                   <td className="px-3 py-2 text-right font-mono text-xs">{money(l.quantity).toString()}</td>
                   <td className="px-3 py-2 text-right font-mono text-xs">{fmt(l.unitCost)}</td>
                   <td className="px-3 py-2 text-right font-mono text-xs">{fmt(l.amount)}</td>
-                  {anyBilled && <td className="px-3 py-2 text-right font-mono text-xs">{fmt(l.billed)}</td>}
+                  {anyBilled && (
+                    <td className="px-3 py-2 text-right font-mono text-xs">
+                      {fmt(l.billed)}
+                      {money(l.billedQuantity).gt(0) && (
+                        <div className="text-[10px] text-muted-foreground">{money(l.billedQuantity).toString()} received</div>
+                      )}
+                    </td>
+                  )}
                   {anyBilled && <td className="px-3 py-2 text-right font-mono text-xs">{fmt(l.remaining)}</td>}
                 </tr>
               ))}

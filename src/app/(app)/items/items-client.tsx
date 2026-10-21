@@ -27,7 +27,7 @@ const selectClass =
 
 const TYPE_LABEL: Record<Item["type"], string> = { service: "Service", non_inventory: "Non-inventory", inventory: "Inventory" };
 
-export function ItemsClient({ items, accounts, today }: { items: ItemRow[]; accounts: Account[]; today: string }) {
+export function ItemsClient({ items, accounts, today, lotTracking }: { items: ItemRow[]; accounts: Account[]; today: string; lotTracking: boolean }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Item | null>(null);
@@ -157,6 +157,7 @@ export function ItemsClient({ items, accounts, today }: { items: ItemRow[]; acco
         initial={editing}
         accounts={accounts}
         today={today}
+        lotTracking={lotTracking}
       />
     </div>
   );
@@ -168,12 +169,14 @@ function ItemForm({
   initial,
   accounts,
   today,
+  lotTracking,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   initial: Item | null;
   accounts: Account[];
   today: string;
+  lotTracking: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -191,6 +194,8 @@ function ItemForm({
   const [reorderPoint, setReorderPoint] = useState(initial?.reorderPoint ?? "");
   const [openingQty, setOpeningQty] = useState("");
   const [openingAsOf, setOpeningAsOf] = useState(today);
+  const [openingLot, setOpeningLot] = useState("");
+  const [openingExpires, setOpeningExpires] = useState("");
   const inventory = type === "inventory";
   const [description, setDescription] = useState(initial?.description ?? "");
   const [salesPrice, setSalesPrice] = useState(initial?.salesPrice ?? "");
@@ -225,7 +230,14 @@ function ItemForm({
               assetAccountId: assetAccountId || null,
               reorderPoint: reorderPoint || null,
               ...(!initial && openingQty
-                ? { openingStock: { quantity: openingQty, unitCost: purchaseCost || undefined, asOf: openingAsOf } }
+                ? {
+                    openingStock: {
+                      quantity: openingQty,
+                      unitCost: purchaseCost || undefined,
+                      asOf: openingAsOf,
+                      ...(lotTracking ? { lotNumber: openingLot || undefined, lotExpiresOn: openingExpires || undefined } : {}),
+                    },
+                  }
                 : {}),
             }
           : {}),
@@ -335,6 +347,18 @@ function ItemForm({
                   <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">As of</Label>
                   <Input type="date" value={openingAsOf} onChange={(e) => setOpeningAsOf(e.target.value)} />
                 </div>
+                {lotTracking && (
+                  <>
+                    <div>
+                      <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Lot number</Label>
+                      <Input value={openingLot} onChange={(e) => setOpeningLot(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Lot expires</Label>
+                      <Input type="date" value={openingExpires} onChange={(e) => setOpeningExpires(e.target.value)} />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

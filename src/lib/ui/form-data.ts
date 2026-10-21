@@ -1,6 +1,7 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { accounts, companyProfiles, customers, items, taxCodes, vendors } from "@/lib/db/schema";
+import { accounts, companyProfiles, customers, inventorySettings, items, taxCodes, vendors } from "@/lib/db/schema";
+import type { LotChoice } from "@/app/(app)/_inventory/purchase-items";
 
 /**
  * Reference data the sales forms need (customers, items, income accounts,
@@ -54,15 +55,21 @@ export async function salesFormData(organizationId: string) {
       .where(and(eq(taxCodes.organizationId, organizationId), eq(taxCodes.isActive, true), isNull(taxCodes.deletedAt)))
       .orderBy(asc(taxCodes.name)),
   ]);
-  // Inventory items carry what's on hand, so forms can warn before selling more.
+  // Inventory items carry what's on hand, so forms can warn before selling
+  // more; with lots, each lot and what's in it.
   const stock = await db.execute<{ item_id: string; on_hand: string }>(sql`
     SELECT item_id, SUM(quantity)::text AS on_hand FROM inventory_movements
      WHERE organization_id = ${organizationId} AND voided_at IS NULL GROUP BY item_id
   `);
   const onHand = new Map(stock.map((r) => [r.item_id, r.on_hand]));
+  const { lotTracking, lots } = await lotChoices(organizationId);
   return {
     customers: customerRows,
-    items: itemRows.map((i) => ({ ...i, onHand: i.type === "inventory" ? (onHand.get(i.id) ?? "0") : null })),
+    items: itemRows.map((i) => ({
+      ...i,
+      onHand: i.type === "inventory" ? (onHand.get(i.id) ?? "0") : null,
+      ...(lotTracking && i.type === "inventory" ? { lots: lots.filter((l) => l.itemId === i.id) } : {}),
+    })),
     incomeAccounts: accountRows.filter(
       (a) => a.category === "income_statement" && a.directPosting && !a.isControl
     ),
@@ -103,4 +110,25 @@ export async function purchaseFormData(organizationId: string) {
     db.select({ address: companyProfiles.address }).from(companyProfiles).where(eq(companyProfiles.organizationId, organizationId)),
   ]);
   return { vendors: vendorRows, items: itemRows, accounts: accountRows, companyAddress: profile?.address ?? {} };
+}
+
+/** With specific identification, every lot and what's on hand in it, for forms that move stock. */
+export async function lotChoices(organizationId: string): Promise<{ lotTracking: boolean; lots: LotChoice[] }> {
+  const [settings] = await db
+    .select({ method: inventorySettings.costingMethod })
+    .from(inventorySettings)
+    .where(eq(inventorySettings.organizationId, organizationId));
+  if (settings?.method !== "specific") return { lotTracking: false, lots: [] };
+  const rows = await db.execute<{ item_id: string; lot_number: string; expires_on: string | null; on_hand: string }>(sql`
+    SELECT l.item_id, l.lot_number, l.expires_on::text,
+           COALESCE(SUM(m.quantity) FILTER (WHERE m.voided_at IS NULL), 0)::text AS on_hand
+      FROM inventory_lots l LEFT JOIN inventory_movements m ON m.lot_id = l.id
+     WHERE l.organization_id = ${organizationId}
+     GROUP BY l.id
+     ORDER BY l.expires_on NULLS LAST, l.lot_number
+  `);
+  return {
+    lotTracking: true,
+    lots: rows.map((r) => ({ itemId: r.item_id, lotNumber: r.lot_number, expiresOn: r.expires_on, onHand: r.on_hand })),
+  };
 }

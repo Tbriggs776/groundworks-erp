@@ -21,8 +21,10 @@ import { money, toDbMoney } from "@/lib/money";
  * THE COSTING ENGINE. An inventory item's movements, in date order (then
  * the order they were recorded), decide what every sale cost:
  *
- *   fifo     a sale takes the oldest units still on hand
- *   average  a sale takes the running average cost of what's on hand
+ *   fifo      a sale takes the oldest units still on hand
+ *   average   a sale takes the running average cost of what's on hand
+ *   specific  every movement names a lot; each lot is costed on its own,
+ *             oldest units of the lot first
  *
  * Purchases (and stock added by an adjustment) carry the cost their
  * document gave them. Everything else is costed here: sales and stock
@@ -42,7 +44,7 @@ import { money, toDbMoney } from "@/lib/money";
  * journals post into soft-closed periods (they're adjustments).
  */
 
-export type CostingMethod = "fifo" | "average";
+export type CostingMethod = "fifo" | "average" | "specific";
 
 const ZERO = money(0);
 const round2 = (d: Decimal) => d.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
@@ -54,7 +56,7 @@ export async function costingMethod(ctx: Ctx): Promise<CostingMethod> {
     .select({ method: inventorySettings.costingMethod })
     .from(inventorySettings)
     .where(eq(inventorySettings.organizationId, ctx.actor.organizationId));
-  return s?.method === "average" ? "average" : "fifo";
+  return s?.method ?? "fifo";
 }
 
 /** The inventory items among these ids, by id. */
@@ -72,7 +74,7 @@ export async function inventoryItems(ctx: Ctx, itemIds: Array<string | null | un
 // The calculation (pure)
 // ---------------------------------------------------------------------------
 
-type Costable = Pick<InventoryMovement, "id" | "quantity" | "costSource" | "documentCost" | "voidedAt">;
+type Costable = Pick<InventoryMovement, "id" | "quantity" | "costSource" | "documentCost" | "voidedAt" | "lotId">;
 
 export type CostResult = {
   /** Cost of each movement (positive; 0 when voided). */
@@ -85,6 +87,28 @@ export type CostResult = {
 
 /** Cost every movement of one item, given in date order. */
 export function computeCosts(ms: Costable[], method: CostingMethod, fallbackUnit: Decimal = ZERO): CostResult {
+  if (method !== "specific") return costPool(ms, method, fallbackUnit);
+  // Specific identification: each lot is its own FIFO pool.
+  const pools = new Map<string, Costable[]>();
+  for (const m of ms) {
+    const key = m.lotId ?? "";
+    pools.set(key, [...(pools.get(key) ?? []), m]);
+  }
+  const costs = new Map<string, Decimal>();
+  let onHand = ZERO;
+  let value = ZERO;
+  let last: CostResult | null = null;
+  for (const pool of pools.values()) {
+    const r = costPool(pool, "fifo", fallbackUnit);
+    for (const [k, v] of r.costs) costs.set(k, v);
+    onHand = onHand.plus(r.onHand);
+    value = value.plus(r.value);
+    last = r;
+  }
+  return { costs, onHand, value, unitCost: onHand.gt(0) ? value.div(onHand) : (last?.unitCost ?? fallbackUnit) };
+}
+
+function costPool(ms: Costable[], method: "fifo" | "average", fallbackUnit: Decimal): CostResult {
   const costs = new Map<string, Decimal>();
   const fromStock = new Map<string, Decimal>();
   const filled = new Map<string, Decimal>();
@@ -185,6 +209,8 @@ export type NewMovement = {
   quantity: string;
   /** Purchases and stock added by an adjustment: the cost the document fixed (base currency). */
   documentCost?: string;
+  /** Specific identification: the lot. */
+  lotId?: string | null;
   assetAccountId: string;
   offsetAccountId?: string | null;
   dimensions?: DimensionTag[];
@@ -203,6 +229,7 @@ export async function recordMovements(ctx: Ctx, ms: NewMovement[]) {
       itemId: m.itemId,
       movementDate: m.date,
       kind: m.kind,
+      lotId: m.lotId ?? null,
       quantity: m.quantity,
       costSource: m.documentCost !== undefined ? ("document" as const) : ("engine" as const),
       documentCost: m.documentCost ?? null,

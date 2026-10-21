@@ -417,6 +417,7 @@ async function main() {
     ["adjusting B's inventory item", "/inventory/adjustments", { adjustmentDate: "2026-05-05", offsetAccountId: account(a, "5900").id, lines: [{ itemId: ids["stock-items"], quantity: "1", unitCost: "1" }] }],
     ["adjustment against B's account", "/inventory/adjustments", { adjustmentDate: "2026-05-05", offsetAccountId: ids.accounts, lines: [{ itemId: aStock, quantity: "1", unitCost: "1" }] }],
     ["bill buying B's inventory item", "/bills", { vendorId: aVendor, billDate: "2026-05-01", lines: [{ itemId: ids["stock-items"], quantity: "1", unitCost: "1" }] }],
+    ["vendor credit sending back B's inventory item", "/vendor-credits", { vendorId: aVendor, creditDate: "2026-05-02", lines: [{ itemId: ids["stock-items"], quantity: "1", unitCost: "1" }] }],
     ["check buying B's inventory item", "/expenses", { type: "check", txnDate: "2026-05-05", bankAccountId: aBank, lines: [{ itemId: ids["stock-items"], quantity: "1", unitCost: "1" }] }],
     ["inventory item in B's asset account", "/items", { name: "z", type: "inventory", incomeAccountId: aIncome, assetAccountId: account(b, "1300").id }],
     ["printing on B's bank account", "/checks/print", { bankAccountId: bBank, firstCheckNumber: 1, checks: [{ kind: "check", id: ids.checks }] }],

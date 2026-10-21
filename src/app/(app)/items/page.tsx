@@ -6,6 +6,7 @@ import { listItems } from "@/lib/ar/items";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { accounts } from "@/lib/db/schema";
+import { lotChoices } from "@/lib/ui/form-data";
 import { ItemsClient } from "./items-client";
 
 export default async function ItemsPage() {
@@ -34,7 +35,12 @@ export default async function ItemsPage() {
       crumb={`${organization.name} · Sales`}
       userEmail={user?.email}
     >
-      <ItemsClient items={page.data} accounts={acctRows} today={format(new Date(), "yyyy-MM-dd")} />
+      <ItemsClient
+        items={page.data}
+        accounts={acctRows}
+        today={format(new Date(), "yyyy-MM-dd")}
+        lotTracking={(await lotChoices(organization.id)).lotTracking}
+      />
     </AppShell>
   );
 }

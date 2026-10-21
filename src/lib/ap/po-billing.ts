@@ -54,6 +54,31 @@ export function poRemainingOf(line: Pick<PurchaseOrderLine, "amount">, billed: D
 }
 
 /**
+ * Quantity billed (received) so far per PO line: the bill lines' own
+ * quantities (older bill lines without one count their share by amount).
+ */
+export async function billedQtyByPoLine(ctx: Ctx, poId: string): Promise<Map<string, Decimal>> {
+  const rows = await ctx.tx.execute<{ line_id: string; qty: string }>(sql`
+    SELECT bl.purchase_order_line_id AS line_id,
+           SUM(COALESCE(bl.quantity, pl.quantity * bl.amount / NULLIF(pl.amount, 0)))::text AS qty
+      FROM ap_bill_lines bl
+      JOIN ap_bills b ON b.id = bl.bill_id
+      JOIN purchase_order_lines pl ON pl.id = bl.purchase_order_line_id
+     WHERE b.organization_id = ${ctx.actor.organizationId} AND b.purchase_order_id = ${poId}
+       AND b.status <> 'voided' AND b.deleted_at IS NULL
+     GROUP BY 1
+  `);
+  return new Map(rows.map((r) => [r.line_id, money(r.qty).toDecimalPlaces(4)]));
+}
+
+/** The share of a PO line's quantity an amount of it bills, to 4 places. */
+export function quantityForAmount(line: Pick<PurchaseOrderLine, "amount" | "quantity">, billed: Decimal | undefined): Decimal {
+  const amt = money(line.amount);
+  if (!billed || amt.isZero()) return money(0);
+  return money(line.quantity).times(billed).div(amt).toDecimalPlaces(4);
+}
+
+/**
  * Check a bill's PO links before it's saved: the PO must be the bill
  * vendor's and billable, the lines must be on it, and no PO line may be
  * billed past its amount. Returns the PO (locked) or null.

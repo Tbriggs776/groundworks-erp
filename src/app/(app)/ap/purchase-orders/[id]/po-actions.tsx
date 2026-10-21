@@ -10,10 +10,32 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatMoney, money, sumMoney } from "@/lib/money";
+import { LotField } from "@/app/(app)/_inventory/lot-field";
+import type { LotChoice } from "@/app/(app)/_inventory/purchase-items";
 import { billPurchaseOrder, purchaseOrderStep, purchaseOrderWithReason, type PoStep } from "../actions";
 
-type BillLine = { id: string; lineNumber: number; label: string; amount: string; remaining: string };
-type Mode = "remaining" | "percent" | "custom";
+type BillLine = {
+  id: string;
+  lineNumber: number;
+  label: string;
+  amount: string;
+  remaining: string;
+  unitCost: string;
+  remainingQuantity: string;
+  /** Inventory items only (they take a lot with specific identification). */
+  itemId: string | null;
+};
+type Mode = "remaining" | "percent" | "custom" | "quantity";
+
+/** Same math as the server: quantity × unit cost, and the rest of the line when the rest arrives. */
+function quantityOf(l: BillLine, qty: string): Decimal {
+  try {
+    const q = money(qty || "0");
+    return q.gt(0) && q.eq(money(l.remainingQuantity)) ? money(l.remaining) : q.times(money(l.unitCost)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  } catch {
+    return money(0);
+  }
+}
 
 /** Same math as the server: percent of the PO line, rounded, never past what's left. */
 function percentOf(l: BillLine, pct: string): Decimal {
@@ -32,10 +54,12 @@ const label = "text-xs uppercase tracking-wider text-muted-foreground mb-1.5";
 export function PurchaseOrderActions({
   po,
   lines,
+  lots,
   canApprove,
 }: {
   po: { id: string; poNumber: string; status: string; currency: string; remainingAmount: string; sent: boolean; hasBills: boolean };
   lines: BillLine[];
+  lots: { lotTracking: boolean; lots: LotChoice[] };
   canApprove: boolean;
 }) {
   const router = useRouter();
@@ -47,6 +71,8 @@ export function PurchaseOrderActions({
   const [mode, setMode] = useState<Mode>("remaining");
   const [percent, setPercent] = useState("50");
   const [custom, setCustom] = useState<Record<string, string>>({});
+  const [received, setReceived] = useState<Record<string, string>>({});
+  const [lotOf, setLotOf] = useState<Record<string, { lotNumber: string; expiresOn: string }>>({});
   const [billDate, setBillDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState("");
   const fmt = (v: Decimal | string) => formatMoney(v, { currency: po.currency });
@@ -56,6 +82,7 @@ export function PurchaseOrderActions({
   function amountFor(l: BillLine): Decimal {
     if (mode === "remaining") return money(l.remaining);
     if (mode === "percent") return percentOf(l, percent);
+    if (mode === "quantity") return quantityOf(l, received[l.id] ?? "");
     try {
       return money(custom[l.id] || "0");
     } catch {
@@ -89,7 +116,16 @@ export function PurchaseOrderActions({
           lines:
             mode === "custom"
               ? open.filter((l) => custom[l.id] && money(custom[l.id]).gt(0)).map((l) => ({ purchaseOrderLineId: l.id, amount: custom[l.id] }))
-              : undefined,
+              : mode === "quantity"
+                ? open
+                    .filter((l) => amountFor(l).gt(0))
+                    .map((l) => ({
+                      purchaseOrderLineId: l.id,
+                      quantity: received[l.id],
+                      lotNumber: lotOf[l.id]?.lotNumber || undefined,
+                      lotExpiresOn: lotOf[l.id]?.expiresOn || undefined,
+                    }))
+                : undefined,
         }),
       (id) => {
         setBillOpen(false);
@@ -195,6 +231,7 @@ export function PurchaseOrderActions({
                   ["remaining", "Everything left"],
                   ["percent", "A percent of each line"],
                   ["custom", "A custom amount per line"],
+                  ["quantity", "Quantity received per line"],
                 ] as const
               ).map(([m, name]) => (
                 <button
@@ -241,9 +278,35 @@ export function PurchaseOrderActions({
                         <span className="font-mono text-muted-foreground mr-2">{l.lineNumber}</span>
                         {l.label}
                       </td>
-                      <td className="px-3 py-2 text-right font-mono text-xs">{fmt(l.remaining)}</td>
                       <td className="px-3 py-2 text-right font-mono text-xs">
-                        {mode === "custom" ? (
+                        {fmt(l.remaining)}
+                        {mode === "quantity" && <div className="text-[10px] text-muted-foreground">{money(l.remainingQuantity).toString()} to receive</div>}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-xs">
+                        {mode === "quantity" ? (
+                          <div className="space-y-1">
+                            <input
+                              inputMode="decimal"
+                              aria-label={`Line ${l.lineNumber} quantity received`}
+                              value={received[l.id] ?? ""}
+                              onChange={(e) => setReceived((c) => ({ ...c, [l.id]: e.target.value }))}
+                              placeholder="Qty"
+                              className="w-full text-xs bg-background border border-border rounded-md px-2 py-1 text-right font-mono"
+                            />
+                            {lots.lotTracking && l.itemId && (
+                              <LotField
+                                lots={lots.lots}
+                                itemId={l.itemId}
+                                value={lotOf[l.id]?.lotNumber ?? ""}
+                                onChange={(v) => setLotOf((c) => ({ ...c, [l.id]: { lotNumber: v, expiresOn: c[l.id]?.expiresOn ?? "" } }))}
+                                incoming
+                                expiresOn={lotOf[l.id]?.expiresOn ?? ""}
+                                onExpiresOn={(v) => setLotOf((c) => ({ ...c, [l.id]: { lotNumber: c[l.id]?.lotNumber ?? "", expiresOn: v } }))}
+                              />
+                            )}
+                            <div>{fmt(amountFor(l))}</div>
+                          </div>
+                        ) : mode === "custom" ? (
                           <input
                             inputMode="decimal"
                             aria-label={`Line ${l.lineNumber} amount`}

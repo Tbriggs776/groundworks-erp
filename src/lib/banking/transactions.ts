@@ -317,6 +317,8 @@ type DraftLine = {
   itemId: string | null;
   quantity: string | null;
   unitCost: string | null;
+  lotNumber: string | null;
+  lotExpiresOn: string | null;
   description: string | null;
   customerId: string | null;
   arPaymentId: string | null;
@@ -345,6 +347,8 @@ async function validateLines(ctx: Ctx, bankAccountId: string, input: LineInput[]
     itemId: l.itemId,
     quantity: l.quantity,
     unitCost: l.unitCost,
+    lotNumber: l.lotNumber,
+    lotExpiresOn: l.lotExpiresOn,
     description: l.description ?? null,
     customerId: l.customerId ?? null,
     arPaymentId: null,
@@ -394,6 +398,8 @@ async function paymentLines(ctx: Ctx, ids: string[], excludeTxnId?: string): Pro
         itemId: null,
         quantity: null,
         unitCost: null,
+        lotNumber: null,
+        lotExpiresOn: null,
         description: `Payment ${p.paymentNumber}${p.reference ? ` · ${p.reference}` : ""}`,
         customerId: p.customerId,
         arPaymentId: p.id,
@@ -412,6 +418,8 @@ async function paymentLines(ctx: Ctx, ids: string[], excludeTxnId?: string): Pro
         itemId: null,
         quantity: null,
         unitCost: null,
+        lotNumber: null,
+        lotExpiresOn: null,
         description: `Sales receipt ${r.receiptNumber}${r.reference ? ` · ${r.reference}` : ""}`,
         customerId: r.customerId,
         arPaymentId: null,

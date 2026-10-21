@@ -16,6 +16,7 @@ import { paymentMethod, timestamps } from "./_shared";
 import { accounts } from "./accounts";
 import { agents } from "./agents";
 import { apBills } from "./ap";
+import { items } from "./ar";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
 import { vendors } from "./parties";
@@ -98,6 +99,11 @@ export const vendorCreditLines = pgTable(
       .references(() => accounts.id, { onDelete: "restrict" }),
     amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
     description: text("description"),
+    /** Stock sent back: an inventory item leaves stock at its cost; the line credits its COGS account. */
+    itemId: uuid("item_id").references(() => items.id, { onDelete: "restrict" }),
+    quantity: numeric("quantity", { precision: 20, scale: 4 }),
+    unitCost: numeric("unit_cost", { precision: 20, scale: 4 }),
+    lotNumber: text("lot_number"),
     ...timestamps,
   },
   (t) => [uniqueIndex("vendor_credit_lines_credit_line_key").on(t.vendorCreditId, t.lineNumber)]

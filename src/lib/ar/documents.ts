@@ -9,6 +9,7 @@ import { requireDimensionTags, requireLineAccounts, sourceCodeId } from "@/lib/g
 import { createAndPostJournal, reverseJournal, type JournalLineInput } from "@/lib/gl/posting";
 import { recordSale } from "@/lib/inventory/documents";
 import { voidMovements } from "@/lib/inventory/engine";
+import { checkLotNumbers, lotNumberField } from "@/lib/inventory/lots";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { computeTax, type ComputedTax } from "@/lib/sales-tax/rates";
 import { amount, id, optionalText } from "@/lib/schemas";
@@ -37,6 +38,9 @@ const SalesLineFields = z.object({
     .array(z.object({ dimensionId: id, valueId: id }))
     .optional()
     .describe("Class / Location / Department / Project tags."),
+  lotNumber: lotNumberField.describe(
+    "Specific identification only: the lot an inventory item ships from (invoices, sales receipts) or comes back to (credit memos, refunds). Required to post; list_inventory_lots shows lots with stock."
+  ),
 });
 
 const itemOrAccount = [
@@ -69,6 +73,7 @@ export type ResolvedLine = {
   accountId: string;
   taxable: boolean;
   dimensions: DimensionTag[];
+  lotNumber: string | null;
 };
 
 /** qty × price, rounded half-up to cents like every document the customer has ever seen. */
@@ -83,6 +88,7 @@ export async function resolveSalesLines(ctx: Ctx, input: SalesLineInput[]): Prom
     ? await ctx.tx.select().from(items).where(and(eq(items.organizationId, org), inArray(items.id, itemIds)))
     : [];
   const itemById = new Map(itemRows.map((i) => [i.id, i]));
+  await checkLotNumbers(ctx, input, itemById, { mustExist: true });
 
   const lines = input.map((l, i) => {
     const item = l.itemId ? itemById.get(l.itemId) : undefined;
@@ -106,6 +112,7 @@ export async function resolveSalesLines(ctx: Ctx, input: SalesLineInput[]): Prom
       accountId: l.accountId ?? item!.incomeAccountId,
       taxable: l.taxable ?? item?.taxable ?? false,
       dimensions: (l.dimensions ?? []) as DimensionTag[],
+      lotNumber: l.lotNumber ?? null,
     };
   });
 
@@ -193,7 +200,15 @@ export async function postSalesDocument(
     customerId: string | null;
     counter: { accountId: string; bank: boolean; memo: string };
     /** With id, itemId, and quantity, inventory items move stock (sales out, returns in). */
-    lines: Array<Pick<ResolvedLine, "accountId" | "amount" | "description" | "dimensions"> & { id?: string; itemId?: string | null; quantity?: string }>;
+    lines: Array<
+      Pick<ResolvedLine, "accountId" | "amount" | "description" | "dimensions"> & {
+        id?: string;
+        lineNumber?: number;
+        itemId?: string | null;
+        quantity?: string;
+        lotNumber?: string | null;
+      }
+    >;
     sourceCode: "SJ" | "CR" | "CD";
     source: "ar" | "cash_receipt" | "cash_disbursement";
     auditEvent: string;

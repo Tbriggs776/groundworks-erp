@@ -108,6 +108,8 @@ export function docLine() {
       .references(() => accounts.id, { onDelete: "restrict" }),
     taxable: boolean("taxable").notNull().default(false),
     dimensions: jsonb("dimensions").$type<DimensionTag[]>().notNull().default([]),
+    /** Specific identification: the lot sold from (or returned to). */
+    lotNumber: text("lot_number"),
     ...timestamps,
   };
 }
@@ -376,6 +378,8 @@ export const arInvoiceLines = pgTable(
     /** Counts toward the taxable amount. Defaults from the item. */
     taxable: boolean("taxable").notNull().default(false),
     dimensions: jsonb("dimensions").$type<DimensionTag[]>().notNull().default([]),
+    /** Specific identification: the lot sold from. */
+    lotNumber: text("lot_number"),
     /** Progress invoicing: the estimate line this bills. */
     estimateLineId: uuid("estimate_line_id").references(() => estimateLines.id, { onDelete: "set null" }),
 

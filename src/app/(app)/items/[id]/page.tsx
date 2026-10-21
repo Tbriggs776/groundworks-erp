@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { format } from "date-fns";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell/shell";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,7 @@ const KIND_LABEL: Record<string, string> = {
   sale: "Sold",
   return: "Returned",
   adjustment: "Adjusted",
+  vendor_return: "Sent back",
 };
 
 const qty = (v: string) => money(v).toDecimalPlaces(4).toString();
@@ -30,6 +32,7 @@ export default async function ItemStockPage({ params }: { params: Promise<{ id: 
     throw e;
   });
   const negative = money(s.onHand).lt(0);
+  const today = format(new Date(), "yyyy-MM-dd");
   const canAdjust = hasRole(actor.role, "bookkeeper") && actor.scopes.includes("post") && !actor.support;
 
   return (
@@ -70,6 +73,34 @@ export default async function ItemStockPage({ params }: { params: Promise<{ id: 
           </div>
         )}
 
+        {s.lots.length > 0 && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Lots</div>
+            <div className="gw-table-wrap rounded-md border border-border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="text-left font-medium px-3 py-2">Lot</th>
+                    <th className="text-left font-medium px-3 py-2 w-32">Expires</th>
+                    <th className="text-right font-medium px-3 py-2 w-24">On hand</th>
+                    <th className="text-right font-medium px-3 py-2 w-32">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.lots.map((l) => (
+                    <tr key={l.id} className="border-t border-border">
+                      <td className="px-3 py-2 font-mono text-xs">{l.lotNumber}</td>
+                      <td className={`px-3 py-2 font-mono text-xs ${l.expiresOn && l.expiresOn < today ? "text-destructive" : ""}`}>{l.expiresOn ?? "—"}</td>
+                      <td className={`px-3 py-2 text-right font-mono text-xs ${money(l.onHand).lt(0) ? "text-destructive" : ""}`}>{qty(l.onHand)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs">{formatMoney(l.value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
             History{s.totalMovements > s.movements.length ? ` (latest ${s.movements.length} of ${s.totalMovements})` : ""}
@@ -106,6 +137,7 @@ export default async function ItemStockPage({ params }: { params: Promise<{ id: 
                       ) : (
                         m.label
                       )}
+                      {m.lotNumber && <span className="ml-2 font-mono text-muted-foreground">lot {m.lotNumber}</span>}
                       {m.voided && <span className="ml-2 no-underline">(voided)</span>}
                     </td>
                     <td className={`px-3 py-2 text-right font-mono text-xs ${money(m.quantity).lt(0) ? "" : "text-emerald-700 dark:text-emerald-400"}`}>

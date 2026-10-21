@@ -11,7 +11,7 @@ import { reportPdf } from "@/lib/pdf/documents";
 import { amount, flag, id, isoDate } from "@/lib/schemas";
 import { apAging, arAging, type AgingReport } from "./aging";
 import { auditTrail, AuditTrailSchema, expensesByVendor, openInvoices, salesByCustomer, salesByItem, unpaidBills } from "./detail";
-import { inventoryValuation } from "@/lib/inventory/stock";
+import { inventoryValuation, stockStatus, valuationDetail } from "@/lib/inventory/stock";
 import { accountLedger, balanceSheet, trialBalance } from "./financial";
 import { budgetVsActual, cashFlow, profitAndLossByDimension, profitAndLossByPeriod, profitAndLossTable } from "./statements";
 import { fmt2, reportCsv, reportFileName, type ReportRow, type ReportTable } from "./table";
@@ -37,6 +37,8 @@ export const REPORT_KEYS = [
   "sales-by-customer",
   "sales-by-item",
   "inventory-valuation",
+  "inventory-valuation-detail",
+  "inventory-stock-status",
   "expenses-by-vendor",
   "open-invoices",
   "unpaid-bills",
@@ -54,6 +56,7 @@ export const ReportParamsSchema = z.object({
   dimensionId: id.optional().describe("profit-and-loss-by-class: the class or location dimension."),
   budgetId: id.optional().describe("budget-vs-actual: the budget."),
   accountId: id.optional().describe("account-ledger: the account."),
+  itemId: id.optional().describe("inventory-valuation-detail: one item."),
   year: z.coerce.number().int().min(2000).max(2100).optional().describe("1099: the tax year."),
   threshold: amount.optional().describe("1099: the reporting threshold."),
   includeZero: flag.optional().describe("trial-balance: include accounts with no activity."),
@@ -192,6 +195,10 @@ export async function reportTable(ctx: Ctx, input: ReportParams): Promise<Report
       return salesByItem(ctx, p);
     case "inventory-valuation":
       return inventoryValuation(ctx, p);
+    case "inventory-valuation-detail":
+      return valuationDetail(ctx, p);
+    case "inventory-stock-status":
+      return stockStatus(ctx);
     case "expenses-by-vendor":
       return expensesByVendor(ctx, p);
     case "open-invoices":

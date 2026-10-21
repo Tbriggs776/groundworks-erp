@@ -234,7 +234,11 @@ docs/compliance/      SOC 2 control map and checklist
   the first day not hard closed when that period is). Value on hand is
   never stored: it's in minus out of the movements' costs, which ties to
   the inventory asset accounts. Inventory items always post to their asset
-  account on purchase lines.
+  account on purchase lines. With specific identification
+  (`inventory/lots.ts`) every inventory line carries a `lot_number`; lots
+  are made when stock first comes in (posting, never drafts) and each lot
+  is costed as its own FIFO pool. Vendor credits send stock back: the line
+  credits COGS and the units leave at cost, so COGS keeps the difference.
 - 1099 amounts come from `src/lib/ap/form-1099.ts` (accounts carry a
   `form_1099_box`). Full TINs leave the app only through the audited CSV
   export; reports and the API show the last 4.

@@ -16,8 +16,9 @@ export default async function InventorySettingsPage() {
           <div className="font-semibold">Costing method</div>
           <p className="text-xs text-muted-foreground">
             How a sale of an inventory item is costed. FIFO takes the oldest units on hand first. Weighted average uses the running average
-            cost of what&apos;s on hand. It&apos;s set once: after the first purchase, sale, or adjustment of an inventory item it can&apos;t
-            change.
+            cost of what&apos;s on hand. Specific identification tracks lots: every purchase, sale, return, and adjustment names a lot,
+            and a sale costs the units of its lot. It&apos;s set once: after the first purchase, sale, or adjustment of an inventory item
+            it can&apos;t change.
           </p>
           {s.locked ? (
             <p className="text-sm">
