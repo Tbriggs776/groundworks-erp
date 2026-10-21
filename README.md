@@ -60,6 +60,12 @@ bill payments with discounts
 **Banking**
 - Expenses, checks, deposits (group payments from Undeposited Funds), and
   transfers, including paying a credit card
+- Bank feeds through Plaid: connect a bank, link each of its accounts to
+  one in the books, and its posted transactions come into For review every
+  day (and as soon as the bank says there's something new). Each account
+  starts the day after its last reconciliation or imported statement, so
+  nothing comes in twice; the bank's later edits and removals follow lines
+  still waiting in For review
 - Import bank and card statements (CSV, OFX, QFX, Web Connect); lines
   already imported are skipped
 - For review: match each line to what's in the books (suggested by amount
@@ -168,7 +174,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 230 operations: QuickBooks import status and tie-out, accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), month-end close (checklist, close and reopen, checklist items), inventory (costing method, lots, item stock, adjustments, valuation, valuation detail, stock status), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
+| Tools | 232 operations: QuickBooks import status and tie-out, accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, bank feeds, statement import, For review, rules, reconciliation), month-end close (checklist, close and reopen, checklist items), inventory (costing method, lots, item stock, adjustments, valuation, valuation detail, stock status), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -215,7 +221,10 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-30 suites: QuickBooks import (against a fake QuickBooks: sign-in state,
+31 suites: bank feeds (against a fake Plaid: who may connect, sealed
+tokens, start dates, posted only, signs, rules, no duplicates, the bank's
+edits and removals, paging and restarts, sign-in again, signed webhooks,
+the daily run, agents, another company, disconnecting), QuickBooks import (against a fake QuickBooks: sign-in state,
 sealed tokens, resumable batches through failures, throttling, expired
 tokens, paging, and a full company's history tied out by hand: tax,
 payments and credits, deposits, bill payments, inventory, reconciliations,
@@ -266,7 +275,9 @@ Environment variables (Production + Preview):
 | `API_RATE_LIMIT_PER_MINUTE` | optional, default 600 |
 | `GROUNDWORKS_SUPPORT_USER_IDS` | optional; your support team's user ids (see Support access) |
 | `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT` | QuickBooks import: your Intuit app's keys (mark the secret Sensitive); `sandbox` or `production` |
-| `APP_ENCRYPTION_KEY` | 32 random bytes, base64 (`openssl rand -base64 32`); seals QuickBooks tokens. Mark Sensitive; changing it disconnects every QuickBooks connection |
+| `APP_ENCRYPTION_KEY` | 32 random bytes, base64 (`openssl rand -base64 32`); seals QuickBooks and bank feed tokens. Mark Sensitive; changing it disconnects every QuickBooks connection and bank feed |
+| `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | Bank feeds: your Plaid team's keys (mark the secret Sensitive); `sandbox` or `production` |
+| `PLAID_REDIRECT_URI` | optional: `https://<your app>/banking/feeds`, for banks that sign in with OAuth (register it in Plaid) |
 
 Migrations run from your machine against the direct (port 5432) connection:
 `DATABASE_URL_MIGRATE=… npm run db:migrate`. Add your production URL to
@@ -283,6 +294,21 @@ Supabase's redirect URLs. Point an uptime monitor at `/api/health`.
 4. Workspace admins see **Import from QuickBooks** on the Workspace page;
    progress and notes are under **Settings → QuickBooks Import**.
 
+### Bank feeds
+
+1. In the Plaid dashboard, get the team's client id and secret, and turn on
+   the **Transactions** product.
+2. Set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` (`sandbox` to try it
+   with Plaid's test banks; `production` once Plaid approves you), and
+   `APP_ENCRYPTION_KEY`.
+3. For banks that sign in on their own site (OAuth: Chase, Wells Fargo, and
+   others), add `https://<your app>/banking/feeds` under **Allowed redirect
+   URIs** in Plaid and set `PLAID_REDIRECT_URI` to it.
+4. Plaid sends its webhooks to `NEXT_PUBLIC_APP_URL` + `/api/webhooks/plaid`
+   (set on each connection; nothing to register). The daily job also syncs
+   every feed, so a missed webhook only delays lines a day.
+5. Admins and owners connect banks under **Banking → Bank Feeds**.
+
 ### Support access
 
 Nobody at Groundworks can see inside a customer's workspace by default.
@@ -297,7 +323,7 @@ Nobody at Groundworks can see inside a customer's workspace by default.
 
 ## Roadmap to QuickBooks parity
 
-- **Banking**: live bank feeds (Plaid), split a statement line across
+- **Banking**: split a statement line across
   categories, attachments on bank transactions
 - **Sales**: estimates, recurring invoices, invoice and statement PDFs +
   email, online payments, automated sales tax rates

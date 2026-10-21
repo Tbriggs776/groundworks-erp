@@ -194,9 +194,9 @@ export async function startFakePlaid(opts: { port?: number } = {}): Promise<Fake
       seed(i);
       return send(res, 200, { public_token: s.publicToken, institution: i.institution, accounts: i.accounts });
     }
-    // Send a signed webhook for an item to the app (for trying it in the browser).
+    // Send a signed webhook for an item (default: the newest signed in through Link) to the app, for trying it in the browser.
     if (url.pathname === "/fake/webhook") {
-      const i = state.items.get(String(b.item_id));
+      const i = b.item_id ? state.items.get(String(b.item_id)) : [...state.items.values()].filter((x) => x.webhook).at(-1);
       if (!i?.webhook) return send(res, 404, { error: "no webhook for that item" });
       const payload = JSON.stringify({ webhook_type: b.webhook_type ?? "TRANSACTIONS", webhook_code: b.webhook_code ?? "SYNC_UPDATES_AVAILABLE", item_id: i.itemId, environment: "sandbox" });
       const r = await fetch(i.webhook, { method: "POST", headers: { "content-type": "application/json", "plaid-verification": signWebhook(payload) }, body: payload });

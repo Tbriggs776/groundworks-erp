@@ -115,7 +115,7 @@ MCP /api/mcp  ────┘        one transaction per call; throw = roll back
 ```
 src/
   app/
-    (app)/            authenticated UI: dashboard, ar/, ap/, banking/, sales-tax,
+    (app)/            authenticated UI: dashboard, ar/, ap/, banking/ (+ feeds), sales-tax,
                       items (+ [id] stock, adjustments), gl,
                       reports/, review, activity,
                       settings/{agents,api-keys,company,quickbooks},
@@ -125,7 +125,8 @@ src/
                       clients (every workspace + company), support (staff only)
     api/v1/[...path]  REST (generated)        api/mcp  MCP server
     api/qbo/{connect,callback}   Intuit sign-in for the QuickBooks import
-    api/cron/daily    recurring journals, invoices + bills, auto-reversal, pruning   api/health  uptime
+    api/webhooks/{resend,plaid}  signed delivery events, bank feed notices
+    api/cron/daily    recurring journals, invoices + bills, auto-reversal, bank feeds, pruning   api/health  uptime
     signup, onboarding/{,team}   sign-up: workspace + first company, invites
     invite/[token]    accept an invitation
     auth/             login, callback, mfa (TOTP step), signout (route)
@@ -250,6 +251,20 @@ docs/compliance/      SOC 2 control map and checklist
   balances use the natural sign (a credit card's balance owed is positive).
   Cleared / reconciled state lives in `gl_line_clearings`, beside the
   immutable ledger, never on `gl_lines`.
+- Bank feeds (`src/lib/banking/feeds/`) connect a bank through Plaid
+  (`plaid.ts`): a connection is one bank login (an item) with its sealed
+  access token and `transactions/sync` cursor; each of its accounts links
+  to a reconcilable account in the chart, starting the day after the last
+  completed reconciliation or non-feed statement line (else 90 days back).
+  Syncs bring posted transactions only (Plaid's positive is money out, so
+  the sign flips) through `ingestLines` (format `feed`, fit id
+  `plaid:<transaction_id>`), so rules and dedupe work as for an import.
+  The bank's edits and removals change lines still `for_review` only.
+  Linking resets the cursor (a full reread; duplicates skip). People
+  connect, link, reconnect, and disconnect; syncs run for bookkeepers,
+  agents, the daily job, and verified webhooks (`webhook.ts`, ES256 over the
+  body's SHA-256). Plaid's frame is allowed by the CSP on `/banking/feeds`
+  only. Tests use `scripts/lib/fake-plaid.ts`.
 - The QuickBooks import (`src/lib/qbo/`) makes a new company from a QBO
   company and brings it across in steps (`service.ts` `STEPS`). Each batch
   is one transaction that runs until its time budget is up and saves a

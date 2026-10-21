@@ -11,8 +11,8 @@
  *   npx tsx scripts/dev/fake-plaid-server.ts [port]     (default 54331)
  *
  * "Connect a bank" then signs in to First Platypus Bank at once, with a few
- * weeks of activity. POST {"item_id": "..."} to <fake>/fake/webhook to have
- * it send the app a signed "new transactions" webhook.
+ * weeks of activity. POST {} to <fake>/fake/webhook to have it send the app
+ * a signed "new transactions" webhook for that bank.
  */
 import { startFakePlaid } from "../lib/fake-plaid";
 
