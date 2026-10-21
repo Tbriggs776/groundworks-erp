@@ -71,6 +71,9 @@ function fixtures(): Record<string, Rec[]> {
       acct("14", "Board of Equalization Payable", "Other Current Liability", { AccountSubType: "GlobalTaxPayable" }),
       acct("15", "Visa", "Credit Card", { AccountSubType: "CreditCard" }),
       acct("16", "Accumulated Depreciation", "Fixed Asset", { AccountSubType: "AccumulatedDepreciation" }),
+      acct("17", "Savings", "Bank", { AcctNum: "1020", AccountSubType: "Savings" }),
+      acct("18", "Discounts given", "Income", { AccountSubType: "DiscountsRefundsGiven" }),
+      acct("19", "Office Supplies", "Expense", { AccountSubType: "SuppliesMaterials" }),
     ],
     Term: [
       { Id: "1", Name: "Net 30", DueDays: 30, Active: true },
@@ -153,6 +156,296 @@ function fixtures(): Record<string, Rec[]> {
       { Id: "7", DocNumber: "JE-7", TxnDate: "2026-02-12", Line: [{ DetailType: "DescriptionOnly", Description: "memo only" }] },
       { Id: "8", DocNumber: "JE-8", TxnDate: "2026-08-01", Line: [line("Debit", 40, "12"), line("Credit", 40, "15")] },
     ],
+    ...history(),
+  };
+}
+
+/**
+ * Part 2's history: sales tax, sales, purchases, what paid them, and
+ * deposits. The test works out every balance from these by hand.
+ */
+function history(): Record<string, Rec[]> {
+  const sale = (item: string, qty: number, price: number, extra: Record<string, unknown> = {}) => ({
+    DetailType: "SalesItemLineDetail",
+    Amount: Math.round(qty * price * 100) / 100,
+    SalesItemLineDetail: { ItemRef: ref(item), Qty: qty, UnitPrice: price, TaxCodeRef: ref("NON"), ...extra },
+  });
+  const taxed = (item: string, qty: number, price: number, extra: Record<string, unknown> = {}) => sale(item, qty, price, { TaxCodeRef: ref("TAX"), ...extra });
+  const tax = (code: string, lines: Array<[string, number, number, number]>) => ({
+    TxnTaxCodeRef: ref(code),
+    TotalTax: Math.round(lines.reduce((a, l) => a + l[3], 0) * 100) / 100,
+    TaxLine: lines.map(([rate, percent, taxable, amount]) => ({
+      Amount: amount,
+      DetailType: "TaxLineDetail",
+      TaxLineDetail: { TaxRateRef: ref(rate), PercentBased: true, TaxPercent: percent, NetAmountTaxable: taxable },
+    })),
+  });
+  const exp = (account: string, amount: number, extra: Record<string, unknown> = {}) => ({
+    DetailType: "AccountBasedExpenseLineDetail",
+    Amount: amount,
+    AccountBasedExpenseLineDetail: { AccountRef: ref(account), ...extra },
+  });
+  const bought = (item: string, qty: number, cost: number, extra: Record<string, unknown> = {}) => ({
+    DetailType: "ItemBasedExpenseLineDetail",
+    Amount: qty * cost,
+    ItemBasedExpenseLineDetail: { ItemRef: ref(item), Qty: qty, UnitPrice: cost, ...extra },
+  });
+  const linked = (type: string, id: string, amount: number) => ({ Amount: amount, LinkedTxn: [{ TxnId: id, TxnType: type }] });
+  const voided = { TotalAmt: 0, PrivateNote: "Voided", MetaData: { LastUpdatedTime: "2026-04-02T10:00:00-07:00" } };
+  return {
+    TaxAgency: [
+      { Id: "1", DisplayName: "Board of Equalization" },
+      { Id: "2", DisplayName: "City of Tucson" },
+    ],
+    TaxRate: [
+      { Id: "1", Name: "California", RateValue: 8, AgencyRef: ref("1"), Active: true },
+      { Id: "2", Name: "Tucson City", RateValue: 2, AgencyRef: ref("2"), Active: true },
+      { Id: "3", Name: "Old Rate", RateValue: 5, AgencyRef: ref("1"), Active: false },
+    ],
+    TaxCode: [
+      { Id: "TAX", Name: "TAX", Active: true, Taxable: true, SalesTaxRateList: { TaxRateDetail: [] } },
+      { Id: "NON", Name: "NON", Active: true, Taxable: false, SalesTaxRateList: { TaxRateDetail: [] } },
+      { Id: "1", Name: "California", Active: true, Taxable: true, SalesTaxRateList: { TaxRateDetail: [{ TaxRateRef: ref("1") }] } },
+      { Id: "2", Name: "CA + Tucson", Active: true, Taxable: true, SalesTaxRateList: { TaxRateDetail: [{ TaxRateRef: ref("1") }, { TaxRateRef: ref("2") }] } },
+    ],
+    PaymentMethod: [
+      { Id: "1", Name: "Cash", Type: "NON_CREDIT_CARD", Active: true },
+      { Id: "2", Name: "Check", Type: "NON_CREDIT_CARD", Active: true },
+      { Id: "3", Name: "Visa", Type: "CREDIT_CARD", Active: true },
+    ],
+    Invoice: [
+      {
+        Id: "101",
+        DocNumber: "1001",
+        TxnDate: "2026-03-01",
+        DueDate: "2026-03-31",
+        CustomerRef: ref("1", "Amy's Bird Sanctuary"),
+        DepartmentRef: ref("1"),
+        CustomerMemo: { value: "Thank you for your business." },
+        Line: [
+          sale("1", 2, 75, { ClassRef: ref("1") }),
+          taxed("2", 1, 275, { ClassRef: ref("2") }),
+          { DetailType: "DiscountLineDetail", Amount: 10, DiscountLineDetail: { PercentBased: false, DiscountAccountRef: ref("18") } },
+          { DetailType: "SubTotalLineDetail", Amount: 415, SubTotalLineDetail: {} },
+        ],
+        TxnTaxDetail: tax("1", [["1", 8, 275, 22]]),
+        TotalAmt: 437,
+      },
+      {
+        Id: "102",
+        DocNumber: "1002",
+        TxnDate: "2026-03-05",
+        CustomerRef: ref("2", "Bill's Windsurf Shop"),
+        Line: [
+          taxed("3", 4, 15),
+          { DetailType: "GroupLineDetail", Amount: 75, GroupLineDetail: { GroupItemRef: ref("4"), Quantity: 1, Line: [sale("1", 1, 75)] } },
+          { DetailType: "SalesItemLineDetail", Amount: 10, SalesItemLineDetail: { ItemRef: ref("SHIPPING_ITEM_ID"), TaxCodeRef: ref("NON") } },
+        ],
+        TxnTaxDetail: tax("2", [
+          ["1", 8, 60, 4.8],
+          ["2", 2, 60, 1.2],
+        ]),
+        TotalAmt: 151,
+      },
+      { Id: "103", DocNumber: "1003", TxnDate: "2026-03-07", CustomerRef: ref("1"), Line: [{ ...sale("1", 1, 0), Amount: 0 }], ...voided },
+      { Id: "104", DocNumber: "1004", TxnDate: "2026-04-01", CustomerRef: ref("4", "Bad Email Co"), Line: [sale("1", 2, 75)], TotalAmt: 150 },
+      { Id: "106", DocNumber: "1006", TxnDate: "2026-04-02", CustomerRef: ref("5", "Euro Customer"), Line: [sale("1", 1, 75)], TotalAmt: 75 },
+    ],
+    CreditMemo: [
+      { Id: "201", DocNumber: "5001", TxnDate: "2026-03-15", CustomerRef: ref("1"), Line: [{ ...sale("1", 1, 50) }], TotalAmt: 50 },
+      { Id: "202", DocNumber: "5001", TxnDate: "2026-03-20", CustomerRef: ref("2"), Line: [{ ...sale("1", 1, 25) }], TotalAmt: 25 },
+    ],
+    SalesReceipt: [
+      {
+        Id: "301",
+        DocNumber: "7001",
+        TxnDate: "2026-03-03",
+        PaymentMethodRef: ref("1"),
+        DepositToAccountRef: ref("4"),
+        Line: [taxed("3", 2, 15)],
+        TxnTaxDetail: tax("1", [["1", 8, 30, 2.4]]),
+        TotalAmt: 32.4,
+      },
+      {
+        Id: "302",
+        DocNumber: "7002",
+        TxnDate: "2026-03-04",
+        CustomerRef: ref("1"),
+        PaymentMethodRef: ref("3"),
+        DepositToAccountRef: ref("1"),
+        Line: [sale("1", 1, 75)],
+        TotalAmt: 75,
+      },
+    ],
+    RefundReceipt: [
+      {
+        Id: "401",
+        DocNumber: "8001",
+        TxnDate: "2026-03-25",
+        CustomerRef: ref("2"),
+        PaymentMethodRef: ref("2"),
+        PaymentRefNum: "1049",
+        DepositToAccountRef: ref("1"),
+        Line: [taxed("3", 1, 15)],
+        TxnTaxDetail: tax("1", [["1", 8, 15, 1.2]]),
+        TotalAmt: 16.2,
+      },
+    ],
+    Payment: [
+      {
+        Id: "501",
+        TxnDate: "2026-03-20",
+        CustomerRef: ref("1"),
+        TotalAmt: 387,
+        PaymentMethodRef: ref("2"),
+        PaymentRefNum: "4521",
+        DepositToAccountRef: ref("4"),
+        Line: [linked("Invoice", "101", 437), linked("CreditMemo", "201", 50)],
+      },
+      { Id: "502", TxnDate: "2026-03-22", CustomerRef: ref("2"), TotalAmt: 200, DepositToAccountRef: ref("4"), Line: [linked("Invoice", "102", 151)] },
+      { Id: "503", TxnDate: "2026-04-05", CustomerRef: ref("4"), TotalAmt: 100, DepositToAccountRef: ref("1"), Line: [linked("Invoice", "104", 100)] },
+      { Id: "504", TxnDate: "2026-04-06", CustomerRef: ref("4"), Line: [], ...voided },
+    ],
+    Deposit: [
+      {
+        Id: "601",
+        TxnDate: "2026-03-23",
+        DepositToAccountRef: ref("1"),
+        Line: [
+          linked("Payment", "501", 387),
+          linked("SalesReceipt", "301", 32.4),
+          {
+            Amount: 100,
+            DetailType: "DepositLineDetail",
+            DepositLineDetail: { AccountRef: ref("9"), Entity: { value: "1", type: "Customer" }, ClassRef: ref("1") },
+          },
+        ],
+        CashBack: { AccountRef: ref("19"), Amount: 20, Memo: "Petty cash" },
+        TotalAmt: 499.4,
+      },
+    ],
+    Bill: [
+      {
+        Id: "701",
+        DocNumber: "H-100",
+        TxnDate: "2026-02-15",
+        DueDate: "2026-03-15",
+        VendorRef: ref("2", "Hicks Hardware"),
+        DepartmentRef: ref("2"),
+        Line: [bought("2", 3, 125, { ClassRef: ref("2") }), exp("12", 1000, { ClassRef: ref("1") })],
+        TotalAmt: 1375,
+      },
+      { Id: "702", DocNumber: "B-7", TxnDate: "2026-02-20", VendorRef: ref("1"), Line: [exp("13", 200)], TotalAmt: 200 },
+      { Id: "703", DocNumber: "H-101", TxnDate: "2026-03-01", VendorRef: ref("2"), Line: [exp("19", 300), exp("19", -50), exp("19", 0)], TotalAmt: 250 },
+    ],
+    VendorCredit: [{ Id: "801", DocNumber: "HC-1", TxnDate: "2026-03-05", VendorRef: ref("2"), Line: [exp("19", 40)], TotalAmt: 40 }],
+    BillPayment: [
+      {
+        Id: "901",
+        DocNumber: "1050",
+        TxnDate: "2026-03-10",
+        VendorRef: ref("2"),
+        PayType: "Check",
+        CheckPayment: { BankAccountRef: ref("1") },
+        TotalAmt: 1335,
+        Line: [linked("Bill", "701", 1375), linked("VendorCredit", "801", 40)],
+      },
+      {
+        Id: "902",
+        TxnDate: "2026-03-12",
+        VendorRef: ref("1"),
+        PayType: "CreditCard",
+        CreditCardPayment: { CCAccountRef: ref("15") },
+        TotalAmt: 250,
+        Line: [linked("Bill", "702", 200)],
+      },
+      { Id: "903", DocNumber: "1051", TxnDate: "2026-03-13", VendorRef: ref("2"), PayType: "Check", CheckPayment: { BankAccountRef: ref("1") }, Line: [], ...voided },
+    ],
+    Purchase: [
+      {
+        Id: "1001",
+        PaymentType: "Check",
+        DocNumber: "1052",
+        TxnDate: "2026-03-02",
+        AccountRef: ref("1"),
+        EntityRef: { value: "1", name: "Books by Bessie", type: "Vendor" },
+        Line: [exp("12", 500, { ClassRef: ref("1") })],
+        TotalAmt: 500,
+      },
+      {
+        Id: "1002",
+        PaymentType: "CreditCard",
+        TxnDate: "2026-03-06",
+        AccountRef: ref("15"),
+        EntityRef: { value: "2", type: "Vendor" },
+        Line: [bought("2", 2, 120)],
+        TotalAmt: 240,
+      },
+      {
+        Id: "1003",
+        PaymentType: "CreditCard",
+        Credit: true,
+        TxnDate: "2026-03-08",
+        AccountRef: ref("15"),
+        EntityRef: { value: "2", type: "Vendor" },
+        Line: [exp("19", 30)],
+        TotalAmt: 30,
+      },
+      {
+        Id: "1004",
+        PaymentType: "Cash",
+        TxnDate: "2026-03-09",
+        AccountRef: ref("1"),
+        PaymentMethodRef: ref("1"),
+        EntityRef: { value: "55", name: "Pat Smith", type: "Employee" },
+        Line: [exp("19", 45)],
+        TotalAmt: 45,
+      },
+      { Id: "1005", PaymentType: "Check", DocNumber: "1053", TxnDate: "2026-03-11", AccountRef: ref("1"), Line: [exp("19", 0)], ...voided },
+    ],
+    Transfer: [
+      { Id: "1101", TxnDate: "2026-03-15", FromAccountRef: ref("1"), ToAccountRef: ref("17"), Amount: 300 },
+      { Id: "1102", TxnDate: "2026-03-28", FromAccountRef: ref("1"), ToAccountRef: ref("15"), Amount: 200, PrivateNote: "Paying the Visa" },
+    ],
+  };
+}
+
+/** What QuickBooks' transaction list says is cleared or reconciled, per account. */
+export const CLEARED: Record<string, Record<"Reconciled" | "Cleared", Array<[string, string]>>> = {
+  "1": {
+    Reconciled: [
+      ["Journal Entry", "1"],
+      ["Check", "1001"],
+      ["Deposit", "601"],
+      ["Transfer", "1101"],
+      ["Check", "9999"],
+    ],
+    Cleared: [
+      ["Bill Payment (Check)", "901"],
+      ["Cash Expense", "1004"],
+    ],
+  },
+  "15": {
+    Reconciled: [["Credit Card Expense", "1002"]],
+    Cleared: [
+      ["Credit Card Credit", "1003"],
+      ["Transfer", "1102"],
+    ],
+  },
+};
+
+function transactionList(account: string, cleared: string) {
+  const rows = CLEARED[account]?.[cleared as "Reconciled" | "Cleared"] ?? [];
+  return {
+    Header: { ReportName: "TransactionList" },
+    Columns: {
+      Column: [
+        { ColTitle: "Date", ColType: "Date", MetaData: [{ Name: "ColKey", Value: "tx_date" }] },
+        { ColTitle: "Transaction Type", ColType: "String", MetaData: [{ Name: "ColKey", Value: "txn_type" }] },
+        { ColTitle: "Num", ColType: "String", MetaData: [{ Name: "ColKey", Value: "doc_num" }] },
+      ],
+    },
+    Rows: { Row: rows.map(([type, id]) => ({ type: "Data", ColData: [{ value: "2026-03-01" }, { value: type, id }, { value: "" }] })) },
   };
 }
 
@@ -259,6 +552,10 @@ export async function startFakeQbo(opts: { realmId: string; companyName: string;
     const path = m[2];
     if (path === `companyinfo/${state.realmId}`) return send(res, 200, COMPANY(state.realmId, opts.companyName));
     if (path === "preferences") return send(res, 200, PREFERENCES);
+    if (path === "reports/TransactionList") {
+      state.queries.push(`report TransactionList ${url.searchParams.get("account")} ${url.searchParams.get("cleared")}`);
+      return send(res, 200, transactionList(url.searchParams.get("account") ?? "", url.searchParams.get("cleared") ?? ""));
+    }
     if (path !== "query") return send(res, 404, fault("Not found", path));
 
     const q = (url.searchParams.get("query") ?? "").trim();
@@ -267,10 +564,10 @@ export async function startFakeQbo(opts: { realmId: string; companyName: string;
     if (!parsed) return send(res, 400, fault("QueryParserError", `Can't parse: ${q}`));
     const [, what, entity, where, start, max] = parsed;
     if (state.failEntity === entity) return send(res, 500, fault("ServerError", "Something broke"), { "retry-after": "0.01" });
-    const all = data[entity];
-    if (!all) return send(res, 400, fault("QueryParserError", `Unknown entity ${entity}`));
+    // An entity the company has none of answers with nothing, as QuickBooks does.
+    const all = data[entity] ?? [];
     // Lists answer only active records unless the query asks for both.
-    const lists = new Set(["Account", "Term", "Class", "Department", "Customer", "Vendor", "Item"]);
+    const lists = new Set(["Account", "Term", "Class", "Department", "Customer", "Vendor", "Item", "TaxRate", "TaxCode", "PaymentMethod"]);
     let rows = lists.has(entity) && !/Active in \(true, false\)/i.test(where ?? "") ? all.filter((r) => r.Active !== false) : all;
     if (what.toLowerCase() === "count(*)") return send(res, 200, { QueryResponse: { totalCount: rows.length } });
     const h = state.hideOnce;

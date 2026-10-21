@@ -4,6 +4,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -16,7 +17,7 @@ import { paymentMethod, timestamps } from "./_shared";
 import { accounts } from "./accounts";
 import { agents } from "./agents";
 import { apBills } from "./ap";
-import { items } from "./ar";
+import { items, type DimensionTag } from "./ar";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
 import { vendors } from "./parties";
@@ -104,6 +105,8 @@ export const vendorCreditLines = pgTable(
     quantity: numeric("quantity", { precision: 20, scale: 4 }),
     unitCost: numeric("unit_cost", { precision: 20, scale: 4 }),
     lotNumber: text("lot_number"),
+    /** Class / Location / Department / Project tags, carried to the ledger line. */
+    dimensions: jsonb("dimensions").$type<DimensionTag[]>().notNull().default([]),
     ...timestamps,
   },
   (t) => [uniqueIndex("vendor_credit_lines_credit_line_key").on(t.vendorCreditId, t.lineNumber)]

@@ -5,14 +5,21 @@ import { auditFields, requirePermission, requireWorkspaceRole, type Ctx, type Ws
 import { writeAudit } from "@/lib/audit";
 import { db } from "@/lib/db/client";
 import { AppError } from "@/lib/errors";
+import { flushRecosting, holdRecosting } from "@/lib/inventory/engine";
 import { seal, unseal } from "@/lib/security/crypto";
 import { createCompany } from "@/lib/workspace/service";
 import { QboClient } from "./client";
 import { qboConfig } from "./config";
 import { accountsStep } from "./import/accounts";
 import { journalEntriesStep } from "./import/journals";
+import { clearingStep } from "./import/clearing";
+import { finishStep } from "./import/finish";
 import { Kit, type Step } from "./import/kit";
 import { auditStep, classesStep, companyStep, customersStep, departmentsStep, itemsStep, termsStep, vendorsStep } from "./import/lists";
+import { billPaymentsStep, customerPaymentsStep, depositsStep } from "./import/payments";
+import { billsStep, purchasesStep, transfersStep, vendorCreditsStep } from "./import/purchases";
+import { creditMemosStep, invoicesStep, refundReceiptsStep, salesReceiptsStep } from "./import/sales";
+import { paymentMethodsStep, taxAgenciesStep, taxCodesStep, taxRatesStep } from "./import/tax";
 import { exchangeCode, revokeToken } from "./oauth";
 
 /**
@@ -24,7 +31,35 @@ import { exchangeCode, revokeToken } from "./oauth";
  * imports (admins and owners); agents can read the progress.
  */
 
-export const STEPS: Step[] = [companyStep, accountsStep, termsStep, classesStep, departmentsStep, customersStep, vendorsStep, itemsStep, journalEntriesStep];
+/** In dependency order: lists, then purchases and sales, then what pays them, then marks. */
+export const STEPS: Step[] = [
+  companyStep,
+  accountsStep,
+  termsStep,
+  classesStep,
+  departmentsStep,
+  paymentMethodsStep,
+  taxAgenciesStep,
+  taxRatesStep,
+  taxCodesStep,
+  customersStep,
+  vendorsStep,
+  itemsStep,
+  billsStep,
+  vendorCreditsStep,
+  purchasesStep,
+  transfersStep,
+  invoicesStep,
+  salesReceiptsStep,
+  creditMemosStep,
+  refundReceiptsStep,
+  customerPaymentsStep,
+  billPaymentsStep,
+  depositsStep,
+  journalEntriesStep,
+  clearingStep,
+  finishStep,
+];
 
 const MAX_NOTES = 500;
 
@@ -137,6 +172,8 @@ export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSch
   if (!imp) return (await getImportView(ctx)) ?? notImported();
   if (imp.status === "done") return (await getImportView(ctx))!;
   const kit = new Kit(ctx, new QboClient(await loadConnection(ctx)), imp.counts, Date.now() + budgetMs);
+  // Each inventory item is recosted once, at the end of the batch.
+  holdRecosting(ctx);
   let index = Math.max(0, STEPS.findIndex((s) => s.key === imp.cursor.step));
   let position = imp.cursor.position;
   while (index < STEPS.length) {
@@ -150,6 +187,7 @@ export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSch
     position = 1;
     if (kit.timeUp()) break;
   }
+  await flushRecosting(ctx);
   const done = index >= STEPS.length;
   await ctx.tx
     .update(qboImports)

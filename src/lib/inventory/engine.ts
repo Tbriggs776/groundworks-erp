@@ -274,10 +274,33 @@ async function postableDate(ctx: Ctx, date: string): Promise<string> {
   return p.start > date ? p.start : date;
 }
 
+const held = new WeakMap<object, Set<string>>();
+
+/**
+ * Bulk work (a QuickBooks import batch): hold recosting for this
+ * transaction, then recost each touched item once with `flushRecosting`.
+ * Recosting after every document would redo an item's whole history each
+ * time.
+ */
+export function holdRecosting(ctx: Ctx) {
+  held.set(ctx.tx, new Set());
+}
+
+export async function flushRecosting(ctx: Ctx) {
+  const ids = held.get(ctx.tx);
+  held.delete(ctx.tx);
+  if (ids?.size) await recostItems(ctx, [...ids]);
+}
+
 /** Recost items and post what changed. Items are locked one at a time in id order. */
 export async function recostItems(ctx: Ctx, itemIds: string[]) {
   const ids = [...new Set(itemIds)].sort();
   if (ids.length === 0) return;
+  const holding = held.get(ctx.tx);
+  if (holding) {
+    for (const i of ids) holding.add(i);
+    return;
+  }
   const method = await costingMethod(ctx);
   for (const itemId of ids) await recostItem(ctx, itemId, method);
 }

@@ -207,7 +207,13 @@ export async function postVendorCredit(ctx: Ctx, input: { id: string }): Promise
   const label = `Vendor credit ${c.creditNumber}`;
   const jeLines: JournalLineInput[] = [
     { accountId: ap.id, debit: c.totalAmount, memo: `${label}${c.vendorReference ? ` · ${c.vendorReference}` : ""}`, vendorId: c.vendorId },
-    ...lines.map((l) => ({ accountId: l.accountId, credit: l.amount, memo: l.description ?? label, vendorId: c.vendorId })),
+    ...lines.map((l) => ({
+      accountId: l.accountId,
+      ...(money(l.amount).lt(0) ? { debit: toDbMoney(money(l.amount).abs()) } : { credit: l.amount }),
+      memo: l.description ?? label,
+      vendorId: c.vendorId,
+      dimensions: l.dimensions.length > 0 ? l.dimensions : undefined,
+    })),
   ];
   const result = await createAndPostJournal(
     {

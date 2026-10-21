@@ -75,8 +75,17 @@ bill payments with discounts
   new company is made in your workspace with its books brought across
 - Company details and fiscal year, the chart of accounts (with QuickBooks'
   numbers where they're free), customers, vendors, products and services,
-  terms, classes, departments (as locations), and journal entries with
-  QuickBooks' exact amounts, so the books tie to QuickBooks
+  terms, classes, departments (as locations), and sales tax agencies and
+  rates
+- The full history with QuickBooks' exact amounts and tax, so the books tie
+  to QuickBooks: invoices, sales receipts, credit memos, refunds, customer
+  payments (with the credits they used), deposits, bills, vendor credits,
+  bill payments, expenses, checks, card charges and credits, transfers, and
+  journal entries
+- Voided transactions come across voided, keeping their numbers; invoice
+  and receipt numbers continue where QuickBooks left off
+- Cleared and reconciled marks come across, so the next reconciliation
+  starts where QuickBooks' last one ended
 - Runs in batches while the page is open; pausing, closing the page, or a
   failed batch loses nothing, and it picks up where it stopped
 - Anything that didn't come across is listed with the reason, to review
@@ -199,7 +208,9 @@ DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 
 30 suites: QuickBooks import (against a fake QuickBooks: sign-in state,
 sealed tokens, resumable batches through failures, throttling, expired
-tokens, paging, and what came across), posting engine,
+tokens, paging, and a full company's history tied out by hand: tax,
+payments and credits, deposits, bill payments, inventory, reconciliations),
+posting engine,
 inventory (FIFO and average, backdating, negative stock, voids, closed
 periods, adjustments, opening stock, purchase orders, valuation tie-out),
 lots (specific identification, expiring lots, vendor credits of stock,
@@ -286,10 +297,10 @@ Nobody at Groundworks can see inside a customer's workspace by default.
   and bundles
 - **Reports**: cash flow statement, P&L by class / location, sales by
   customer / item, expenses by vendor
-- **Migration**: QuickBooks Online import of sales and purchase history
-  (invoices, payments, deposits, bills, bill payments, expenses, checks,
-  transfers, credits and refunds), then estimates, purchase orders, stock on
-  hand, and a month-by-month tie-out against QuickBooks' trial balance
+- **Migration**: QuickBooks Online import of estimates, purchase orders, and
+  stock on hand, and a month-by-month tie-out against QuickBooks' trial
+  balance (with labeled conversion entries for anything QuickBooks' API
+  doesn't expose, like sales tax payments)
 - **Agent platform**: OAuth for MCP (so claude.ai connectors work without
   pasting a key), webhooks / events (`invoice.paid`…), per-type approval
   policies, attachments

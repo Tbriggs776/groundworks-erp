@@ -1,6 +1,5 @@
-import { and, eq } from "drizzle-orm";
-import { dimensions, organizations } from "@/lib/db/schema";
-import { ensureFiscalYearFor } from "@/lib/gl/fiscal-calendar";
+import { eq } from "drizzle-orm";
+import { dimensions } from "@/lib/db/schema";
 import { sourceCodeId } from "@/lib/gl/lookups";
 import { createAndPostJournal, type JournalLineInput, type PostResult } from "@/lib/gl/posting";
 import { toAppError } from "@/lib/errors";
@@ -28,15 +27,10 @@ type JeLine = {
   };
 };
 
-/** Fiscal year start month, and Class / Location dimension ids, for the batch. */
+/** The Class and Location dimension ids, for the batch. */
 export async function setup(kit: Kit) {
-  const [org] = await kit.ctx.tx.select({ startMonth: organizations.fiscalYearStartMonth }).from(organizations).where(eq(organizations.id, kit.org));
-  const dims = await kit.ctx.tx
-    .select({ id: dimensions.id, code: dimensions.code })
-    .from(dimensions)
-    .where(and(eq(dimensions.organizationId, kit.org)));
+  const dims = await kit.ctx.tx.select({ id: dimensions.id, code: dimensions.code }).from(dimensions).where(eq(dimensions.organizationId, kit.org));
   return {
-    startMonth: org.startMonth,
     classDim: dims.find((d) => d.code === "CLASS")?.id,
     locationDim: dims.find((d) => d.code === "LOCATION")?.id,
   };
@@ -86,7 +80,7 @@ export const journalEntriesStep = pagedStep({
       return "skipped";
     }
     const date = String(r.TxnDate);
-    await ensureFiscalYearFor(kit.ctx.tx, kit.org, s.startMonth, date);
+    await kit.year(date);
     const result: PostResult = await createAndPostJournal(
       {
         organizationId: kit.org,

@@ -5,6 +5,9 @@ import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { getImportView } from "@/lib/qbo/service";
 import { ImportPanel } from "./import-panel";
 
+/** An import batch runs for up to 20 seconds, then recosts inventory: give its action room. */
+export const maxDuration = 60;
+
 export default async function QuickBooksPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   const { organization } = await requireCurrentOrg();

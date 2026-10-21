@@ -4,6 +4,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -18,7 +19,7 @@ import { agents } from "./agents";
 import { approvalThresholds } from "./approvals";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
-import { items } from "./ar";
+import { items, type DimensionTag } from "./ar";
 import { vendors } from "./parties";
 import { purchaseOrderLines, purchaseOrders } from "./purchase_orders";
 
@@ -250,6 +251,9 @@ export const apBillLines = pgTable(
     /** Specific identification: the lot bought into, and when it expires. */
     lotNumber: text("lot_number"),
     lotExpiresOn: date("lot_expires_on"),
+
+    /** Class / Location / Department / Project tags, carried to the ledger line. */
+    dimensions: jsonb("dimensions").$type<DimensionTag[]>().notNull().default([]),
 
     /** The purchase order line this bill line bills (progress billing). */
     purchaseOrderLineId: uuid("purchase_order_line_id").references(
