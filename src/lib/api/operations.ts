@@ -41,6 +41,7 @@ import * as inventoryAdjustments from "@/lib/inventory/adjustments";
 import * as lots from "@/lib/inventory/lots";
 import * as stock from "@/lib/inventory/stock";
 import * as pdf from "@/lib/pdf/documents";
+import * as qbo from "@/lib/qbo/service";
 import { listReviewQueue } from "@/lib/review";
 import * as taxLiability from "@/lib/sales-tax/liability";
 import * as taxRates from "@/lib/sales-tax/rates";
@@ -121,6 +122,18 @@ export const OPERATIONS: Operation[] = [
     scope: "read",
     input: ListPeriodsSchema,
     run: (ctx, input) => listPeriods(ctx, input),
+  }),
+  op({
+    name: "get_quickbooks_import",
+    title: "QuickBooks import status",
+    description:
+      "Whether this company was imported from QuickBooks Online and how the import stands: status (running, failed, done, or none), each step with its imported and skipped counts, and notes to review (records that didn't come across, renumbered accounts, and why). Read only: people run and resume imports from Settings, QuickBooks Import. Before relying on an imported company's books, read the notes.",
+    group: "Context",
+    method: "GET",
+    path: "/quickbooks/import",
+    scope: "read",
+    input: Empty,
+    run: (ctx) => qbo.getImportStatus(ctx),
   }),
   // ---------------------------------------------------------- Month-end close
   op({

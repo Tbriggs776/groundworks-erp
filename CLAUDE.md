@@ -117,12 +117,14 @@ src/
   app/
     (app)/            authenticated UI: dashboard, ar/, ap/, banking/, sales-tax,
                       items (+ [id] stock, adjustments), gl,
-                      reports/, review, activity, settings/{agents,api-keys,company},
+                      reports/, review, activity,
+                      settings/{agents,api-keys,company,quickbooks},
                       pdf/ (route handlers that return customer PDFs),
                       workspace/{people,security,access-review,audit,companies},
                       account/security (own password, MFA, sessions),
                       clients (every workspace + company), support (staff only)
     api/v1/[...path]  REST (generated)        api/mcp  MCP server
+    api/qbo/{connect,callback}   Intuit sign-in for the QuickBooks import
     api/cron/daily    recurring journals, invoices + bills, auto-reversal, pruning   api/health  uptime
     signup, onboarding/{,team}   sign-up: workspace + first company, invites
     invite/[token]    accept an invitation
@@ -138,6 +140,7 @@ src/
     agents/           key generation, authentication, agent + key service
     ar/ ap/ banking/ gl/ inventory/ parties/ reports/ sales-tax/   domain services
     company/          company profile + logo (letterhead)
+    qbo/              QuickBooks Online: Intuit sign-in, client, import steps
     messaging/        emailing documents and reminders, templates, delivery events
     pdf/              customer PDFs (@react-pdf/renderer, loaded on demand: ESM only)
     db/schema/ db/migrations/   seed/   supabase/   ui/ (server-only page helpers)
@@ -247,6 +250,21 @@ docs/compliance/      SOC 2 control map and checklist
   balances use the natural sign (a credit card's balance owed is positive).
   Cleared / reconciled state lives in `gl_line_clearings`, beside the
   immutable ledger, never on `gl_lines`.
+- The QuickBooks import (`src/lib/qbo/`) makes a new company from a QBO
+  company and brings it across in steps (`service.ts` `STEPS`). Each batch
+  is one transaction that runs until its time budget is up and saves a
+  cursor; a failed batch saves nothing and the next one repeats it. Steps
+  use a `Kit`: the client, the id map (`qbo_id_map`, QuickBooks id to ours,
+  which makes every step safe to rerun), counts, and notes for the person
+  to review. Lists use `pagedStep` (pages of 1000, then a count check and
+  one rescan). Records go through the app's own services inside a
+  savepoint (`attempt`), so a refused one is noted and skipped. Imported
+  journals keep QuickBooks' amounts and post with source `conversion`
+  (allowed on control accounts). Accounts the app finds by number (1200,
+  1250, 2000, 2200, 3200, 3300, 4930, 4940, 4950, 7400) keep it and take
+  QuickBooks' name. Tokens are sealed (`src/lib/security/crypto.ts`,
+  `APP_ENCRYPTION_KEY`) and a refresh is saved outside the batch's
+  transaction. Only people run imports. Tests use `scripts/lib/fake-qbo.ts`.
 - Test fixtures that create companies need a workspace:
   `scripts/lib/workspace.ts` (`testWorkspace`, `deleteFixtures`).
 

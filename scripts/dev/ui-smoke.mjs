@@ -6,7 +6,8 @@
  * credit memo, a sales receipt, a refund), create an agent + key, approve
  * from the review queue, banking (record an expense, import a statement, match,
  * add, and rule its lines, reconcile, undo), invite someone, add a
- * company and switch to it, AP (a vendor credit and refund, a purchase
+ * company and switch to it, import one from QuickBooks (against the fake
+ * QuickBooks when the app points at it), AP (a vendor credit and refund, a purchase
  * order billed in part, a recurring bill, the 1099 report, a printed
  * check), save the security policy, complete an access
  * review, export the audit log, set a password, sign out, sign back in
@@ -113,7 +114,7 @@ const pages = [
   ["/periods", "close-books"], ["/reports/changes-after-close", null], ["/settings/email", "email-settings"],
   ["/items/adjustments", null], ["/items/adjustments/new", null], ["/settings/inventory", "inventory-settings"],
   ["/reports/inventory-valuation", null], ["/reports/inventory-valuation-detail", "valuation-detail"],
-  ["/reports/inventory-stock-status", "stock-status"],
+  ["/reports/inventory-stock-status", "stock-status"], ["/settings/quickbooks", "quickbooks-none"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -690,6 +691,28 @@ const switcherText = await page.locator("header select").first().innerText();
 const crumbOk = (await page.locator("header").innerText()).includes(companyName) || switcherText.includes(companyName);
 console.log(crumbOk ? "✓ flow: company added and active" : "✗ flow: add company");
 if (!crumbOk) problems.push("add company flow");
+
+// Flow Q: import a company from QuickBooks. With the app pointed at the
+// fake QuickBooks (scripts/dev/fake-qbo-server.ts), the button goes
+// through Intuit's sign-in to a new company whose import runs on its
+// page; without Intuit keys, the workspace page says it isn't set up.
+await page.goto(BASE + "/workspace", { waitUntil: "networkidle" });
+await page.getByRole("link", { name: "Import from QuickBooks" }).click();
+await page.waitForURL(/\/settings\/quickbooks|qbo=/, { timeout: 20000 });
+if (page.url().includes("qbo=not-configured")) {
+  await page.getByText("QuickBooks import isn't set up yet").waitFor({ timeout: 10000 });
+  console.log("✓ flow: QuickBooks import says it isn't set up (no Intuit keys)");
+} else if (page.url().includes("/settings/quickbooks")) {
+  await page.getByText(/Import finished: \d+ records came across/).waitFor({ timeout: 90000 });
+  await page.screenshot({ path: `${outDir}/quickbooks-import.png`, fullPage: true });
+  const reviewNotes = await page.getByText(/To review \(\d+\)/).count();
+  console.log(reviewNotes ? "✓ flow: QuickBooks sign-in, new company, import ran to the end with notes to review" : "✗ flow: QuickBooks import has no notes");
+  if (!reviewNotes) problems.push("quickbooks import notes");
+  await visit("/accounts", "quickbooks-accounts");
+} else {
+  problems.push(`quickbooks import landed on ${page.url()}`);
+  console.log(`✗ flow: QuickBooks import landed on ${page.url()}`);
+}
 
 // Flow 9: start a second workspace through the onboarding wizard, invite
 // a teammate on step 2, and land in the new company.

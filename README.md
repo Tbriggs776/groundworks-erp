@@ -70,6 +70,17 @@ bill payments with discounts
   undone (admins, with a reason)
 - Register with running balance and cleared / reconciled marks
 
+**Moving from QuickBooks Online**
+- Import a QuickBooks company in a few clicks: sign in with Intuit, and a
+  new company is made in your workspace with its books brought across
+- Company details and fiscal year, the chart of accounts (with QuickBooks'
+  numbers where they're free), customers, vendors, products and services,
+  terms, classes, departments (as locations), and journal entries with
+  QuickBooks' exact amounts, so the books tie to QuickBooks
+- Runs in batches while the page is open; pausing, closing the page, or a
+  failed batch loses nothing, and it picks up where it stopped
+- Anything that didn't come across is listed with the reason, to review
+
 **Workspaces: one sign-in, many companies**
 - Sign up in a minute: name, work email, company. No password; a sign-in
   link by email (or Google / Microsoft / SAML SSO when enabled)
@@ -139,7 +150,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 228 operations: accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), month-end close (checklist, close and reopen, checklist items), inventory (costing method, lots, item stock, adjustments, valuation, valuation detail, stock status), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
+| Tools | 229 operations: QuickBooks import status, accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), month-end close (checklist, close and reopen, checklist items), inventory (costing method, lots, item stock, adjustments, valuation, valuation detail, stock status), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -186,7 +197,9 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-29 suites: posting engine,
+30 suites: QuickBooks import (against a fake QuickBooks: sign-in state,
+sealed tokens, resumable batches through failures, throttling, expired
+tokens, paging, and what came across), posting engine,
 inventory (FIFO and average, backdating, negative stock, voids, closed
 periods, adjustments, opening stock, purchase orders, valuation tie-out),
 lots (specific identification, expiring lots, vendor credits of stock,
@@ -231,10 +244,23 @@ Environment variables (Production + Preview):
 | `NEXT_PUBLIC_AUTH_PROVIDERS`, `NEXT_PUBLIC_AUTH_SSO` | optional extra sign-in methods |
 | `API_RATE_LIMIT_PER_MINUTE` | optional, default 600 |
 | `GROUNDWORKS_SUPPORT_USER_IDS` | optional; your support team's user ids (see Support access) |
+| `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT` | QuickBooks import: your Intuit app's keys (mark the secret Sensitive); `sandbox` or `production` |
+| `APP_ENCRYPTION_KEY` | 32 random bytes, base64 (`openssl rand -base64 32`); seals QuickBooks tokens. Mark Sensitive; changing it disconnects every QuickBooks connection |
 
 Migrations run from your machine against the direct (port 5432) connection:
 `DATABASE_URL_MIGRATE=… npm run db:migrate`. Add your production URL to
 Supabase's redirect URLs. Point an uptime monitor at `/api/health`.
+
+### QuickBooks import
+
+1. In the Intuit developer portal, open your app and add the redirect URI
+   `https://<your app>/api/qbo/callback` (exactly `NEXT_PUBLIC_APP_URL` +
+   `/api/qbo/callback`) under its Development and Production settings.
+2. The app needs the **Accounting** scope only.
+3. Set `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT` (`sandbox`
+   until Intuit approves production keys), and `APP_ENCRYPTION_KEY`.
+4. Workspace admins see **Import from QuickBooks** on the Workspace page;
+   progress and notes are under **Settings → QuickBooks Import**.
 
 ### Support access
 
@@ -260,8 +286,10 @@ Nobody at Groundworks can see inside a customer's workspace by default.
   and bundles
 - **Reports**: cash flow statement, P&L by class / location, sales by
   customer / item, expenses by vendor
-- **Migration**: QuickBooks Online importer (chart, customers, vendors, items,
-  open invoices and bills, opening balances)
+- **Migration**: QuickBooks Online import of sales and purchase history
+  (invoices, payments, deposits, bills, bill payments, expenses, checks,
+  transfers, credits and refunds), then estimates, purchase orders, stock on
+  hand, and a month-by-month tie-out against QuickBooks' trial balance
 - **Agent platform**: OAuth for MCP (so claude.ai connectors work without
   pasting a key), webhooks / events (`invoice.paid`…), per-type approval
   policies, attachments
