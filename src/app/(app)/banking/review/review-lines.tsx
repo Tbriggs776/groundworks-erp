@@ -3,7 +3,7 @@
 import { Fragment, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Sparkles, Wand2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Paperclip, Plus, Sparkles, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -183,6 +183,17 @@ export function ReviewLines({
                           {l.reference && <span className="block text-[11px] text-muted-foreground">Ref {l.reference}</span>}
                         </span>
                       </button>
+                      {l.attachments.map((f) => (
+                        <a
+                          key={f.id}
+                          href={f.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-0.5 flex items-center gap-1 text-[11px] text-primary hover:underline"
+                        >
+                          <Paperclip className="h-3 w-3" /> {f.fileName}
+                        </a>
+                      ))}
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-xs">{amt.lt(0) ? fmt(amt.abs().toFixed(4)) : ""}</td>
                     <td className="px-3 py-2 text-right font-mono text-xs">{amt.gt(0) ? fmt(l.amount) : ""}</td>
@@ -274,6 +285,11 @@ function LineDetail({
   const [payee, setPayee] = useState("");
   const [payeeName, setPayeeName] = useState(line.payee ?? "");
   const [memo, setMemo] = useState("");
+  const [split, setSplit] = useState(false);
+  const [rows, setRows] = useState<Array<{ accountId: string; amount: string }>>([
+    { accountId: "", amount: money(line.amount).abs().toFixed(2) },
+    { accountId: "", amount: "" },
+  ]);
   const [candidates, setCandidates] = useState<MatchCandidate[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set(line.suggestedMatches[0] ? [line.suggestedMatches[0].glLineId] : []));
@@ -300,11 +316,19 @@ function LineDetail({
   const pickedTotal = sumMoney(list.filter((c) => picked.has(c.glLineId)).map((c) => c.amount));
   const balanced = picked.size > 0 && pickedTotal.eq(money(line.amount));
 
+  const splitting = kind === "category" && split;
+  const filled = rows.filter((r) => r.accountId || r.amount);
+  const splitTotal = sumMoney(filled.map((r) => (/^\d+(\.\d+)?$/.test(r.amount) ? r.amount : "0")));
+  const left = money(line.amount).abs().minus(splitTotal);
+  const splitReady = filled.length >= 2 && filled.every((r) => r.accountId && /^\d+(\.\d+)?$/.test(r.amount) && money(r.amount).gt(0)) && left.isZero();
+  const setRow = (i: number, patch: Partial<{ accountId: string; amount: string }>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
   function add() {
     onAct(() =>
       addLine({
         id: line.id,
-        categoryAccountId: kind === "category" ? categoryId || undefined : undefined,
+        splits: splitting ? filled.map((r) => ({ accountId: r.accountId, amount: r.amount })) : undefined,
+        categoryAccountId: kind === "category" && !splitting ? categoryId || undefined : undefined,
         transferAccountId: kind === "transfer" ? transferId || undefined : undefined,
         vendorId: payee.startsWith("v:") ? payee.slice(2) : undefined,
         customerId: payee.startsWith("c:") ? payee.slice(2) : undefined,
@@ -314,7 +338,7 @@ function LineDetail({
     );
   }
 
-  const canAdd = kind === "category" ? !!categoryId || !!line.suggestedRule : !!transferId;
+  const canAdd = splitting ? splitReady : kind === "category" ? !!categoryId || !!line.suggestedRule : !!transferId;
 
   return (
     <div className="rounded-md border border-border bg-background p-3 space-y-3">
@@ -348,7 +372,7 @@ function LineDetail({
             </label>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {kind === "category" ? (
+            {splitting ? null : kind === "category" ? (
               <div>
                 <Label className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Category</Label>
                 <Picker
@@ -386,6 +410,55 @@ function LineDetail({
               )}
             </div>
           </div>
+          {kind === "category" && (
+            <div className="space-y-2">
+              <button type="button" className="text-xs text-primary hover:underline" onClick={() => setSplit((v) => !v)}>
+                {split ? "Use one category" : "Split across categories"}
+              </button>
+              {split && (
+                <div className="space-y-2 max-w-2xl">
+                  {rows.map((r, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <Picker
+                          ariaLabel={`Split ${i + 1} category`}
+                          options={choices.categories.filter((c) => c.id !== accountId).map(accountOption)}
+                          value={r.accountId}
+                          onChange={(v) => setRow(i, { accountId: v })}
+                          placeholder="Choose category…"
+                        />
+                      </div>
+                      <Input
+                        className="w-32 text-right font-mono"
+                        inputMode="decimal"
+                        aria-label={`Split ${i + 1} amount`}
+                        value={r.amount}
+                        onChange={(e) => setRow(i, { amount: e.target.value.replace(/[^0-9.]/g, "") })}
+                        placeholder="0.00"
+                      />
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label="Remove split"
+                        disabled={rows.length <= 2}
+                        onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between text-xs">
+                    <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={() => setRows((rs) => [...rs, { accountId: "", amount: "" }])}>
+                      <Plus className="h-3 w-3" /> Add a split
+                    </button>
+                    <span className={cn(left.isZero() ? "text-primary" : "text-muted-foreground")}>
+                      {left.isZero() ? "Splits add up" : `${fmt(left.abs().toFixed(4))} ${left.gt(0) ? "left to split" : "over"}`}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {kind === "category" && (
             <div className="max-w-xl">
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Memo</Label>

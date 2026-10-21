@@ -9,6 +9,7 @@ import { toAppError } from "@/lib/errors";
 import { formatMoney, sumMoney } from "@/lib/money";
 import { Stat } from "../../ui";
 import { UndoReconciliation, Worksheet } from "./worksheet";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function ReconciliationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -59,6 +60,7 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
         </div>
         <ReportTable title="Reconciled" lines={report.reconciled} currency={currency} />
         <ReportTable title={`Still uncleared as of ${sheet.statementEndDate}`} lines={report.uncleared} currency={currency} />
+        <AttachmentsSection entityType="reconciliation" entityId={id} />
       </div>
     </AppShell>
   );

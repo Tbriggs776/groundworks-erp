@@ -15,6 +15,7 @@ import { creatorOf } from "@/lib/ui/creator";
 import { CreditUses, ApplyCredit } from "../../credit-panels";
 import { DocActions } from "../../doc-actions";
 import { DocLines, LedgerNotes, Notes, PdfLink } from "../../doc-view";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function CreditMemoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -82,6 +83,7 @@ export default async function CreditMemoPage({ params }: { params: Promise<{ id:
         <CreditUses uses={m.uses} currency={m.currency} />
         <Notes memo={m.memo} privateNote={m.privateNote} />
         <EmailHistory actor={actor} documentType="credit_memo" documentId={m.id} />
+        <AttachmentsSection entityType="credit_memo" entityId={id} />
       </div>
     </AppShell>
   );

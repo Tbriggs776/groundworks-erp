@@ -7,6 +7,7 @@ import { db } from "@/lib/db/client";
 import { accounts, fiscalPeriods, glJournals, glLines, sourceCodes } from "@/lib/db/schema";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { formatMoney, sumMoney } from "@/lib/money";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function JournalDetailPage({
   params,
@@ -171,6 +172,7 @@ export default async function JournalDetailPage({
           <span>FX rate: {j.exchangeRate}</span>
           {j.postedAt && <span>Posted: {j.postedAt.toISOString().slice(0, 10)}</span>}
         </div>
+        <AttachmentsSection entityType="journal" entityId={id} />
       </div>
     </AppShell>
   );

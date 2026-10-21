@@ -12,6 +12,7 @@ import { creatorOf } from "@/lib/ui/creator";
 import { LedgerNotes } from "../../../ar/doc-view";
 import { ApDocActions } from "../../ap-doc-actions";
 import { VendorCreditUses } from "../../credit-panels";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function VendorRefundPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -54,6 +55,7 @@ export default async function VendorRefundPage({ params }: { params: Promise<{ i
         )}
         <VendorCreditUses uses={r.credits} currency={r.currency} show="credit" />
         {r.memo && <p className="text-xs text-muted-foreground">{r.memo}</p>}
+        <AttachmentsSection entityType="vendor_refund" entityId={id} />
       </div>
     </AppShell>
   );

@@ -14,6 +14,7 @@ import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
 import { Notes, PdfLink } from "../../doc-view";
 import { EstimateActions } from "./estimate-actions";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function EstimatePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -152,6 +153,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
 
         <Notes memo={e.memo} privateNote={e.privateNote} />
         <EmailHistory actor={actor} documentType="estimate" documentId={e.id} />
+        <AttachmentsSection entityType="estimate" entityId={id} />
       </div>
     </AppShell>
   );

@@ -16,6 +16,7 @@ import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
 import { CheckControls } from "../../check-controls";
 import { PaymentActions } from "./void-button";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function PaymentDetailPage({
   params,
@@ -203,6 +204,7 @@ export default async function PaymentDetailPage({
             </div>
           </div>
         )}
+        <AttachmentsSection entityType="bill_payment" entityId={id} />
       </div>
     </AppShell>
   );

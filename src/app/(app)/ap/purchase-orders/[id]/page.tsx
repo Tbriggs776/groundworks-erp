@@ -16,6 +16,7 @@ import { creatorOf } from "@/lib/ui/creator";
 import { PdfLink } from "../../../ar/doc-view";
 import { lotChoices } from "@/lib/ui/form-data";
 import { PurchaseOrderActions } from "./po-actions";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function PurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -187,6 +188,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
           </div>
         )}
         <EmailHistory actor={actor} documentType="purchase_order" documentId={po.id} />
+        <AttachmentsSection entityType="purchase_order" entityId={id} />
       </div>
     </AppShell>
   );
