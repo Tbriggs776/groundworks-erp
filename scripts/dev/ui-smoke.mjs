@@ -110,7 +110,7 @@ const pages = [
   ["/reports/sales-by-customer", "sales-by-customer"], ["/reports/sales-by-item", "sales-by-item"],
   ["/reports/expenses-by-vendor", "expenses-by-vendor"], ["/reports/open-invoices", "open-invoices"],
   ["/reports/unpaid-bills", null], ["/reports/audit-trail", "audit-trail"],
-  ["/periods", "close-books"], ["/reports/changes-after-close", null],
+  ["/periods", "close-books"], ["/reports/changes-after-close", null], ["/settings/email", "email-settings"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -388,6 +388,15 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   await page.goto(BASE + "/reports/open-invoices", { waitUntil: "networkidle" });
   await page.getByRole("link", { name: /^Invoice / }).first().click();
   await page.waitForURL(/\/ar\/invoices\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  // The email dialog opens with the customer's address and the invoice template.
+  await page.getByRole("button", { name: "Email", exact: true }).click();
+  await page.getByText(/^The PDF is attached/).waitFor({ timeout: 10000 });
+  await page.locator("[role=dialog] input").nth(2).waitFor();
+  const emailSubject = await page.locator("[role=dialog] input").nth(2).inputValue();
+  await page.screenshot({ path: `${outDir}/email-dialog.png`, fullPage: true });
+  await page.getByRole("button", { name: "Cancel" }).click();
+  console.log(emailSubject.startsWith("Invoice ") ? "✓ flow: the email dialog fills in the invoice template" : `✗ flow: email dialog subject "${emailSubject}"`);
+  if (!emailSubject.startsWith("Invoice ")) problems.push("email dialog");
   await page.goto(BASE + "/reports/audit-trail", { waitUntil: "networkidle" });
   const trailPdf = await page.request.get(BASE + (await page.getByRole("link", { name: "PDF", exact: true }).getAttribute("href")));
   const trailOk = trailPdf.status() === 200 && (await trailPdf.body()).subarray(0, 5).toString() === "%PDF-";

@@ -4,10 +4,12 @@ import { format } from "date-fns";
 import { AppShell } from "@/components/app-shell/shell";
 import { CreatorChip } from "@/components/creator-chip";
 import { StatusBadge } from "@/components/status-badge";
-import { runAs } from "@/lib/actor";
+import { hasRole, runAs } from "@/lib/actor";
 import { listCustomerCredits } from "@/lib/ar/credits";
 import { getInvoice } from "@/lib/ar/invoices";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { EmailButton } from "@/app/(app)/_email/email-button";
+import { EmailHistory } from "@/app/(app)/_email/email-history";
 import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
@@ -20,6 +22,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const { organization } = await requireCurrentOrg();
   const user = await getUser();
   const actor = await requireActor();
+  const canEmail = hasRole(actor.role, "bookkeeper") && !actor.support;
   const inv = await runAs(actor, (ctx) => getInvoice(ctx, { id })).catch((e) => {
     const code = toAppError(e).code;
     if (code === "not_found" || code === "invalid_input") notFound();
@@ -76,6 +79,10 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           </div>
           <div className="flex flex-col items-end gap-2">
             <InvoiceActions invoice={inv} />
+            <div className="flex gap-2">
+              {canEmail && (inv.status === "open" || inv.status === "paid") && <EmailButton documentType="invoice" documentId={inv.id} />}
+              {canEmail && inv.status === "open" && money(inv.openBalance).gt(0) && <EmailButton documentType="invoice" documentId={inv.id} reminder />}
+            </div>
             <PdfLink kind="invoice" id={inv.id} />
             <Link href="/ar/invoices" className="text-xs text-muted-foreground hover:text-foreground">
               ← Back to invoices
@@ -185,6 +192,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
             )}
           </div>
         )}
+        <EmailHistory actor={actor} documentType="invoice" documentId={inv.id} />
       </div>
     </AppShell>
   );

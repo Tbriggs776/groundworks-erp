@@ -33,6 +33,7 @@ import { listDimensions, listPeriods, ListPeriodsSchema, whoami } from "@/lib/gl
 import * as parties from "@/lib/parties/service";
 import { AgingSchema, apAging, arAging } from "@/lib/reports/aging";
 import * as financial from "@/lib/reports/financial";
+import * as messaging from "@/lib/messaging/service";
 import * as reportDetail from "@/lib/reports/detail";
 import * as reportExports from "@/lib/reports/exports";
 import * as finStatements from "@/lib/reports/statements";
@@ -210,6 +211,54 @@ export const OPERATIONS: Operation[] = [
     scope: "read",
     input: closeSvc.ChangesAfterCloseSchema,
     run: (ctx, input) => closeSvc.changesAfterClose(ctx, input),
+  }),
+
+  // ------------------------------------------------------------------ Email
+  op({
+    name: "send_email",
+    title: "Email a document or a payment reminder",
+    description:
+      "Email an invoice, estimate, sales receipt, credit memo, or statement to the customer, or a purchase order to the vendor, with its PDF attached. reminder=true on an open invoice sends a payment reminder for what's still owed. `to` defaults to the email saved on the customer or vendor; agents can only email addresses saved there. Subject and message default to the company's templates. Returns the logged email: status sent or failed (with the error); delivery, bounce, and open updates arrive later (list_emails).",
+    group: "Sales",
+    method: "POST",
+    path: "/emails",
+    scope: "write",
+    input: messaging.SendEmailSchema,
+    run: (ctx, input) => messaging.sendDocumentEmail(ctx, input),
+  }),
+  op({
+    name: "list_emails",
+    title: "Sent emails",
+    description: "Emails the company sent, newest first, with status (sent, failed, delivered, delayed, bounced, complained) and when each was opened. Filter by documentType and documentId for one document's history.",
+    group: "Sales",
+    method: "GET",
+    path: "/emails",
+    scope: "read",
+    input: messaging.ListEmailsSchema,
+    run: (ctx, input) => messaging.listEmails(ctx, input),
+  }),
+  op({
+    name: "get_email_settings",
+    title: "Email settings",
+    description: "Where replies go, who is copied, the payment reminder schedule, and the subject and message template for each document type (with the defaults filled in).",
+    group: "Context",
+    method: "GET",
+    path: "/email-settings",
+    scope: "read",
+    input: Empty,
+    run: (ctx) => messaging.getEmailSettings(ctx),
+  }),
+  op({
+    name: "update_email_settings",
+    title: "Change email settings",
+    description:
+      "Admins: reply-to and copy-to addresses, automatic payment reminders (remindersEnabled, reminderDays relative to the due date), and templates per document type ({subject, body}; null restores the default). Placeholders: {name} {company} {number} {total} {balance} {date} {due_date} {due_status}.",
+    group: "Context",
+    method: "PATCH",
+    path: "/email-settings",
+    scope: "admin",
+    input: messaging.UpdateEmailSettingsSchema,
+    run: (ctx, input) => messaging.updateEmailSettings(ctx, input),
   }),
 
   op({

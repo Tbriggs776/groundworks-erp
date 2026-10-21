@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell/shell";
-import { runAs } from "@/lib/actor";
+import { hasRole, runAs } from "@/lib/actor";
 import { listStatements, type Statement } from "@/lib/ar/statements";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { EmailButton } from "@/app/(app)/_email/email-button";
 import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 
@@ -12,6 +13,7 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
   const { organization } = await requireCurrentOrg();
   const user = await getUser();
   const actor = await requireActor();
+  const canEmail = hasRole(actor.role, "bookkeeper") && !actor.support;
   const includeZero = sp.all === "1";
   // A bad date range shows as a message, not an error page.
   const { list, error } = await runAs(actor, (ctx) => listStatements(ctx, { from: sp.from || undefined, to: sp.to || undefined, includeZero })).then(
@@ -63,7 +65,7 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
                 <th className="text-right font-medium px-3 py-2 w-32">Charges</th>
                 <th className="text-right font-medium px-3 py-2 w-36">Payments, credits</th>
                 <th className="text-right font-medium px-3 py-2 w-32">Balance</th>
-                <th className="text-right font-medium px-3 py-2 w-28">Statement</th>
+                <th className="text-right font-medium px-3 py-2 w-44">Statement</th>
               </tr>
             </thead>
             <tbody>
@@ -86,9 +88,12 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
                     <td className="px-3 py-2 text-right font-mono text-xs">{money(s.credits).isZero() ? "—" : fmt(s.credits)}</td>
                     <td className="px-3 py-2 text-right font-mono text-xs font-semibold">{fmt(s.closingBalance)}</td>
                     <td className="px-3 py-2 text-right text-xs">
-                      <a href={`/pdf/statement/${s.customer.id}?${q}`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-                        PDF
-                      </a>
+                      <div className="flex items-center justify-end gap-3">
+                        {canEmail && <EmailButton documentType="statement" documentId={s.customer.id} statement={{ from: s.from, to: s.to }} />}
+                        <a href={`/pdf/statement/${s.customer.id}?${q}`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                          PDF
+                        </a>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -98,7 +103,7 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
         </div>
         <p className="text-[11px] text-muted-foreground">
           Balance forward statements: the balance at the start, each invoice, payment, and credit in the period, and the balance on the
-          statement date, with aging. Email sending comes later; for now, download and send the PDF.
+          statement date, with aging. Email sends the PDF to the customer&apos;s saved address.
         </p>
       </div>
     </AppShell>
