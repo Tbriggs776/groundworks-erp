@@ -6,7 +6,9 @@
  * credit memo, a sales receipt, a refund), create an agent + key, approve
  * from the review queue, banking (record an expense, import a statement, match,
  * add, and rule its lines, reconcile, undo), bank feeds (against the fake
- * Plaid when the app points at it), invite someone, add a
+ * Plaid when the app points at it), receipts (read by the fake Claude,
+ * attached to a card line, split, recorded as an expense, files on a
+ * document), invite someone, add a
  * company and switch to it, import one from QuickBooks (against the fake
  * QuickBooks when the app points at it), AP (a vendor credit and refund, a purchase
  * order billed in part, a recurring bill, the 1099 report, a printed
@@ -117,6 +119,7 @@ const pages = [
   ["/reports/inventory-valuation", null], ["/reports/inventory-valuation-detail", "valuation-detail"],
   ["/reports/inventory-stock-status", "stock-status"], ["/settings/quickbooks", "quickbooks-none"],
   ["/banking/feeds", null],
+  ["/banking/receipts", null],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -680,6 +683,76 @@ if (before > 0) {
     await page.getByRole("button", { name: "Disconnect" }).first().click();
     await page.getByText("Disconnected. Lines already in For review stay there.").waitFor({ timeout: 15000 });
     console.log("✓ flow: bank disconnected");
+  }
+}
+
+// Flow RC: receipts. With storage (the fake Supabase) and the fake Claude
+// (scripts/dev/fake-anthropic-server.ts on :54332), upload a receipt, see it
+// read, attach it to the matching card line in For review, add that line
+// split across two categories; record a second receipt as a new expense,
+// then attach and remove a file on that expense's page.
+{
+  const stamp = Date.now();
+  const receipt = (n) => ({ name: `receipt-${stamp}-${n}.png`, mimeType: "image/png", buffer: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(`${stamp}-${n}`)]) });
+  const pick = async (label, option) => {
+    await page.getByRole("combobox", { name: label }).first().click();
+    await page.getByRole("option", { name: option }).click();
+  };
+  await page.goto(BASE + "/banking/receipts", { waitUntil: "networkidle" });
+  if (await page.getByText("File storage isn't set up").count()) {
+    console.log("✓ flow: receipts say file storage isn't set up");
+  } else {
+    await page.locator('input[aria-label="Upload receipts"]').setInputFiles(receipt(1));
+    const card1 = page.locator("div.rounded-lg", { hasText: `receipt-${stamp}-1.png` });
+    await card1.getByText("Looks like").waitFor({ timeout: 30000 });
+    await page.screenshot({ path: `${outDir}/receipts.png`, fullPage: true });
+    console.log("✓ flow: receipt uploaded and read (vendor, total, a matching card line)");
+    await card1.locator("div.rounded-md", { hasText: "Bank line in For review" }).first().getByRole("button", { name: "Attach" }).click();
+    await card1.waitFor({ state: "detached", timeout: 15000 });
+    console.log("✓ flow: receipt attached to the card line in For review");
+
+    await page.goto(BASE + "/banking/review", { waitUntil: "networkidle" });
+    await pick("Account", "2100 · Credit Card");
+    await page.waitForLoadState("networkidle");
+    const row = page.locator("tr", { hasText: `receipt-${stamp}-1.png` });
+    await row.waitFor({ timeout: 15000 });
+    await row.locator("button").first().click();
+    await page.getByRole("button", { name: "Add as new" }).click();
+    await page.getByRole("button", { name: "Split across categories" }).click();
+    await pick("Split 1 category", "6050 · Auto & Travel");
+    await page.getByLabel("Split 1 amount").fill("30");
+    await pick("Split 2 category", "6100 · Bank & Merchant Fees");
+    await page.getByLabel("Split 2 amount").fill("12.15");
+    await page.getByText("Splits add up").waitFor({ timeout: 5000 });
+    await page.screenshot({ path: `${outDir}/bank-line-split.png`, fullPage: true });
+    await page.getByRole("button", { name: /^Add \$42\.15$/ }).click();
+    await row.waitFor({ state: "detached", timeout: 15000 });
+    console.log("✓ flow: card line added, split across two categories, receipt carried along");
+
+    await page.goto(BASE + "/banking/receipts", { waitUntil: "networkidle" });
+    await page.locator('input[aria-label="Upload receipts"]').setInputFiles(receipt(2));
+    const card2 = page.locator("div.rounded-lg", { hasText: `receipt-${stamp}-2.png` });
+    await card2.getByRole("button", { name: "Record as a new expense" }).waitFor({ timeout: 30000 });
+    await card2.getByRole("button", { name: "Record as a new expense" }).click();
+    await card2.getByRole("combobox", { name: "Paid from" }).click();
+    await page.getByRole("option", { name: "1010 · Checking" }).click();
+    await card2.getByRole("combobox", { name: "Category" }).click();
+    await page.getByRole("option", { name: "6050 · Auto & Travel" }).click();
+    await card2.getByRole("button", { name: /^Record \$42\.15$/ }).click();
+    await page.getByRole("link", { name: "View the expense" }).click();
+    await page.waitForURL(/\/banking\/transactions\/[0-9a-f-]{36}$/, { timeout: 15000 });
+    await page.getByRole("link", { name: `receipt-${stamp}-2.png` }).waitFor({ timeout: 10000 });
+    console.log("✓ flow: second receipt recorded as an expense, attached on its page");
+
+    page.once("dialog", (d) => d.accept().catch(() => {}));
+    await page.locator('input[aria-label="Attach files"]').setInputFiles({ name: `invoice-${stamp}.pdf`, mimeType: "application/pdf", buffer: Buffer.from(`%PDF-1.4 smoke ${stamp}`) });
+    await page.getByRole("link", { name: `invoice-${stamp}.pdf` }).waitFor({ timeout: 15000 });
+    const opened = await page.request.get(BASE + (await page.getByRole("link", { name: `invoice-${stamp}.pdf` }).getAttribute("href")));
+    if (opened.status() !== 200 || opened.headers()["content-type"] !== "application/pdf") problems.push(`attachment open: ${opened.status()} ${opened.headers()["content-type"]}`);
+    await page.screenshot({ path: `${outDir}/transaction-attachments.png`, fullPage: true });
+    await page.getByRole("button", { name: `Remove invoice-${stamp}.pdf` }).click();
+    await page.getByRole("link", { name: `invoice-${stamp}.pdf` }).waitFor({ state: "detached", timeout: 15000 });
+    console.log("✓ flow: a PDF attached on the expense page, opened, and removed");
   }
 }
 

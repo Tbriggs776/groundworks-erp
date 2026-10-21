@@ -2,6 +2,7 @@ import { addDays, format, parseISO } from "date-fns";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  attachments,
   bankStatementImports,
   bankStatementLines,
   bankStatementMatches,
@@ -15,11 +16,12 @@ import {
 } from "@/lib/db/schema";
 import { auditFields, requirePermission, type Ctx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
+import { documentForJournal, moveAttachments } from "@/lib/attachments/service";
 import { AppError, invalidState, notFound, toAppError } from "@/lib/errors";
 import { inLedger } from "@/lib/gl/ledger";
 import { money, sumMoney } from "@/lib/money";
 import { postOrQueueForReview, type ReviewNotice } from "@/lib/review-policy";
-import { id, isoDate, optionalText, pagination, toPage, type Page } from "@/lib/schemas";
+import { id, isoDate, optionalText, pagination, positiveAmount, toPage, type Page } from "@/lib/schemas";
 import { DimensionTagSchema, lineAmount, requireBankingAccount } from "./common";
 import { clearLedgerLines } from "./matching";
 import { parseStatement, type ParsedLine } from "./parse";
@@ -196,7 +198,31 @@ export type StatementLineRow = BankStatementLine & {
   suggestedMatches: MatchCandidate[];
   /** The rule that would categorize it, when nothing matches. */
   suggestedRule: { id: string; name: string; autoAdd: boolean } | null;
+  /** Receipts and other files on the line; they move to whatever it becomes. */
+  attachments: Array<{ id: string; fileName: string; url: string }>;
 };
+
+async function filesOn(ctx: Ctx, lineIds: string[]): Promise<Map<string, StatementLineRow["attachments"]>> {
+  const out = new Map<string, StatementLineRow["attachments"]>();
+  if (lineIds.length === 0) return out;
+  const rows = await ctx.tx
+    .select({ id: attachments.id, fileName: attachments.fileName, entityId: attachments.entityId })
+    .from(attachments)
+    .where(
+      and(
+        eq(attachments.organizationId, ctx.actor.organizationId),
+        eq(attachments.entityType, "statement_line"),
+        inArray(attachments.entityId, lineIds)
+      )
+    )
+    .orderBy(asc(attachments.createdAt));
+  for (const r of rows) {
+    const list = out.get(r.entityId!) ?? [];
+    list.push({ id: r.id, fileName: r.fileName, url: `/files/${r.id}` });
+    out.set(r.entityId!, list);
+  }
+  return out;
+}
 
 /** Unmatched, unreconciled ledger lines on an account in a date window. */
 async function ledgerCandidates(ctx: Ctx, accountId: string, from: string, to: string): Promise<MatchCandidate[]> {
@@ -251,8 +277,9 @@ export async function listStatementLines(
     .limit(f.limit + 1)
     .offset(f.offset);
   const page = toPage(rows, f.limit, f.offset);
+  const files = await filesOn(ctx, page.data.map((l) => l.id));
   if (status !== "for_review" || page.data.length === 0) {
-    return { ...page, data: page.data.map((l) => ({ ...l, suggestedMatches: [], suggestedRule: null })) };
+    return { ...page, data: page.data.map((l) => ({ ...l, suggestedMatches: [], suggestedRule: null, attachments: files.get(l.id) ?? [] })) };
   }
   const dates = page.data.map((l) => l.postedDate).sort();
   const candidates = await ledgerCandidates(ctx, f.accountId, day(dates[0], -10), day(dates[dates.length - 1], 10));
@@ -272,6 +299,7 @@ export async function listStatementLines(
         ...l,
         suggestedMatches: matches,
         suggestedRule: rule ? { id: rule.id, name: rule.name, autoAdd: rule.autoAdd } : null,
+        attachments: files.get(l.id) ?? [],
       };
     }),
   };
@@ -344,7 +372,7 @@ export async function matchStatementLine(ctx: Ctx, input: z.input<typeof MatchSt
   if (line.status !== "for_review") throw invalidState(`This line is already ${line.status.replace("_", " ")}.`);
   if (new Set(d.glLineIds).size !== d.glLineIds.length) throw new AppError("invalid_input", "A ledger line is listed twice.");
   const rows = await ctx.tx
-    .select({ id: glLines.id, accountId: glLines.accountId, amount: lineAmount })
+    .select({ id: glLines.id, accountId: glLines.accountId, amount: lineAmount, journalId: glLines.journalId })
     .from(glLines)
     .innerJoin(glJournals, eq(glJournals.id, glLines.journalId))
     .where(and(eq(glLines.organizationId, ctx.actor.organizationId), inArray(glLines.id, d.glLineIds), inLedger()));
@@ -375,8 +403,10 @@ export async function matchStatementLine(ctx: Ctx, input: z.input<typeof MatchSt
     .values(d.glLineIds.map((glLineId) => ({ organizationId: ctx.actor.organizationId, statementLineId: line.id, glLineId })));
   await clearLedgerLines(ctx, line.accountId, d.glLineIds);
   await markReviewed(ctx, line.id, { status: "matched" });
+  // Receipts on the line go to the document it matched (the first one, when several).
+  await moveAttachments(ctx, { type: "statement_line", id: line.id }, await documentForJournal(ctx, rows.find((r) => r.id === d.glLineIds[0])!.journalId));
   await audit(ctx, "bank.line.matched", line, { glLineIds: d.glLineIds });
-  return { ...(await loadLine(ctx, line.id)), suggestedMatches: [], suggestedRule: null };
+  return { ...(await loadLine(ctx, line.id)), suggestedMatches: [], suggestedRule: null, attachments: [] };
 }
 
 export const AddStatementLineSchema = z.object({
@@ -388,6 +418,19 @@ export const AddStatementLineSchema = z.object({
   payeeName: optionalText(200),
   memo: optionalText(500),
   dimensions: z.array(DimensionTagSchema).optional(),
+  splits: z
+    .array(
+      z.object({
+        accountId: id.describe("Category account for this part."),
+        amount: positiveAmount.describe("This part's amount, positive."),
+        description: optionalText(500),
+        dimensions: z.array(DimensionTagSchema).optional(),
+      })
+    )
+    .min(2)
+    .max(50)
+    .optional()
+    .describe("Split the line across categories instead of categoryAccountId: positive amounts that add up to the line's amount."),
 });
 export type AddStatementLineInput = z.input<typeof AddStatementLineSchema>;
 
@@ -405,7 +448,16 @@ export async function addStatementLine(
   const line = await loadLine(ctx, d.id, true);
   if (line.status !== "for_review") throw invalidState(`This line is already ${line.status.replace("_", " ")}.`);
   let rule: BankRule | null = null;
-  if (!d.categoryAccountId && !d.transferAccountId) {
+  if (d.splits) {
+    if (d.categoryAccountId || d.transferAccountId) throw new AppError("invalid_input", "Give splits, or a categoryAccountId or transferAccountId, not both.");
+    const total = sumMoney(d.splits.map((p) => p.amount));
+    if (!total.eq(money(line.amount).abs())) {
+      throw new AppError("invalid_input", `The splits add up to ${total.toFixed(2)}; the line is ${money(line.amount).abs().toFixed(2)}.`, {
+        splitTotal: total.toFixed(2),
+        lineAmount: money(line.amount).abs().toFixed(2),
+      });
+    }
+  } else if (!d.categoryAccountId && !d.transferAccountId) {
     rule = line.ruleId ? (await activeRules(ctx)).find((r) => r.id === line.ruleId) ?? null : null;
     rule ??= firstMatchingRule(await activeRules(ctx, line.accountId), line);
     if (!rule) {
@@ -420,8 +472,10 @@ export async function addStatementLine(
     payeeName: d.payeeName ?? rule?.payeeName ?? undefined,
     memo: d.memo ?? rule?.memo ?? undefined,
     dimensions: d.dimensions ?? rule?.dimensions ?? [],
+    splits: d.splits,
   });
   await markReviewed(ctx, line.id, { status: "added", bankTransactionId: txn.id, ruleId: rule?.id ?? line.ruleId });
+  await moveAttachments(ctx, { type: "statement_line", id: line.id }, { type: "bank_transaction", id: txn.id });
   await audit(ctx, "bank.line.added", line, { bankTransactionId: txn.id, ruleId: rule?.id ?? null });
   const posted = await postOrQueueForReview(
     ctx,
@@ -443,6 +497,7 @@ async function createFromLine(
     payeeName?: string;
     memo?: string;
     dimensions: Array<{ dimensionId: string; valueId: string }>;
+    splits?: Array<{ accountId: string; amount: string; description?: string | null; dimensions?: Array<{ dimensionId: string; valueId: string }> }>;
   }
 ) {
   const amt = money(line.amount);
@@ -458,13 +513,15 @@ async function createFromLine(
       memo,
     });
   }
-  if (!a.categoryAccountId) throw new AppError("invalid_input", "Pick a categoryAccountId or a transferAccountId.");
+  if (!a.categoryAccountId && !a.splits) throw new AppError("invalid_input", "Pick a categoryAccountId or a transferAccountId.");
   const payee = {
     vendorId: a.vendorId,
     customerId: a.vendorId ? undefined : a.customerId,
     payeeName: a.payeeName ?? (a.vendorId || a.customerId ? undefined : line.payee ?? undefined),
   };
-  const lines = [{ accountId: a.categoryAccountId, amount: abs, description: line.description, dimensions: a.dimensions }];
+  const lines = a.splits
+    ? a.splits.map((p) => ({ accountId: p.accountId, amount: p.amount, description: p.description ?? line.description, dimensions: p.dimensions ?? a.dimensions }))
+    : [{ accountId: a.categoryAccountId!, amount: abs, description: line.description, dimensions: a.dimensions }];
   if (amt.lt(0)) {
     return createExpense(ctx, {
       type: line.reference && /^\d+$/.test(line.reference) ? "check" : "expense",
@@ -485,6 +542,7 @@ export async function excludeStatementLine(ctx: Ctx, input: { id: string }): Pro
   const line = await loadLine(ctx, lineId, true);
   if (line.status !== "for_review") throw invalidState(`This line is already ${line.status.replace("_", " ")}.`);
   await markReviewed(ctx, line.id, { status: "excluded" });
+  await moveAttachments(ctx, { type: "statement_line", id: line.id }, null);
   await audit(ctx, "bank.line.excluded", line);
   return loadLine(ctx, line.id);
 }
@@ -514,6 +572,7 @@ export async function undoStatementLine(ctx: Ctx, input: { id: string }): Promis
     await ctx.tx.delete(glLineClearings).where(inArray(glLineClearings.glLineId, glLineIds));
   }
   if (line.status === "added" && line.bankTransactionId) {
+    await moveAttachments(ctx, { type: "bank_transaction", id: line.bankTransactionId }, { type: "statement_line", id: line.id });
     const [txn] = await ctx.tx
       .select({ status: bankTransactions.status })
       .from(bankTransactions)

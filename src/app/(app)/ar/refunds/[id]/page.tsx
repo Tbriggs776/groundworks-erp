@@ -11,6 +11,7 @@ import { formatMoney } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
 import { DocActions } from "../../doc-actions";
 import { DocLines, LedgerNotes, Notes } from "../../doc-view";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function RefundPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -64,6 +65,7 @@ export default async function RefundPage({ params }: { params: Promise<{ id: str
           </div>
         )}
         <Notes memo={r.memo} privateNote={r.privateNote} />
+        <AttachmentsSection entityType="refund" entityId={id} />
       </div>
     </AppShell>
   );

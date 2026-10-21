@@ -12,6 +12,7 @@ import { toAppError } from "@/lib/errors";
 import { creatorOf } from "@/lib/ui/creator";
 import { DocActions } from "../../doc-actions";
 import { DocLines, LedgerNotes, Notes, PdfLink } from "../../doc-view";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function SalesReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -68,6 +69,7 @@ export default async function SalesReceiptPage({ params }: { params: Promise<{ i
         <DocLines lines={r.lines} subtotal={r.subtotalAmount} taxLines={r.taxLines} taxExempt={r.taxExempt} total={r.totalAmount} currency={r.currency} />
         <Notes memo={r.memo} privateNote={r.privateNote} />
         <EmailHistory actor={actor} documentType="sales_receipt" documentId={r.id} />
+        <AttachmentsSection entityType="sales_receipt" entityId={id} />
       </div>
     </AppShell>
   );

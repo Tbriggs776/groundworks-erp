@@ -126,6 +126,7 @@ src/
     api/v1/[...path]  REST (generated)        api/mcp  MCP server
     api/qbo/{connect,callback}   Intuit sign-in for the QuickBooks import
     api/webhooks/{resend,plaid}  signed delivery events, bank feed notices
+    (app)/files/[id]  an attachment, after the app's access checks
     api/cron/daily    recurring journals, invoices + bills, auto-reversal, bank feeds, pruning   api/health  uptime
     signup, onboarding/{,team}   sign-up: workspace + first company, invites
     invite/[token]    accept an invitation
@@ -143,6 +144,8 @@ src/
     company/          company profile + logo (letterhead)
     qbo/              QuickBooks Online: Intuit sign-in, client, import steps
     messaging/        emailing documents and reminders, templates, delivery events
+    attachments/      files on documents, the Receipts inbox, Claude reading receipts
+    files/            private file storage (Supabase Storage; memory in tests)
     pdf/              customer PDFs (@react-pdf/renderer, loaded on demand: ESM only)
     db/schema/ db/migrations/   seed/   supabase/   ui/ (server-only page helpers)
 scripts/
@@ -265,6 +268,20 @@ docs/compliance/      SOC 2 control map and checklist
   agents, the daily job, and verified webhooks (`webhook.ts`, ES256 over the
   body's SHA-256). Plaid's frame is allowed by the CSP on `/banking/feeds`
   only. Tests use `scripts/lib/fake-plaid.ts`.
+- Attachments (`src/lib/attachments/`) keep files in private storage
+  (`src/lib/files/storage.ts`, path `<org>/<id>`); each file belongs to one
+  document (`entity_type` + `entity_id`, checked by the service and by the
+  `attachment_entity_guard` trigger) or waits in the Receipts inbox. Types
+  come from the bytes, 4 MB max. Inbox receipts are read by Claude
+  (`reader.ts`: the official SDK, `RECEIPT_READER_MODEL` default
+  `claude-opus-5-5`, server-side fallbacks, structured output, every field
+  checked again); reading never posts. When a bank line in For review is
+  added, matched, excluded, or undone, its files move with it
+  (`moveAttachments`; a match goes to the document whose `gl_journal_id` it
+  hit, `documentForJournal`). The daily job returns files of deleted
+  documents to the inbox. A new attachable document type needs its table in
+  `ENTITIES`, the `attachment_entity` enum, and the trigger's table map.
+  Tests use `FILE_STORAGE=memory` and `scripts/lib/fake-anthropic.ts`.
 - The QuickBooks import (`src/lib/qbo/`) makes a new company from a QBO
   company and brings it across in steps (`service.ts` `STEPS`). Each batch
   is one transaction that runs until its time budget is up and saves a

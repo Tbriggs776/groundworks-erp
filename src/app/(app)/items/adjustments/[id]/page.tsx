@@ -10,6 +10,7 @@ import { getInventoryAdjustment } from "@/lib/inventory/adjustments";
 import { formatMoney, money, sumMoney } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
 import { VoidAdjustment } from "./void-adjustment";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function InventoryAdjustmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -92,6 +93,7 @@ export default async function InventoryAdjustmentPage({ params }: { params: Prom
             ))}
           </div>
         )}
+        <AttachmentsSection entityType="inventory_adjustment" entityId={id} />
       </div>
     </AppShell>
   );

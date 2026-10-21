@@ -16,6 +16,7 @@ import { creatorOf } from "@/lib/ui/creator";
 import { CreditsOnInvoice, UseCredit } from "../../credit-panels";
 import { DocLines, PdfLink } from "../../doc-view";
 import { InvoiceActions } from "./invoice-actions";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -193,6 +194,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           </div>
         )}
         <EmailHistory actor={actor} documentType="invoice" documentId={inv.id} />
+        <AttachmentsSection entityType="invoice" entityId={id} />
       </div>
     </AppShell>
   );

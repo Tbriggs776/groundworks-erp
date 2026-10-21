@@ -12,6 +12,7 @@ import { creatorOf } from "@/lib/ui/creator";
 import { Stat, TXN_TYPE_LABEL } from "../../ui";
 import { CheckControls } from "../../../ap/check-controls";
 import { TxnActions } from "./txn-actions";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function BankTransactionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -118,6 +119,7 @@ export default async function BankTransactionPage({ params }: { params: Promise<
           </div>
         )}
         {t.memo && <p className="text-xs text-muted-foreground">Memo: {t.memo}</p>}
+        <AttachmentsSection entityType="bank_transaction" entityId={id} />
       </div>
     </AppShell>
   );

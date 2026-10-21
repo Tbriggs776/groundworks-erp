@@ -14,6 +14,7 @@ import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
 import { CreditUses } from "../../credit-panels";
 import { PaymentActions } from "./payment-actions";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function CustomerPaymentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -111,6 +112,7 @@ export default async function CustomerPaymentPage({ params }: { params: Promise<
         )}
         <CreditUses uses={p.creditUses} currency={p.currency} title="Credit used later" />
         {p.memo && <p className="text-xs text-muted-foreground">Memo: {p.memo}</p>}
+        <AttachmentsSection entityType="customer_payment" entityId={id} />
       </div>
     </AppShell>
   );

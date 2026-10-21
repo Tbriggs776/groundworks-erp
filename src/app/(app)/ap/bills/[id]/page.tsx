@@ -18,6 +18,7 @@ import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { formatMoney, money } from "@/lib/money";
 import { UseVendorCredit, VendorCreditUses } from "../../credit-panels";
 import { BillActions } from "./bill-actions";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function BillDetailPage({
   params,
@@ -239,6 +240,7 @@ export default async function BillDetailPage({
             </div>
           </div>
         )}
+        <AttachmentsSection entityType="bill" entityId={id} />
       </div>
     </AppShell>
   );

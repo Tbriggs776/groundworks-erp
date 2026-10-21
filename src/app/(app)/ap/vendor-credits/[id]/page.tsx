@@ -13,6 +13,7 @@ import { creatorOf } from "@/lib/ui/creator";
 import { LedgerNotes } from "../../../ar/doc-view";
 import { ApDocActions } from "../../ap-doc-actions";
 import { ApplyToBill, VendorCreditUses } from "../../credit-panels";
+import { AttachmentsSection } from "@/components/attachments/attachments-section";
 
 export default async function VendorCreditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -108,6 +109,7 @@ export default async function VendorCreditPage({ params }: { params: Promise<{ i
             {c.memo}
           </div>
         )}
+        <AttachmentsSection entityType="vendor_credit" entityId={id} />
       </div>
     </AppShell>
   );
