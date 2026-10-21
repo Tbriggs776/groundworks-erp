@@ -15,8 +15,27 @@ function supabaseOrigins(): string[] {
   }
 }
 
-export function contentSecurityPolicy(nonce: string): string {
+const origin = (url: string | undefined, fallback: string) => {
+  try {
+    return url ? new URL(url).origin : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+/** Plaid's sign-in window (a frame from its CDN, which calls Plaid's API) runs on the Bank Feeds page only. */
+export const PLAID_LINK_PATH = "/banking/feeds";
+function plaidOrigins() {
+  const api = process.env.PLAID_ENV === "production" ? "https://production.plaid.com" : "https://sandbox.plaid.com";
+  return {
+    frame: origin(process.env.PLAID_LINK_SCRIPT_URL, "https://cdn.plaid.com"),
+    api: origin(process.env.PLAID_API_BASE, api),
+  };
+}
+
+export function contentSecurityPolicy(nonce: string, pathname = "/"): string {
   const dev = process.env.NODE_ENV === "development";
+  const plaid = pathname === PLAID_LINK_PATH || pathname.startsWith(`${PLAID_LINK_PATH}/`) ? plaidOrigins() : null;
   const directives = [
     "default-src 'self'",
     // Next tags its own scripts with the nonce; strict-dynamic lets them load chunks.
@@ -24,7 +43,8 @@ export function contentSecurityPolicy(nonce: string): string {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' blob: data:",
     "font-src 'self' data:",
-    `connect-src 'self' ${supabaseOrigins().join(" ")}`.trim(),
+    `connect-src 'self' ${[...supabaseOrigins(), ...(plaid ? [plaid.frame, plaid.api] : [])].join(" ")}`.trim(),
+    ...(plaid ? [`frame-src 'self' ${plaid.frame}`] : []),
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

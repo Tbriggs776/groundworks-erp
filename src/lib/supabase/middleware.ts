@@ -21,7 +21,7 @@ const SIGNED_OUT_ONLY = ["/auth/login", "/auth/forgot", "/signup"];
 
 export async function updateSession(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const csp = contentSecurityPolicy(nonce);
+  const csp = contentSecurityPolicy(nonce, request.nextUrl.pathname);
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("content-security-policy", csp);
