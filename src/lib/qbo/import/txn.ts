@@ -346,9 +346,11 @@ export function checkTotal(kit: Kit, label: string, total: Decimal, qbo: unknown
 // ---------------------------------------------------------------------------
 
 type QboPurchaseLine = {
+  Id?: string;
   Amount?: number;
   Description?: string;
   DetailType?: string;
+  LinkedTxn?: Array<{ TxnId?: string; TxnType?: string; TxnLineId?: string }>;
   AccountBasedExpenseLineDetail?: { AccountRef?: Ref; ClassRef?: Ref; CustomerRef?: Ref };
   ItemBasedExpenseLineDetail?: { ItemRef?: Ref; Qty?: number; UnitPrice?: number; ClassRef?: Ref; CustomerRef?: Ref };
 };
@@ -362,6 +364,14 @@ export type PurchaseLine = {
   unitCost: string | null;
   dimensions: DimensionTag[];
   customerId: string | null;
+  /** QuickBooks' line id, and the purchase order line it bills ("<po id>:<line id>"). */
+  qboLineId: string | null;
+  poLine: string | null;
+};
+
+const poLineOf = (l: QboPurchaseLine) => {
+  const t = l.LinkedTxn?.find((x) => x.TxnType === "PurchaseOrder" && x.TxnId && x.TxnLineId);
+  return t ? `${t.TxnId}:${t.TxnLineId}` : null;
 };
 
 /**
@@ -388,6 +398,8 @@ export async function purchaseLines(kit: Kit, r: QboRecord, label: string, stock
         unitCost: null,
         dimensions: await tags(kit, d.ClassRef, dept),
         customerId: await kit.local("Customer", d.CustomerRef),
+        qboLineId: l.Id ?? null,
+        poLine: poLineOf(l),
       });
     } else if (l.DetailType === "ItemBasedExpenseLineDetail" && l.ItemBasedExpenseLineDetail) {
       const d = l.ItemBasedExpenseLineDetail;
@@ -411,6 +423,8 @@ export async function purchaseLines(kit: Kit, r: QboRecord, label: string, stock
         unitCost: d.UnitPrice === undefined ? null : toDbMoney(amountOf(d.UnitPrice)),
         dimensions: await tags(kit, d.ClassRef, dept),
         customerId: await kit.local("Customer", d.CustomerRef),
+        qboLineId: l.Id ?? null,
+        poLine: poLineOf(l),
       });
     }
   }

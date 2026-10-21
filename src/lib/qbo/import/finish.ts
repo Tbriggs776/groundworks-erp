@@ -13,6 +13,8 @@ const SERIES = [
   { code: "SR", what: "Sales receipt", table: "sales_receipts", column: "receipt_number" },
   { code: "CM", what: "Credit memo", table: "credit_memos", column: "memo_number" },
   { code: "RR", what: "Refund receipt", table: "refund_receipts", column: "refund_number" },
+  { code: "EST", what: "Estimate", table: "estimates", column: "estimate_number" },
+  { code: "PO", what: "Purchase order", table: "purchase_orders", column: "po_number" },
 ] as const;
 
 const MAX_INT = 2_147_483_647;

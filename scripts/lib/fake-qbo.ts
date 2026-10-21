@@ -30,6 +30,10 @@ export type FakeQbo = {
     /** Leave this record out of the first listing of its entity (as if made between pages). */
     hideOnce: { entity: string; id: string } | null;
     queries: string[];
+    /** QuickBooks' own books for the tie-out: each account's activity per month, on its section's side. */
+    books: Array<{ account: string; month: string; amount: number; name?: string; kind?: "bs" | "pl" }>;
+    /** Stock on hand per QuickBooks item id. */
+    stock: Record<string, { qty: number; value: number }>;
   };
   data: Record<string, Rec[]>;
   /** The access token stops working (as when it expires early): the next call gets 401. */
@@ -220,6 +224,7 @@ function history(): Record<string, Rec[]> {
         TxnDate: "2026-03-01",
         DueDate: "2026-03-31",
         CustomerRef: ref("1", "Amy's Bird Sanctuary"),
+        LinkedTxn: [{ TxnId: "151", TxnType: "Estimate" }],
         DepartmentRef: ref("1"),
         CustomerMemo: { value: "Thank you for your business." },
         Line: [
@@ -332,11 +337,56 @@ function history(): Record<string, Rec[]> {
         DueDate: "2026-03-15",
         VendorRef: ref("2", "Hicks Hardware"),
         DepartmentRef: ref("2"),
-        Line: [bought("2", 3, 125, { ClassRef: ref("2") }), exp("12", 1000, { ClassRef: ref("1") })],
+        Line: [
+          { ...bought("2", 3, 125, { ClassRef: ref("2") }), LinkedTxn: [{ TxnId: "161", TxnType: "PurchaseOrder", TxnLineId: "1" }] },
+          { ...exp("12", 1000, { ClassRef: ref("1") }), LinkedTxn: [{ TxnId: "161", TxnType: "PurchaseOrder", TxnLineId: "2" }] },
+        ],
         TotalAmt: 1375,
       },
       { Id: "702", DocNumber: "B-7", TxnDate: "2026-02-20", VendorRef: ref("1"), Line: [exp("13", 200)], TotalAmt: 200 },
       { Id: "703", DocNumber: "H-101", TxnDate: "2026-03-01", VendorRef: ref("2"), Line: [exp("19", 300), exp("19", -50), exp("19", 0)], TotalAmt: 250 },
+    ],
+    Estimate: [
+      { Id: "151", DocNumber: "3001", TxnDate: "2026-02-25", CustomerRef: ref("1"), TxnStatus: "Closed", Line: [sale("1", 2, 75)], TotalAmt: 150 },
+      {
+        Id: "152",
+        DocNumber: "3002",
+        TxnDate: "2026-04-10",
+        ExpirationDate: "2026-05-10",
+        CustomerRef: ref("4"),
+        TxnStatus: "Pending",
+        Line: [taxed("3", 10, 15)],
+        TxnTaxDetail: tax("1", [["1", 8, 150, 12]]),
+        TotalAmt: 162,
+      },
+    ],
+    PurchaseOrder: [
+      {
+        Id: "161",
+        DocNumber: "4001",
+        TxnDate: "2026-02-10",
+        VendorRef: ref("2"),
+        POStatus: "Closed",
+        Line: [
+          { Id: "1", ...bought("2", 3, 125) },
+          { Id: "2", ...exp("12", 1000) },
+        ],
+        TotalAmt: 1375,
+      },
+      {
+        Id: "162",
+        DocNumber: "4002",
+        TxnDate: "2026-04-15",
+        VendorRef: ref("1"),
+        POStatus: "Open",
+        Memo: "Deliver to the back door",
+        Line: [
+          { Id: "1", ...exp("19", 80) },
+          { Id: "2", ...exp("19", 0) },
+          { Id: "3", ...exp("19", -10) },
+        ],
+        TotalAmt: 70,
+      },
     ],
     VendorCredit: [{ Id: "801", DocNumber: "HC-1", TxnDate: "2026-03-05", VendorRef: ref("2"), Line: [exp("19", 40)], TotalAmt: 40 }],
     BillPayment: [
@@ -449,6 +499,68 @@ function transactionList(account: string, cleared: string) {
   };
 }
 
+function inventoryValuation(data: Record<string, Rec[]>, stock: Record<string, { qty: number; value: number }>) {
+  const rows = (data.Item ?? [])
+    .filter((i) => i.Type === "Inventory")
+    .map((i) => {
+      const s = stock[i.Id] ?? { qty: 0, value: 0 };
+      return { type: "Data", ColData: [{ value: String(i.Name), id: i.Id }, { value: String(i.Sku ?? "") }, { value: s.qty.toFixed(2) }, { value: s.value.toFixed(2) }, { value: "" }] };
+    });
+  return {
+    Header: { ReportName: "InventoryValuationSummary" },
+    Columns: {
+      Column: [
+        { ColTitle: "", ColType: "Item" },
+        { ColTitle: "SKU", ColType: "String" },
+        { ColTitle: "Qty", ColType: "Number", MetaData: [{ Name: "ColKey", Value: "QtyOnHand" }] },
+        { ColTitle: "Asset Value", ColType: "Money", MetaData: [{ Name: "ColKey", Value: "AssetValue" }] },
+        { ColTitle: "Calc. Avg", ColType: "Money", MetaData: [{ Name: "ColKey", Value: "CalcAvg" }] },
+      ],
+    },
+    Rows: { Row: [{ type: "Section", Header: { ColData: [{ value: "Inventory" }] }, Rows: { Row: rows } }] },
+  };
+}
+
+const BS_TYPES = new Set([
+  "Bank", "Accounts Receivable", "Other Current Asset", "Fixed Asset", "Other Asset",
+  "Accounts Payable", "Credit Card", "Other Current Liability", "Long Term Liability", "Equity",
+]);
+
+/** A balance sheet (balances at each month's end) or P&L (each month's activity) by month, from the books. */
+function byMonth(data: Record<string, Rec[]>, books: FakeQbo["state"]["books"], kind: "bs" | "pl", start: string, end: string) {
+  const months: string[] = [];
+  for (let d = new Date(`${start.slice(0, 7)}-01T00:00:00Z`); d.toISOString().slice(0, 7) <= end.slice(0, 7); d.setUTCMonth(d.getUTCMonth() + 1)) {
+    months.push(d.toISOString().slice(0, 7));
+  }
+  const kindOf = (b: FakeQbo["state"]["books"][number]) => {
+    if (b.kind) return b.kind;
+    const a = (data.Account ?? []).find((x) => x.Id === b.account);
+    return a && BS_TYPES.has(String(a.AccountType)) ? "bs" : "pl";
+  };
+  const mine = books.filter((b) => kindOf(b) === kind);
+  const ids = [...new Set(mine.map((b) => b.account))];
+  const rows = ids.map((id) => {
+    const name = mine.find((b) => b.account === id && b.name)?.name ?? String((data.Account ?? []).find((x) => x.Id === id)?.Name ?? `Account ${id}`);
+    const values = months.map((m) => {
+      const total = mine.filter((b) => b.account === id && (kind === "bs" ? b.month <= m : b.month === m)).reduce((a, b) => a + b.amount, 0);
+      return { value: (Math.round(total * 100) / 100).toFixed(2) };
+    });
+    return { type: "Data", ColData: [{ value: name, id }, ...values, ...(kind === "pl" ? [{ value: "" }] : [])] };
+  });
+  const lastDay = (m: string) => new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  return {
+    Header: { ReportName: kind === "bs" ? "BalanceSheet" : "ProfitAndLoss", SummarizeColumnsBy: "Month" },
+    Columns: {
+      Column: [
+        { ColTitle: "", ColType: "Account" },
+        ...months.map((m) => ({ ColTitle: m, ColType: "Money", MetaData: [{ Name: "StartDate", Value: `${m}-01` }, { Name: "EndDate", Value: lastDay(m) }] })),
+        ...(kind === "pl" ? [{ ColTitle: "Total", ColType: "Money" }] : []),
+      ],
+    },
+    Rows: { Row: [{ type: "Section", Header: { ColData: [{ value: kind === "bs" ? "ASSETS" : "Income" }] }, Rows: { Row: rows } }] },
+  };
+}
+
 const COMPANY = (realmId: string, name: string) => ({
   CompanyInfo: {
     Id: realmId,
@@ -496,6 +608,8 @@ export async function startFakeQbo(opts: { realmId: string; companyName: string;
     failEntity: null,
     hideOnce: null,
     queries: [],
+    books: [],
+    stock: { "2": { qty: 5, value: 610 } },
   };
   const issue = () => {
     state.accessToken = token("at");
@@ -552,6 +666,17 @@ export async function startFakeQbo(opts: { realmId: string; companyName: string;
     const path = m[2];
     if (path === `companyinfo/${state.realmId}`) return send(res, 200, COMPANY(state.realmId, opts.companyName));
     if (path === "preferences") return send(res, 200, PREFERENCES);
+    if (path === "reports/InventoryValuationSummary") {
+      return send(res, 200, inventoryValuation(data, state.stock));
+    }
+    if (path === "reports/BalanceSheet" || path === "reports/ProfitAndLoss") {
+      state.queries.push(`report ${path.slice(8)} ${url.searchParams.get("start_date")} ${url.searchParams.get("end_date")}`);
+      return send(
+        res,
+        200,
+        byMonth(data, state.books, path.endsWith("BalanceSheet") ? "bs" : "pl", url.searchParams.get("start_date") ?? "", url.searchParams.get("end_date") ?? "")
+      );
+    }
     if (path === "reports/TransactionList") {
       state.queries.push(`report TransactionList ${url.searchParams.get("account")} ${url.searchParams.get("cleared")}`);
       return send(res, 200, transactionList(url.searchParams.get("account") ?? "", url.searchParams.get("cleared") ?? ""));

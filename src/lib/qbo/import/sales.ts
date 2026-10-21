@@ -41,7 +41,7 @@ import {
  * applied automatically: payments in QuickBooks say what paid what.
  */
 
-const PRELOAD = ["Customer", "Item", "Account", "Class", "Department", "TaxRate", "TaxCode", "PaymentMethod"];
+const PRELOAD = ["Customer", "Item", "Account", "Class", "Department", "TaxRate", "TaxCode", "PaymentMethod", "Estimate"];
 const VOID_REASON = "Voided in QuickBooks";
 
 async function customerOf(kit: Kit, r: QboRecord, required: true): Promise<string>;
@@ -86,6 +86,9 @@ export const invoicesStep = pagedStep({
         organizationId: kit.org,
         invoiceNumber,
         customerId,
+        estimateId: await kit.local("Estimate", {
+          value: (r.LinkedTxn as Array<{ TxnId?: string; TxnType?: string }> | undefined)?.find((t) => t.TxnType === "Estimate")?.TxnId,
+        }),
         invoiceDate: date,
         dueDate: later(String(r.DueDate ?? date), date),
         ...(await currencyOf(kit, r)),

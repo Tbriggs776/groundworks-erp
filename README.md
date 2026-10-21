@@ -86,6 +86,15 @@ bill payments with discounts
   and receipt numbers continue where QuickBooks left off
 - Cleared and reconciled marks come across, so the next reconciliation
   starts where QuickBooks' last one ended
+- Estimates and purchase orders, linked to the invoices and bill lines that
+  billed them
+- Stock on hand matched to QuickBooks: where the history gives a different
+  quantity or value, one labeled adjustment dated the import day matches
+  QuickBooks' inventory valuation
+- A month-by-month tie-out against QuickBooks' balance sheet and profit and
+  loss: each month that differs lists the accounts and amounts, and an
+  admin posts a labeled conversion entry that closes it (for what
+  QuickBooks' API doesn't share, like sales tax payments)
 - Runs in batches while the page is open; pausing, closing the page, or a
   failed batch loses nothing, and it picks up where it stopped
 - Anything that didn't come across is listed with the reason, to review
@@ -159,7 +168,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 229 operations: QuickBooks import status, accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), month-end close (checklist, close and reopen, checklist items), inventory (costing method, lots, item stock, adjustments, valuation, valuation detail, stock status), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
+| Tools | 230 operations: QuickBooks import status and tie-out, accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), month-end close (checklist, close and reopen, checklist items), inventory (costing method, lots, item stock, adjustments, valuation, valuation detail, stock status), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -209,7 +218,8 @@ DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 30 suites: QuickBooks import (against a fake QuickBooks: sign-in state,
 sealed tokens, resumable batches through failures, throttling, expired
 tokens, paging, and a full company's history tied out by hand: tax,
-payments and credits, deposits, bill payments, inventory, reconciliations),
+payments and credits, deposits, bill payments, inventory, reconciliations,
+estimates and purchase orders, stock on hand, and the monthly tie-out),
 posting engine,
 inventory (FIFO and average, backdating, negative stock, voids, closed
 periods, adjustments, opening stock, purchase orders, valuation tie-out),
@@ -297,10 +307,6 @@ Nobody at Groundworks can see inside a customer's workspace by default.
   and bundles
 - **Reports**: cash flow statement, P&L by class / location, sales by
   customer / item, expenses by vendor
-- **Migration**: QuickBooks Online import of estimates, purchase orders, and
-  stock on hand, and a month-by-month tie-out against QuickBooks' trial
-  balance (with labeled conversion entries for anything QuickBooks' API
-  doesn't expose, like sales tax payments)
 - **Agent platform**: OAuth for MCP (so claude.ai connectors work without
   pasting a key), webhooks / events (`invoice.paid`…), per-type approval
   policies, attachments

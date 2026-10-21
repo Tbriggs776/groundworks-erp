@@ -269,7 +269,15 @@ docs/compliance/      SOC 2 control map and checklist
   Voided transactions come in voided with zero amounts. A batch holds
   inventory recosting (`holdRecosting` / `flushRecosting` in the engine) and
   recosts each touched item once. Accounts QuickBooks had inactive stay open
-  until the finishing step, so their history can post. Tokens are sealed
+  until the finishing step, so their history can post (and `conversion`
+  journals may post to inactive accounts: they restate history). After
+  the history, stock on hand is matched to QuickBooks' inventory valuation
+  by one labeled adjustment (`import/stock.ts`). The tie-out
+  (`qbo/tieout.ts`) keeps QuickBooks' monthly balance sheet and P&L
+  activity (`qbo_tieout_amounts`, on each account's statement side),
+  compares it with the ledger live, and posts one `conversion` entry per
+  month when an admin approves (Opening Balance Equity balances it).
+  Tokens are sealed
   (`src/lib/security/crypto.ts`, `APP_ENCRYPTION_KEY`) and a refresh is
   saved outside the batch's transaction. Only people run imports. Tests use
   `scripts/lib/fake-qbo.ts`.
