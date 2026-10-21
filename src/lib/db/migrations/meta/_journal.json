@@ -267,6 +267,13 @@
       "when": 1792603708365,
       "tag": "0037_quickbooks_tieout",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792613017595,
+      "tag": "0038_bank_feeds",
+      "breakpoints": true
     }
   ]
 }

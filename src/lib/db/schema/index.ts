@@ -27,3 +27,4 @@ export * from "./banking";
 export * from "./email";
 export * from "./inventory";
 export * from "./qbo";
+export * from "./feeds";
