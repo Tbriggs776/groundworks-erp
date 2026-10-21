@@ -9,6 +9,7 @@ import { runAutoReversalsForOrg } from "@/lib/gl/auto-reversal";
 import { runRecurringForOrg } from "@/lib/gl/recurring";
 import { runRecurringInvoicesForOrg } from "@/lib/ar/recurring-invoices";
 import { runRecurringBillsForOrg } from "@/lib/ap/recurring-bills";
+import { runRemindersForOrg } from "@/lib/messaging/reminders";
 
 /**
  * Daily cron entry point. Called by Vercel Cron (see vercel.json).
@@ -25,6 +26,7 @@ import { runRecurringBillsForOrg } from "@/lib/ap/recurring-bills";
  *      wait in the review queue as drafts)
  *   4. Create recurring bills due today (scheduled ones are submitted for
  *      approval; reminders wait in the review queue as drafts)
+ *   5. Email payment reminders, for companies that turned them on
  * Then, once: prune API idempotency keys older than 24 hours, finished
  * rate-limit windows, and session rows that ended over 90 days ago (the
  * audit log keeps the sign-in history).
@@ -41,6 +43,7 @@ type OrgResult = {
   recurring: { checked: number; generated: number; errors: number };
   recurringInvoices: { checked: number; created: number; posted: number; errors: number };
   recurringBills: { checked: number; created: number; submitted: number; errors: number };
+  reminders: { checked: number; sent: number; failed: number };
 };
 
 export async function POST(request: Request) {
@@ -64,6 +67,8 @@ export async function POST(request: Request) {
     ]);
     const recurringInvoices = await runRecurringInvoicesForOrg(org.id, asOfDate);
     const recurringBills = await runRecurringBillsForOrg(org.id, asOfDate);
+    // After recurring invoices, so a new invoice due today can be reminded.
+    const reminders = await runRemindersForOrg(org.id, asOfDate);
     results.push({
       organizationId: org.id,
       slug: org.slug,
@@ -89,6 +94,11 @@ export async function POST(request: Request) {
         submitted: recurringBills.submitted,
         errors: recurringBills.errors.length,
       },
+      reminders: {
+        checked: reminders.checked,
+        sent: reminders.sent,
+        failed: reminders.failed,
+      },
     });
 
     // Log full error details server-side for debugging; don't leak to response.
@@ -106,6 +116,9 @@ export async function POST(request: Request) {
     }
     if (recurringBills.errors.length > 0) {
       console.warn(`[cron] ${org.slug} recurring bill errors:`, recurringBills.errors);
+    }
+    if (reminders.errors.length > 0) {
+      console.warn(`[cron] ${org.slug} payment reminder errors:`, reminders.errors);
     }
   }
 

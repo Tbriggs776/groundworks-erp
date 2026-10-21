@@ -153,6 +153,7 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Company Profile", href: "/settings/company" },
       { label: "Sales Settings", href: "/settings/sales" },
+      { label: "Email", href: "/settings/email" },
       { label: "Approval Thresholds", href: "/settings/approval-thresholds" },
       { label: "My Security", href: "/account/security" },
     ],

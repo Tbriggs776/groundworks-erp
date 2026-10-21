@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell/shell";
-import { runAs } from "@/lib/actor";
+import { hasRole, runAs } from "@/lib/actor";
 import { customerStatement, type StatementLine } from "@/lib/ar/statements";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { EmailButton } from "@/app/(app)/_email/email-button";
+import { EmailHistory } from "@/app/(app)/_email/email-history";
 import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 
@@ -52,6 +54,9 @@ export default async function CustomerStatementPage({
             </div>
           </div>
           <div className="flex flex-col items-end gap-2">
+            {hasRole(actor.role, "bookkeeper") && !actor.support && (
+              <EmailButton documentType="statement" documentId={s.customer.id} statement={{ from: s.from, to: s.to }} />
+            )}
             <a
               href={`/pdf/statement/${s.customer.id}?${q}`}
               target="_blank"
@@ -118,6 +123,7 @@ export default async function CustomerStatementPage({
             to the amount due. A statement dated today always shows it.
           </p>
         )}
+        <EmailHistory actor={actor} documentType="statement" documentId={s.customer.id} />
       </div>
     </AppShell>
   );

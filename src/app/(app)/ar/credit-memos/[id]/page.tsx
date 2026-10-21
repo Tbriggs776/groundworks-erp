@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell/shell";
 import { CreatorChip } from "@/components/creator-chip";
 import { StatusBadge } from "@/components/status-badge";
-import { runAs } from "@/lib/actor";
+import { hasRole, runAs } from "@/lib/actor";
 import { getCreditMemo } from "@/lib/ar/credit-memos";
 import { listInvoices } from "@/lib/ar/invoices";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { EmailButton } from "@/app/(app)/_email/email-button";
+import { EmailHistory } from "@/app/(app)/_email/email-history";
 import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
@@ -19,6 +21,7 @@ export default async function CreditMemoPage({ params }: { params: Promise<{ id:
   const { organization } = await requireCurrentOrg();
   const user = await getUser();
   const actor = await requireActor();
+  const canEmail = hasRole(actor.role, "bookkeeper") && !actor.support;
   const m = await runAs(actor, (ctx) => getCreditMemo(ctx, { id })).catch((e) => {
     const code = toAppError(e).code;
     if (code === "not_found" || code === "invalid_input") notFound();
@@ -45,6 +48,9 @@ export default async function CreditMemoPage({ params }: { params: Promise<{ id:
           </div>
           <div className="flex flex-col items-end gap-2">
             <DocActions kind="credit_memo" id={m.id} status={m.status} number={m.memoNumber} />
+            <div className="flex gap-2">
+              {canEmail && (m.status === "open" || m.status === "applied") && <EmailButton documentType="credit_memo" documentId={m.id} />}
+            </div>
             <PdfLink kind="credit-memo" id={m.id} />
             <Link href="/ar/credit-memos" className="text-xs text-muted-foreground hover:text-foreground">← Back to credit memos</Link>
           </div>
@@ -75,6 +81,7 @@ export default async function CreditMemoPage({ params }: { params: Promise<{ id:
         )}
         <CreditUses uses={m.uses} currency={m.currency} />
         <Notes memo={m.memo} privateNote={m.privateNote} />
+        <EmailHistory actor={actor} documentType="credit_memo" documentId={m.id} />
       </div>
     </AppShell>
   );

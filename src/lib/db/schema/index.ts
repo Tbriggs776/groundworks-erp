@@ -24,3 +24,4 @@ export * from "./ar";
 export * from "./sales";
 export * from "./security";
 export * from "./banking";
+export * from "./email";

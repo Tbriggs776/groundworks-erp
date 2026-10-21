@@ -4,9 +4,11 @@ import { format } from "date-fns";
 import { AppShell } from "@/components/app-shell/shell";
 import { CreatorChip } from "@/components/creator-chip";
 import { StatusBadge } from "@/components/status-badge";
-import { runAs } from "@/lib/actor";
+import { hasRole, runAs } from "@/lib/actor";
 import { getEstimate } from "@/lib/ar/estimates";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { EmailButton } from "@/app/(app)/_email/email-button";
+import { EmailHistory } from "@/app/(app)/_email/email-history";
 import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 import { creatorOf } from "@/lib/ui/creator";
@@ -18,6 +20,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   const { organization } = await requireCurrentOrg();
   const user = await getUser();
   const actor = await requireActor();
+  const canEmail = hasRole(actor.role, "bookkeeper") && !actor.support;
   const e = await runAs(actor, (ctx) => getEstimate(ctx, { id })).catch((err) => {
     const code = toAppError(err).code;
     if (code === "not_found" || code === "invalid_input") notFound();
@@ -74,6 +77,9 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
                 remaining: l.remaining,
               }))}
             />
+            <div className="flex gap-2">
+              {canEmail && true && <EmailButton documentType="estimate" documentId={e.id} />}
+            </div>
             <PdfLink kind="estimate" id={e.id} />
             <Link href="/ar/estimates" className="text-xs text-muted-foreground hover:text-foreground">← Back to estimates</Link>
           </div>
@@ -145,6 +151,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         )}
 
         <Notes memo={e.memo} privateNote={e.privateNote} />
+        <EmailHistory actor={actor} documentType="estimate" documentId={e.id} />
       </div>
     </AppShell>
   );

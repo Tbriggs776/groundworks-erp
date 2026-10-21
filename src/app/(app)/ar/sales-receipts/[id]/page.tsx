@@ -3,9 +3,11 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell/shell";
 import { CreatorChip } from "@/components/creator-chip";
 import { StatusBadge } from "@/components/status-badge";
-import { runAs } from "@/lib/actor";
+import { hasRole, runAs } from "@/lib/actor";
 import { getSalesReceipt } from "@/lib/ar/sales-receipts";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { EmailButton } from "@/app/(app)/_email/email-button";
+import { EmailHistory } from "@/app/(app)/_email/email-history";
 import { toAppError } from "@/lib/errors";
 import { creatorOf } from "@/lib/ui/creator";
 import { DocActions } from "../../doc-actions";
@@ -16,6 +18,7 @@ export default async function SalesReceiptPage({ params }: { params: Promise<{ i
   const { organization } = await requireCurrentOrg();
   const user = await getUser();
   const actor = await requireActor();
+  const canEmail = hasRole(actor.role, "bookkeeper") && !actor.support;
   const r = await runAs(actor, (ctx) => getSalesReceipt(ctx, { id })).catch((e) => {
     const code = toAppError(e).code;
     if (code === "not_found" || code === "invalid_input") notFound();
@@ -48,6 +51,9 @@ export default async function SalesReceiptPage({ params }: { params: Promise<{ i
           </div>
           <div className="flex flex-col items-end gap-2">
             <DocActions kind="sales_receipt" id={r.id} status={r.status} number={r.receiptNumber} />
+            <div className="flex gap-2">
+              {canEmail && r.status === "posted" && <EmailButton documentType="sales_receipt" documentId={r.id} />}
+            </div>
             <PdfLink kind="sales-receipt" id={r.id} />
             <Link href="/ar/sales-receipts" className="text-xs text-muted-foreground hover:text-foreground">← Back to sales receipts</Link>
           </div>
@@ -61,6 +67,7 @@ export default async function SalesReceiptPage({ params }: { params: Promise<{ i
         )}
         <DocLines lines={r.lines} subtotal={r.subtotalAmount} taxLines={r.taxLines} taxExempt={r.taxExempt} total={r.totalAmount} currency={r.currency} />
         <Notes memo={r.memo} privateNote={r.privateNote} />
+        <EmailHistory actor={actor} documentType="sales_receipt" documentId={r.id} />
       </div>
     </AppShell>
   );

@@ -7,6 +7,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { hasRole, runAs } from "@/lib/actor";
 import { getPurchaseOrder } from "@/lib/ap/purchase-orders";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { EmailButton } from "@/app/(app)/_email/email-button";
+import { EmailHistory } from "@/app/(app)/_email/email-history";
 import { toAppError } from "@/lib/errors";
 import { formatMoney, money } from "@/lib/money";
 import { addressLines } from "@/lib/pdf/templates";
@@ -19,6 +21,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
   const { organization, role } = await requireCurrentOrg();
   const user = await getUser();
   const actor = await requireActor();
+  const canEmail = hasRole(actor.role, "bookkeeper") && !actor.support;
   const po = await runAs(actor, (ctx) => getPurchaseOrder(ctx, { id })).catch((err) => {
     const code = toAppError(err).code;
     if (code === "not_found" || code === "invalid_input") notFound();
@@ -69,6 +72,9 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
               }))}
               canApprove={hasRole(role, "accountant")}
             />
+            <div className="flex gap-2">
+              {canEmail && (po.status === "open" || po.status === "closed") && <EmailButton documentType="purchase_order" documentId={po.id} />}
+            </div>
             <PdfLink kind="purchase-order" id={po.id} />
             <Link href="/ap/purchase-orders" className="text-xs text-muted-foreground hover:text-foreground">← Back to purchase orders</Link>
           </div>
@@ -168,6 +174,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
             <div className="whitespace-pre-wrap">{po.memo}</div>
           </div>
         )}
+        <EmailHistory actor={actor} documentType="purchase_order" documentId={po.id} />
       </div>
     </AppShell>
   );

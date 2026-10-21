@@ -129,7 +129,7 @@ src/
   components/         ui/ (shadcn), app-shell/, shared badges + key reveal
   lib/
     actor.ts action.ts errors.ts schemas.ts audit.ts audit-query.ts
-    review.ts review-policy.ts email.ts (Resend; no-op when unset)
+    review.ts review-policy.ts email.ts (Resend transport; no-op when unset)
     workspace/        workspace service + invite-and-email
     security/         sessions (policy, timeouts, revocation), mfa, headers,
                       password rules, support access
@@ -137,6 +137,7 @@ src/
     agents/           key generation, authentication, agent + key service
     ar/ ap/ banking/ gl/ parties/ reports/ sales-tax/   domain services
     company/          company profile + logo (letterhead)
+    messaging/        emailing documents and reminders, templates, delivery events
     pdf/              customer PDFs (@react-pdf/renderer, loaded on demand: ESM only)
     db/schema/ db/migrations/   seed/   supabase/   ui/ (server-only page helpers)
 scripts/
@@ -213,6 +214,13 @@ docs/compliance/      SOC 2 control map and checklist
   Open checklist items need a note to close past. There is no closing
   entry at year end: the balance sheet computes prior years' earnings and
   this fiscal year's net income (`getBalanceSheet`).
+- Emails to customers and vendors go through `src/lib/messaging/service.ts`
+  (`sendDocumentEmail`): the document's PDF attached, the company's name on
+  EMAIL_FROM's address, replies to the company, every send logged in
+  `email_messages` (failed ones too) and audited. People may email any
+  address; agents and the daily reminder run only addresses saved on the
+  customer or vendor. Delivery status arrives through the signed Resend
+  webhook (`messaging/webhooks.ts`). Tests use `EMAIL_TRANSPORT=memory`.
 - 1099 amounts come from `src/lib/ap/form-1099.ts` (accounts carry a
   `form_1099_box`). Full TINs leave the app only through the audited CSV
   export; reports and the API show the last 4.

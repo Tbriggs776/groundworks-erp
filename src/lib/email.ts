@@ -1,26 +1,54 @@
 /**
- * Outbound email (invitations and other app notices). Password-reset links
+ * Outbound email: invitations, and documents and reminders companies send
+ * their customers and vendors (src/lib/messaging/). Password-reset links
  * are sent by Supabase Auth, not from here.
  *
  * Uses Resend's HTTP API when RESEND_API_KEY and EMAIL_FROM are set. When
- * they aren't (local dev, tests), nothing is sent and the caller gets
- * `{ sent: false }` so the UI can show the link to copy instead.
+ * they aren't (local dev), nothing is sent and the caller gets
+ * `{ sent: false }` so the UI can say so. EMAIL_TRANSPORT=memory (never in
+ * production) keeps messages in `memoryOutbox` instead, for the e2e suites.
  */
 
 export type Email = {
-  to: string;
+  to: string | string[];
+  cc?: string[];
+  bcc?: string[];
+  /** Display name shown with EMAIL_FROM's address (a company's name). */
+  fromName?: string;
+  replyTo?: string;
   subject: string;
   text: string;
   html: string;
+  attachments?: Array<{ filename: string; content: Buffer }>;
 };
 
 export type SendResult = { sent: true; id: string | null } | { sent: false; reason: string };
 
+/** Messages "sent" with EMAIL_TRANSPORT=memory. Any recipient at fail.test is refused. */
+export const memoryOutbox: Array<Email & { id: string }> = [];
+
+const memoryTransport = () => process.env.EMAIL_TRANSPORT === "memory" && process.env.NODE_ENV !== "production";
+
 export function emailConfigured(): boolean {
-  return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+  return memoryTransport() || Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+}
+
+/** EMAIL_FROM's address, shown under another display name. */
+function fromHeader(name?: string): string {
+  const from = process.env.EMAIL_FROM ?? "";
+  if (!name) return from;
+  const address = from.match(/<([^>]+)>/)?.[1] ?? from;
+  return `"${name.replace(/["<>\r\n]/g, "").slice(0, 100)}" <${address}>`;
 }
 
 export async function sendEmail(email: Email): Promise<SendResult> {
+  const to = Array.isArray(email.to) ? email.to : [email.to];
+  if (memoryTransport()) {
+    if ([...to, ...(email.cc ?? [])].some((a) => a.endsWith("@fail.test"))) return { sent: false, reason: "The email service refused the message." };
+    const id = `mem_${memoryOutbox.length + 1}_${Date.now()}`;
+    memoryOutbox.push({ ...email, id });
+    return { sent: true, id };
+  }
   if (!emailConfigured()) return { sent: false, reason: "Email isn't configured (RESEND_API_KEY / EMAIL_FROM)." };
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -30,13 +58,19 @@ export async function sendEmail(email: Email): Promise<SendResult> {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM,
-        to: [email.to],
+        from: fromHeader(email.fromName),
+        to,
+        ...(email.cc?.length ? { cc: email.cc } : {}),
+        ...(email.bcc?.length ? { bcc: email.bcc } : {}),
+        ...(email.replyTo ? { reply_to: email.replyTo } : {}),
         subject: email.subject,
         text: email.text,
         html: email.html,
+        ...(email.attachments?.length
+          ? { attachments: email.attachments.map((a) => ({ filename: a.filename, content: a.content.toString("base64") })) }
+          : {}),
       }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -51,7 +85,7 @@ export async function sendEmail(email: Email): Promise<SendResult> {
   }
 }
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 

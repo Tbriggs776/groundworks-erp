@@ -98,6 +98,7 @@ async function newUser(tag: string): Promise<string> {
 }
 
 async function main() {
+  process.env.EMAIL_TRANSPORT = "memory";
   const a = await createTestOrg("iso-a-");
   const b = await createTestOrg("iso-b-");
   console.log(`\nWorkspace A: ${a.org.slug}\nWorkspace B: ${b.org.slug}`);
@@ -243,6 +244,8 @@ async function main() {
       rest(keyB, "POST", "/estimates", { customerId: ids.customers, estimateDate: "2026-05-09", memo: MARKER, lines: [{ itemId: ids.items, quantity: 2, unitPrice: "30" }] }),
       "estimate"
     );
+    // An emailed invoice: A must never see the send or its subject.
+    await ok(rest(keyB, "POST", "/emails", { documentType: "invoice", documentId: ids.invoices, to: ["billing@b.test"] }), "emailed invoice");
     // Month-end close: a checklist item, and a period A must not close or read.
     ids["close-tasks"] = await ok(rest(keyB, "POST", "/close-tasks", { title: `${MARKER} close step` }), "close task");
     const [bPeriod] = await db.select().from(fiscalPeriods).where(eq(fiscalPeriods.organizationId, b.org.id)).orderBy(fiscalPeriods.startDate).limit(1);
@@ -359,6 +362,9 @@ async function main() {
   const [aPeriod] = await db.select().from(fiscalPeriods).where(eq(fiscalPeriods.organizationId, a.org.id)).orderBy(fiscalPeriods.startDate).limit(1);
   const borrow: Array<[string, string, unknown]> = [
     ["sign-off with B's checklist item", `/periods/${aPeriod.id}/tasks`, { taskId: ids["close-tasks"] }],
+    ["email B's invoice", "/emails", { documentType: "invoice", documentId: ids.invoices, to: ["x@y.test"] }],
+    ["email B's statement", "/emails", { documentType: "statement", documentId: ids.customers, to: ["x@y.test"] }],
+    ["email B's purchase order", "/emails", { documentType: "purchase_order", documentId: ids["purchase-orders"], to: ["x@y.test"] }],
     ["invoice for B's customer", "/invoices", { customerId: ids.customers, invoiceDate: "2026-05-01", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: aIncome }] }],
     ["invoice line on B's item", "/invoices", { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ itemId: ids.items, quantity: 1 }] }],
     ["invoice line on B's account", "/invoices", { customerId: aCustomer, invoiceDate: "2026-05-01", lines: [{ description: "x", quantity: 1, unitPrice: "10", accountId: ids.accounts }] }],
