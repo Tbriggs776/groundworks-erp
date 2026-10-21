@@ -1,4 +1,5 @@
 import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
+import { sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { fiscalPeriods, fiscalYears } from "@/lib/db/schema";
 
@@ -58,4 +59,26 @@ export async function generateFiscalYear(
     .returning({ id: fiscalPeriods.id });
 
   return { fiscalYearId: year.id, periodIds: inserted.map((r) => r.id) };
+}
+
+/**
+ * Make sure a fiscal year covers `date` (YYYY-MM-DD), generating it (and
+ * any years between it and the company's existing ones) when missing.
+ * Years start on the company's fiscal year start month and are labeled by
+ * the calendar year they end in.
+ */
+export async function ensureFiscalYearFor(tx: Tx, organizationId: string, startMonth: number, date: string): Promise<void> {
+  const covered = await tx.execute<{ n: number }>(
+    sql`SELECT count(*)::int AS n FROM fiscal_years WHERE organization_id = ${organizationId} AND ${date}::date BETWEEN start_date AND end_date`
+  );
+  if ((covered[0]?.n ?? 0) > 0) return;
+  const d = new Date(`${date}T00:00:00`);
+  const startYear = d.getMonth() + 1 >= startMonth ? d.getFullYear() : d.getFullYear() - 1;
+  const start = `${startYear}-${String(startMonth).padStart(2, "0")}-01`;
+  const label = `FY${startYear + (startMonth === 1 ? 0 : 1)}`;
+  const existing = await tx.execute<{ n: number }>(
+    sql`SELECT count(*)::int AS n FROM fiscal_years WHERE organization_id = ${organizationId} AND year_label = ${label}`
+  );
+  if ((existing[0]?.n ?? 0) > 0) return;
+  await generateFiscalYear(tx, { organizationId, startDate: start, yearLabel: label });
 }

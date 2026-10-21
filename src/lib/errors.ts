@@ -22,6 +22,7 @@ export type ErrorCode =
   | "posting_failed"
   | "idempotency_conflict"
   | "rate_limited"
+  | "upstream_error"
   | "internal";
 
 const STATUS: Record<ErrorCode, number> = {
@@ -36,6 +37,8 @@ const STATUS: Record<ErrorCode, number> = {
   posting_failed: 422,
   idempotency_conflict: 422,
   rate_limited: 429,
+  /** A service Groundworks calls (QuickBooks) failed. */
+  upstream_error: 502,
   internal: 500,
 };
 

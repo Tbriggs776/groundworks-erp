@@ -1,0 +1,35 @@
+import Link from "next/link";
+import { AppShell } from "@/components/app-shell/shell";
+import { hasRole, runAs } from "@/lib/actor";
+import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
+import { getImportView } from "@/lib/qbo/service";
+import { ImportPanel } from "./import-panel";
+
+export default async function QuickBooksPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
+  const { organization } = await requireCurrentOrg();
+  const user = await getUser();
+  const actor = await requireActor();
+  const view = await runAs(actor, (ctx) => getImportView(ctx));
+  return (
+    <AppShell title="QuickBooks Import" crumb={`${organization.name} · Settings`} userEmail={user?.email}>
+      <div className="max-w-3xl space-y-4">
+        {error && <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">{error}</div>}
+        {view ? (
+          <ImportPanel initial={view} canRun={hasRole(actor.role, "admin") && actor.kind === "user" && !actor.support} />
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-4 space-y-2 text-sm">
+            <div className="font-semibold">This company wasn&apos;t imported from QuickBooks</div>
+            <p className="text-muted-foreground">
+              To bring a company over from QuickBooks Online, use{" "}
+              <Link href="/workspace" className="text-primary hover:underline">
+                Import from QuickBooks
+              </Link>{" "}
+              on the workspace page. It makes a new company with the chart of accounts, customers, vendors, products, and history.
+            </p>
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
+}

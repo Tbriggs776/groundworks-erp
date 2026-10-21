@@ -213,6 +213,7 @@ export const journalSource = pgEnum("journal_source", [
   "reversing",
   "adjusting",
   "year_end_close",
+  "conversion",
 ]);
 
 /**

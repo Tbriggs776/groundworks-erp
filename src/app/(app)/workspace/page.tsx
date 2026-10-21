@@ -8,7 +8,15 @@ import * as ws from "@/lib/workspace/service";
 import { CompanyCardActions, WorkspaceName } from "./workspace-client";
 
 /** Workspace home: the companies in it, and where to manage the rest. */
-export default async function WorkspacePage() {
+const QBO_MESSAGE: Record<string, string> = {
+  "not-configured": "QuickBooks import isn't set up yet: the Intuit app keys (QBO_CLIENT_ID, QBO_CLIENT_SECRET) need to be added.",
+  cancelled: "The QuickBooks sign-in was cancelled. Nothing was imported.",
+  expired: "That QuickBooks sign-in expired or didn't start here. Start the import again.",
+  error: "The QuickBooks import couldn't start.",
+};
+
+export default async function WorkspacePage({ searchParams }: { searchParams: Promise<{ qbo?: string; message?: string }> }) {
+  const { qbo, message } = await searchParams;
   const { workspace, role } = await requireWorkspace();
   const actor = await requireWorkspaceActor();
   const user = await getUser();
@@ -27,11 +35,18 @@ export default async function WorkspacePage() {
           <div className="flex items-center justify-between">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Companies</div>
             {isAdmin && (
-              <Link href="/workspace/companies/new" className={buttonVariants({ size: "sm" })}>
-                <Plus className="h-3.5 w-3.5" /> Add company
-              </Link>
+              <div className="flex gap-2">
+                {/* A route that redirects to Intuit: a plain link, never prefetched. */}
+                <a href="/api/qbo/connect" className={buttonVariants({ size: "sm", variant: "outline" })}>
+                  Import from QuickBooks
+                </a>
+                <Link href="/workspace/companies/new" className={buttonVariants({ size: "sm" })}>
+                  <Plus className="h-3.5 w-3.5" /> Add company
+                </Link>
+              </div>
             )}
           </div>
+          {qbo && <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">{QBO_MESSAGE[qbo] ?? message ?? QBO_MESSAGE.error}</div>}
           {companies.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {isAdmin

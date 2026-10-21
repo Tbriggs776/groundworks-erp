@@ -225,6 +225,9 @@ const SUBLEDGER_SOURCES = new Set([
   // must also be allowed, otherwise voiding AP/AR postings is impossible.
   // The link to the original via reverses_journal_id preserves auditability.
   "reversing",
+  // History brought over from QuickBooks: its journal entries may carry a
+  // customer or vendor on AR / AP, as QuickBooks allows.
+  "conversion",
 ]);
 
 /**
