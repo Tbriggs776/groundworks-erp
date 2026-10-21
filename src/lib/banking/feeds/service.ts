@@ -256,6 +256,8 @@ export async function linkFeedAccount(ctx: Ctx, input: z.input<typeof LinkFeedAc
   if (!fa) throw notFound("Bank account");
   let startDate: string | null = null;
   if (d.accountId) {
+    const conn = await loadConnection(ctx, fa.connectionId);
+    if (conn.status === "disconnected") throw new AppError("invalid_state", "That bank is disconnected. Connect it again first.");
     const account = await requireBankingAccount(ctx.tx, org, d.accountId, { reconcilable: true });
     const [other] = await ctx.tx
       .select({ name: bankFeedAccounts.name })
@@ -322,7 +324,13 @@ function toLine(t: PlaidTransaction): ParsedLine {
 export async function syncBankFeed(ctx: Ctx, input: { id: string }): Promise<SyncResult> {
   requirePermission(ctx.actor, "write", "bookkeeper", "update bank feeds");
   const { id: connectionId } = IdSchema.parse(input);
-  const conn = await loadConnection(ctx, connectionId);
+  // Locked, so a webhook, the daily run, and a person's "Update now" take turns on one bank.
+  const [conn] = await ctx.tx
+    .select()
+    .from(bankFeedConnections)
+    .where(and(eq(bankFeedConnections.id, connectionId), eq(bankFeedConnections.organizationId, ctx.actor.organizationId)))
+    .for("update");
+  if (!conn) throw notFound("Bank connection");
   if (conn.status === "disconnected" || !conn.accessToken) throw new AppError("invalid_state", "That bank is disconnected.");
   const result: SyncResult = { status: conn.status, added: 0, updated: 0, removed: 0, changedAfterReview: 0, rules: noRules(), error: null };
 

@@ -390,6 +390,7 @@ async function main() {
     assertEq(await feedLines(checking.id), before, "lines stay");
     await expectError(() => run(bookkeeper, (ctx) => feeds.syncBankFeed(ctx, { id: conn.id })), "invalid_state");
     await expectError(() => run(admin, (ctx) => feeds.createLinkToken(ctx, { connectionId: conn.id })), "invalid_state");
+    await expectError(() => run(admin, (ctx) => feeds.linkFeedAccount(ctx, { id: feedAcct("1111"), accountId: savings.id })), "invalid_state");
     assertEq((await feeds.runBankFeedsForOrg(t.org.id)).checked, 0, "the daily run skips it");
     await runAs(systemActor(t.org.id), (ctx) => feeds.handleFeedWebhook(ctx, conn.id, { webhook_type: "ITEM", webhook_code: "LOGIN_REPAIRED", item_id: itemId }));
     const [after] = await db.select().from(bankFeedConnections).where(eq(bankFeedConnections.id, conn.id));
