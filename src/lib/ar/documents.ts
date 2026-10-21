@@ -7,6 +7,8 @@ import { writeAudit } from "@/lib/audit";
 import { AppError } from "@/lib/errors";
 import { requireDimensionTags, requireLineAccounts, sourceCodeId } from "@/lib/gl/lookups";
 import { createAndPostJournal, reverseJournal, type JournalLineInput } from "@/lib/gl/posting";
+import { recordSale } from "@/lib/inventory/documents";
+import { voidMovements } from "@/lib/inventory/engine";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { computeTax, type ComputedTax } from "@/lib/sales-tax/rates";
 import { amount, id, optionalText } from "@/lib/schemas";
@@ -190,7 +192,8 @@ export async function postSalesDocument(
     total: string;
     customerId: string | null;
     counter: { accountId: string; bank: boolean; memo: string };
-    lines: Array<Pick<ResolvedLine, "accountId" | "amount" | "description" | "dimensions">>;
+    /** With id, itemId, and quantity, inventory items move stock (sales out, returns in). */
+    lines: Array<Pick<ResolvedLine, "accountId" | "amount" | "description" | "dimensions"> & { id?: string; itemId?: string | null; quantity?: string }>;
     sourceCode: "SJ" | "CR" | "CD";
     source: "ar" | "cash_receipt" | "cash_disbursement";
     auditEvent: string;
@@ -252,6 +255,7 @@ export async function postSalesDocument(
     tx
   );
   if (!result.ok) throw new AppError("posting_failed", result.error, { postingCode: result.code, ...result.meta });
+  await recordSale(ctx, { direction: doc.direction, sourceType: doc.entityType, sourceId: doc.entityId, label: doc.label, date: doc.date, lines: doc.lines });
   await writeAudit(
     {
       organizationId: org,
@@ -279,6 +283,7 @@ export async function reverseSalesDocument(
     tx
   );
   if (!result.ok) throw new AppError("posting_failed", result.error, { postingCode: result.code, ...result.meta });
+  await voidMovements(ctx, doc.entityType, doc.entityId);
   await writeAudit(
     {
       organizationId: actor.organizationId,

@@ -12,14 +12,15 @@ export async function createItem(input: ItemInput): Promise<ActionResult> {
   const r = await serviceAction("bookkeeper", async (ctx) => ({
     id: (await items.createItem(ctx, input)).id,
   }));
-  if (r.ok) revalidatePath("/items");
+  if (r.ok) revalidatePath("/items", "layout");
   return r;
 }
 
 export async function updateItem(itemId: string, input: ItemInput): Promise<ActionResult> {
+  // Opening stock is for new items only; the update schema drops it.
   const r = await serviceAction("bookkeeper", async (ctx) => ({
     id: (await items.updateItem(ctx, { ...input, id: itemId })).id,
   }));
-  if (r.ok) revalidatePath("/items");
+  if (r.ok) revalidatePath("/items", "layout");
   return r;
 }

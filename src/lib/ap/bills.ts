@@ -20,6 +20,7 @@ import { writeAudit } from "@/lib/audit";
 import { AppError, invalidState, notFound } from "@/lib/errors";
 import { nextNumber } from "@/lib/gl/number-series";
 import { requireLineAccounts } from "@/lib/gl/lookups";
+import { PurchaseLineItemFields, resolvePurchaseLines, type ResolvedPurchaseLine } from "@/lib/inventory/documents";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import {
   amount,
@@ -57,8 +58,12 @@ import { postBillToGl, voidBillFromGl } from "./posting";
 // ---------------------------------------------------------------------------
 
 const BillLineSchema = z.object({
-  accountId: id.describe("Expense, asset, or COGS account to debit."),
-  amount: positiveAmount.describe("Line amount in the bill's currency."),
+  accountId: id
+    .optional()
+    .nullable()
+    .describe("Expense, asset, or COGS account to debit. Optional with an item: inventory items always debit their asset account; others default to their expense account."),
+  amount: positiveAmount.optional().nullable().describe("Line amount in the bill's currency. Optional when quantity and unit cost are given."),
+  ...PurchaseLineItemFields,
   description: optionalText(500),
   purchaseOrderLineId: id
     .optional()
@@ -230,17 +235,18 @@ async function resolveBillFields(
     throw new AppError("invalid_input", `Vendor ${vendor.name} is inactive.`);
   }
 
-  await requireLineAccounts(ctx.tx, org, data.lines.map((l) => l.accountId));
+  const lines = await resolvePurchaseLines(ctx, data.lines, { allowInventory: true });
+  await requireLineAccounts(ctx.tx, org, lines.map((l) => l.accountId));
   const currency = data.currency ?? vendor.currency;
   await checkPurchaseOrderBilling(ctx, {
     purchaseOrderId: link.purchaseOrderId,
     vendorId: vendor.id,
     currency,
     billId: link.billId,
-    lines: data.lines,
+    lines,
   });
 
-  const subtotal = sumMoney(data.lines.map((l) => l.amount));
+  const subtotal = sumMoney(lines.map((l) => l.amount));
   const dueDate =
     data.dueDate ??
     format(addDays(parseISO(data.billDate), vendor.defaultPaymentTermsDays), "yyyy-MM-dd");
@@ -264,7 +270,7 @@ async function resolveBillFields(
       description: data.description,
       notes: data.notes,
     },
-    lines: data.lines,
+    lines,
     vendor,
   };
 }
@@ -300,7 +306,7 @@ async function assertNotDuplicate(
 }
 
 /** Bill lines as stored, with their PO line links. */
-function billLineRows(org: string, billId: string, lines: z.output<typeof BillLineSchema>[]) {
+function billLineRows(org: string, billId: string, lines: Array<z.output<typeof BillLineSchema> & ResolvedPurchaseLine>) {
   return lines.map((l, i) => ({
     organizationId: org,
     billId,
@@ -308,6 +314,9 @@ function billLineRows(org: string, billId: string, lines: z.output<typeof BillLi
     accountId: l.accountId,
     amount: l.amount,
     description: l.description,
+    itemId: l.itemId,
+    quantity: l.quantity,
+    unitCost: l.unitCost,
     purchaseOrderLineId: l.purchaseOrderLineId ?? null,
   }));
 }

@@ -59,6 +59,7 @@ const NAV: NavGroup[] = [
       { label: "Refunds", href: "/ar/refunds" },
       { label: "Statements", href: "/ar/statements" },
       { label: "Products & Services", href: "/items" },
+      { label: "Inventory Adjustments", href: "/items/adjustments" },
       { label: "Sales Tax", href: "/sales-tax" },
     ],
   },
@@ -114,6 +115,7 @@ const NAV: NavGroup[] = [
       { label: "Balance Sheet", href: "/reports/balance-sheet" },
       { label: "Sales by Customer", href: "/reports/sales-by-customer" },
       { label: "Sales by Item", href: "/reports/sales-by-item" },
+      { label: "Inventory Valuation", href: "/reports/inventory-valuation" },
       { label: "Expenses by Vendor", href: "/reports/expenses-by-vendor" },
       { label: "AR Aging", href: "/reports/ar-aging" },
       { label: "Open Invoices", href: "/reports/open-invoices" },
@@ -153,6 +155,7 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Company Profile", href: "/settings/company" },
       { label: "Sales Settings", href: "/settings/sales" },
+      { label: "Inventory", href: "/settings/inventory" },
       { label: "Email", href: "/settings/email" },
       { label: "Approval Thresholds", href: "/settings/approval-thresholds" },
       { label: "My Security", href: "/account/security" },
@@ -192,9 +195,10 @@ export function SidebarNav({
               {group.label}
             </span>
           </div>
-          {group.items.filter((item) => workspaceAdmin || !item.adminOnly).map((item) => {
-            const active =
-              pathname === item.href || (!item.exact && pathname.startsWith(`${item.href}/`));
+          {group.items.filter((item) => workspaceAdmin || !item.adminOnly).map((item, _, shown) => {
+            const matches = (i: NavItem) => pathname === i.href || (!i.exact && pathname.startsWith(`${i.href}/`));
+            // A longer match in the group wins (Inventory Adjustments over Products & Services).
+            const active = matches(item) && !shown.some((o) => o.href.length > item.href.length && matches(o));
             return (
               <Link
                 key={`${group.label}-${item.href}`}

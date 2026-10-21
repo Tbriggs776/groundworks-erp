@@ -231,7 +231,11 @@ async function resolvePo(ctx: Ctx, data: z.output<typeof CreatePurchaseOrderSche
     const item = l.itemId ? byId.get(l.itemId) : undefined;
     if (l.itemId && !item) throw new AppError("invalid_input", `Line ${i + 1}: item not found.`);
     if (item && !item.isActive) throw new AppError("invalid_input", `Line ${i + 1}: ${item.name} is inactive.`);
-    const accountId = l.accountId ?? item?.expenseAccountId;
+    // Inventory items are bought into stock: their bills debit the asset account.
+    if (item?.type === "inventory" && !item.assetAccountId) {
+      throw new AppError("invalid_state", `${item.name} has no inventory asset account. Edit the item first.`);
+    }
+    const accountId = item?.type === "inventory" ? item.assetAccountId : (l.accountId ?? item?.expenseAccountId);
     if (!accountId) {
       throw new AppError("invalid_input", `Line ${i + 1}: choose an account${item ? ` (${item.name} has no expense account)` : ""}.`);
     }
@@ -517,6 +521,9 @@ export async function createBillFromPurchaseOrder(ctx: Ctx, input: CreateBillFro
         accountId: pl.accountId,
         amount: toDbMoney(amt),
         description: pl.description,
+        // Billing part of a line bills that share of its quantity.
+        itemId: pl.itemId,
+        quantity: pl.itemId ? toDbMoney(money(pl.quantity).times(amt).div(money(pl.amount))) : null,
         purchaseOrderLineId: pl.id,
       })),
       submit: d.submit,

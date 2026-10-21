@@ -1,14 +1,16 @@
 import { notFound } from "next/navigation";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { AppShell } from "@/components/app-shell/shell";
 import { db } from "@/lib/db/client";
 import {
   accounts,
   apBillLines,
   apBills,
+  items,
   vendors,
 } from "@/lib/db/schema";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
+import { toPurchaseItems } from "@/app/(app)/_inventory/purchase-items";
 import { BillForm } from "../../bill-form";
 
 export default async function EditBillPage({
@@ -42,7 +44,7 @@ export default async function EditBillPage({
     );
   }
 
-  const [lineRows, vendorRows, acctRows] =
+  const [lineRows, vendorRows, acctRows, itemRows] =
     await Promise.all([
       db
         .select()
@@ -59,6 +61,11 @@ export default async function EditBillPage({
         .from(accounts)
         .where(eq(accounts.organizationId, organization.id))
         .orderBy(asc(accounts.code)),
+      db
+        .select()
+        .from(items)
+        .where(and(eq(items.organizationId, organization.id), isNull(items.deletedAt)))
+        .orderBy(asc(items.name)),
     ]);
 
   return (
@@ -70,6 +77,7 @@ export default async function EditBillPage({
       <BillForm
         vendors={vendorRows}
         accounts={acctRows}
+        items={toPurchaseItems(itemRows)}
         initial={bill}
         initialLines={lineRows}
       />

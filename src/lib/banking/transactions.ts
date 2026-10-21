@@ -39,6 +39,7 @@ import {
   type Page,
 } from "@/lib/schemas";
 import { assertPrintLater } from "@/lib/ap/checks";
+import { PurchaseLineItemFields, resolvePurchaseLines } from "@/lib/inventory/documents";
 import { DimensionTagSchema, requireBankingAccount } from "./common";
 import { linkPostedTransactionToStatement } from "./matching";
 import { bankTxnLabel, postBankTransactionToGl, voidBankTransactionFromGl } from "./posting";
@@ -50,10 +51,17 @@ import { bankTxnLabel, postBankTransactionToGl, voidBankTransactionFromGl } from
  */
 
 const LineSchema = z.object({
-  accountId: id.describe(
-    "Category account: expense, income, asset, liability, or equity. Not a control account (AR/AP)."
-  ),
-  amount: amount.describe("Line amount. A negative line flips its side (e.g. a refund line on an expense)."),
+  accountId: id
+    .optional()
+    .nullable()
+    .describe(
+      "Category account: expense, income, asset, liability, or equity. Not a control account (AR/AP). Optional on an expense or check line with an item."
+    ),
+  amount: amount
+    .optional()
+    .nullable()
+    .describe("Line amount. A negative line flips its side (e.g. a refund line on an expense). Optional with a quantity and unit cost."),
+  ...PurchaseLineItemFields,
   description: optionalText(500),
   customerId: id.optional().describe("Customer this line is for (billable expense, or who paid on a deposit)."),
   dimensions: z.array(DimensionTagSchema).optional(),
@@ -306,6 +314,9 @@ type LineInput = z.output<typeof LineSchema>;
 type DraftLine = {
   accountId: string;
   amount: string;
+  itemId: string | null;
+  quantity: string | null;
+  unitCost: string | null;
   description: string | null;
   customerId: string | null;
   arPaymentId: string | null;
@@ -313,8 +324,13 @@ type DraftLine = {
   dimensions: DimensionTag[];
 };
 
-async function validateLines(ctx: Ctx, bankAccountId: string, lines: LineInput[]): Promise<DraftLine[]> {
+async function validateLines(ctx: Ctx, bankAccountId: string, input: LineInput[], opts: { items: boolean }): Promise<DraftLine[]> {
   const org = ctx.actor.organizationId;
+  if (!opts.items && input.some((l) => l.itemId)) {
+    throw new AppError("invalid_input", "Products go on expenses and checks; a deposit line takes an account.");
+  }
+  // Products bought: inventory items add to stock at the line's cost.
+  const lines = await resolvePurchaseLines(ctx, input, { allowInventory: true, signed: true });
   await requireLineAccounts(ctx.tx, org, lines.map((l) => l.accountId));
   if (lines.some((l) => l.accountId === bankAccountId)) {
     throw new AppError("invalid_input", "A line can't use the bank account itself; use a transfer to move money between accounts.");
@@ -326,6 +342,9 @@ async function validateLines(ctx: Ctx, bankAccountId: string, lines: LineInput[]
   return lines.map((l) => ({
     accountId: l.accountId,
     amount: l.amount,
+    itemId: l.itemId,
+    quantity: l.quantity,
+    unitCost: l.unitCost,
     description: l.description ?? null,
     customerId: l.customerId ?? null,
     arPaymentId: null,
@@ -372,6 +391,9 @@ async function paymentLines(ctx: Ctx, ids: string[], excludeTxnId?: string): Pro
       line: {
         accountId: p.depositAccountId,
         amount: p.amount,
+        itemId: null,
+        quantity: null,
+        unitCost: null,
         description: `Payment ${p.paymentNumber}${p.reference ? ` · ${p.reference}` : ""}`,
         customerId: p.customerId,
         arPaymentId: p.id,
@@ -387,6 +409,9 @@ async function paymentLines(ctx: Ctx, ids: string[], excludeTxnId?: string): Pro
       line: {
         accountId: r.depositAccountId,
         amount: r.totalAmount,
+        itemId: null,
+        quantity: null,
+        unitCost: null,
         description: `Sales receipt ${r.receiptNumber}${r.reference ? ` · ${r.reference}` : ""}`,
         customerId: r.customerId,
         arPaymentId: null,
@@ -475,7 +500,7 @@ export async function createExpense(
   const bank = await requireBankingAccount(ctx.tx, ctx.actor.organizationId, d.bankAccountId, { label: "Payment account" });
   if (d.printLater) assertPrintLater(bank, { isCheck: d.type === "check", reference: d.reference });
   await validatePayee(ctx, d);
-  const lines = await validateLines(ctx, bank.id, d.lines);
+  const lines = await validateLines(ctx, bank.id, d.lines, { items: true });
   const total = sumMoney(lines.map((l) => l.amount));
   if (total.lte(0)) throw new AppError("invalid_input", "The total must be greater than zero.");
   const txn = await insertTransaction(
@@ -509,7 +534,7 @@ export async function createDeposit(
   const d = CreateDepositSchema.parse(input);
   const bank = await requireBankingAccount(ctx.tx, ctx.actor.organizationId, d.bankAccountId, { label: "Deposit account" });
   await validatePayee(ctx, d);
-  const lines = [...(await paymentLines(ctx, d.paymentIds ?? [])), ...(await validateLines(ctx, bank.id, d.lines ?? []))];
+  const lines = [...(await paymentLines(ctx, d.paymentIds ?? [])), ...(await validateLines(ctx, bank.id, d.lines ?? [], { items: false }))];
   const total = sumMoney(lines.map((l) => l.amount));
   if (total.lte(0)) throw new AppError("invalid_input", "The deposit total must be greater than zero.");
   const txn = await insertTransaction(

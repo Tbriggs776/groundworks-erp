@@ -115,7 +115,8 @@ MCP /api/mcp  ────┘        one transaction per call; throw = roll back
 ```
 src/
   app/
-    (app)/            authenticated UI: dashboard, ar/, ap/, banking/, sales-tax, items, gl,
+    (app)/            authenticated UI: dashboard, ar/, ap/, banking/, sales-tax,
+                      items (+ [id] stock, adjustments), gl,
                       reports/, review, activity, settings/{agents,api-keys,company},
                       pdf/ (route handlers that return customer PDFs),
                       workspace/{people,security,access-review,audit,companies},
@@ -135,7 +136,7 @@ src/
                       password rules, support access
     api/              registry, REST, MCP, OpenAPI, executor (dry run + idempotency)
     agents/           key generation, authentication, agent + key service
-    ar/ ap/ banking/ gl/ parties/ reports/ sales-tax/   domain services
+    ar/ ap/ banking/ gl/ inventory/ parties/ reports/ sales-tax/   domain services
     company/          company profile + logo (letterhead)
     messaging/        emailing documents and reminders, templates, delivery events
     pdf/              customer PDFs (@react-pdf/renderer, loaded on demand: ESM only)
@@ -221,6 +222,19 @@ docs/compliance/      SOC 2 control map and checklist
   address; agents and the daily reminder run only addresses saved on the
   customer or vendor. Delivery status arrives through the signed Resend
   webhook (`messaging/webhooks.ts`). Tests use `EMAIL_TRANSPORT=memory`.
+- Inventory lives in `src/lib/inventory/`. Every stock change is a row in
+  `inventory_movements` (signed quantity) written by the document that
+  caused it: bills and expenses / checks (`recordPurchase`, cost fixed by the
+  document), invoices and sales receipts out, credit memos and refunds back
+  in (`recordSale`), adjustments. Voids call `voidMovements`. The engine
+  (`engine.ts`) recosts an item from scratch after any change (FIFO or
+  average, set once per company) and posts only the difference between a
+  movement's new cost and what the ledger carries (`booked_cost`) as an
+  `inventory` journal on the movement's date (the void's date for a void,
+  the first day not hard closed when that period is). Value on hand is
+  never stored: it's in minus out of the movements' costs, which ties to
+  the inventory asset accounts. Inventory items always post to their asset
+  account on purchase lines.
 - 1099 amounts come from `src/lib/ap/form-1099.ts` (accounts carry a
   `form_1099_box`). Full TINs leave the app only through the audited CSV
   export; reports and the API show the last 4.

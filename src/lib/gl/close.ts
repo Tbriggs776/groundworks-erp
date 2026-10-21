@@ -17,7 +17,7 @@ import { id, optionalText } from "@/lib/schemas";
  *
  * The books close through a period: closing March also closes any earlier
  * period still open, and reopening March reopens everything after it.
- *   soft_closed  only adjusting and reversing entries post (validations.ts)
+ *   soft_closed  only adjusting, reversing, and inventory cost entries post (validations.ts)
  *   hard_closed  nothing posts without the closing password
  *
  * Before closing, a checklist runs as of the period's last day: bank and

@@ -18,6 +18,7 @@ import { agents } from "./agents";
 import { approvalThresholds } from "./approvals";
 import { organizations, profiles } from "./identity";
 import { glJournals } from "./journals";
+import { items } from "./ar";
 import { vendors } from "./parties";
 import { purchaseOrderLines, purchaseOrders } from "./purchase_orders";
 
@@ -241,6 +242,11 @@ export const apBillLines = pgTable(
     amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
 
     description: text("description"),
+
+    /** A product bought on this line; inventory items add to stock. */
+    itemId: uuid("item_id").references(() => items.id, { onDelete: "restrict" }),
+    quantity: numeric("quantity", { precision: 20, scale: 4 }),
+    unitCost: numeric("unit_cost", { precision: 20, scale: 4 }),
 
     /** The purchase order line this bill line bills (progress billing). */
     purchaseOrderLineId: uuid("purchase_order_line_id").references(

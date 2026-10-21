@@ -11,6 +11,7 @@ import { reportPdf } from "@/lib/pdf/documents";
 import { amount, flag, id, isoDate } from "@/lib/schemas";
 import { apAging, arAging, type AgingReport } from "./aging";
 import { auditTrail, AuditTrailSchema, expensesByVendor, openInvoices, salesByCustomer, salesByItem, unpaidBills } from "./detail";
+import { inventoryValuation } from "@/lib/inventory/stock";
 import { accountLedger, balanceSheet, trialBalance } from "./financial";
 import { budgetVsActual, cashFlow, profitAndLossByDimension, profitAndLossByPeriod, profitAndLossTable } from "./statements";
 import { fmt2, reportCsv, reportFileName, type ReportRow, type ReportTable } from "./table";
@@ -35,6 +36,7 @@ export const REPORT_KEYS = [
   "1099",
   "sales-by-customer",
   "sales-by-item",
+  "inventory-valuation",
   "expenses-by-vendor",
   "open-invoices",
   "unpaid-bills",
@@ -47,7 +49,7 @@ export const ReportParamsSchema = z.object({
   report: z.enum(REPORT_KEYS).default("profit-and-loss").describe("Which report."),
   from: isoDate.optional(),
   to: isoDate.optional(),
-  asOf: isoDate.optional().describe("Balance sheet, trial balance, agings, open invoices, and unpaid bills."),
+  asOf: isoDate.optional().describe("Balance sheet, trial balance, agings, open invoices, unpaid bills, and inventory valuation."),
   period: z.enum(["month", "quarter", "year"]).optional().describe("profit-and-loss-by-period columns."),
   dimensionId: id.optional().describe("profit-and-loss-by-class: the class or location dimension."),
   budgetId: id.optional().describe("budget-vs-actual: the budget."),
@@ -188,6 +190,8 @@ export async function reportTable(ctx: Ctx, input: ReportParams): Promise<Report
       return salesByCustomer(ctx, p);
     case "sales-by-item":
       return salesByItem(ctx, p);
+    case "inventory-valuation":
+      return inventoryValuation(ctx, p);
     case "expenses-by-vendor":
       return expensesByVendor(ctx, p);
     case "open-invoices":

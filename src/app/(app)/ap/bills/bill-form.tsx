@@ -16,6 +16,7 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import type { Account, ApBill, ApBillLine, Vendor } from "@/lib/db/schema";
 import { formatMoney, money, sumMoney } from "@/lib/money";
+import { editItemLine, isInventory, itemPayload, type PurchaseItem } from "@/app/(app)/_inventory/purchase-items";
 import {
   createBill,
   updateBill,
@@ -28,6 +29,9 @@ type Line = {
   accountId: string;
   amount: string;
   description: string;
+  itemId: string;
+  quantity: string;
+  unitCost: string;
   /** Kept when editing a bill made from a purchase order. */
   purchaseOrderLineId: string | null;
 };
@@ -37,6 +41,9 @@ const EMPTY: Line = {
   accountId: "",
   amount: "",
   description: "",
+  itemId: "",
+  quantity: "",
+  unitCost: "",
   purchaseOrderLineId: null,
 };
 
@@ -47,11 +54,14 @@ function newLine(): Line {
 export function BillForm({
   vendors,
   accounts,
+  items = [],
   initial,
   initialLines,
 }: {
   vendors: Vendor[];
   accounts: Account[];
+  /** Products that can go on a line (inventory items add to stock). */
+  items?: PurchaseItem[];
   initial?: ApBill;
   initialLines?: ApBillLine[];
 }) {
@@ -84,6 +94,9 @@ export function BillForm({
           accountId: l.accountId,
           amount: l.amount,
           description: l.description ?? "",
+          itemId: l.itemId ?? "",
+          quantity: l.quantity ? money(l.quantity).toString() : "",
+          unitCost: l.unitCost ? money(l.unitCost).toString() : "",
           purchaseOrderLineId: l.purchaseOrderLineId,
         }))
       : [newLine()]
@@ -103,7 +116,7 @@ export function BillForm({
   );
 
   function updateLine(id: string, patch: Partial<Line>) {
-    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    setLines((prev) => prev.map((l) => (l.id === id ? editItemLine(l, patch, items) : l)));
   }
   function addLine() {
     setLines((prev) => [...prev, newLine()]);
@@ -132,11 +145,12 @@ export function BillForm({
         description,
         notes,
         lines: lines
-          .filter((l) => l.accountId && l.amount)
+          .filter((l) => (l.accountId || l.itemId) && l.amount)
           .map((l) => ({
-            accountId: l.accountId,
+            accountId: l.accountId || undefined,
             amount: l.amount,
             description: l.description,
+            ...itemPayload(l),
             purchaseOrderLineId: l.purchaseOrderLineId,
           })),
       };
@@ -153,7 +167,7 @@ export function BillForm({
     vendorId &&
     billDate &&
     dueDate &&
-    lines.some((l) => l.accountId && money(l.amount || "0").gt(0));
+    lines.some((l) => (l.accountId || l.itemId) && money(l.amount || "0").gt(0));
 
   return (
     <div className="space-y-5 max-w-5xl">
@@ -224,6 +238,13 @@ export function BillForm({
           <thead className="bg-muted/50">
             <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
               <th className="text-left font-medium px-3 py-2 w-8"></th>
+              {items.length > 0 && (
+                <>
+                  <th className="text-left font-medium px-3 py-2 w-44">Product</th>
+                  <th className="text-right font-medium px-3 py-2 w-20">Qty</th>
+                  <th className="text-right font-medium px-3 py-2 w-24">Rate</th>
+                </>
+              )}
               <th className="text-left font-medium px-3 py-2">Account</th>
               <th className="text-right font-medium px-3 py-2 w-28">Amount</th>
               <th className="text-left font-medium px-3 py-2">Description</th>
@@ -241,11 +262,52 @@ export function BillForm({
                     </span>
                   )}
                 </td>
+                {items.length > 0 && (
+                  <>
+                    <td className="px-3 py-2">
+                      <select
+                        value={l.itemId}
+                        onChange={(e) => updateLine(l.id, { itemId: e.target.value })}
+                        className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5"
+                        aria-label="Product"
+                      >
+                        <option value="">—</option>
+                        {items.map((i) => (
+                          <option key={i.id} value={i.id}>
+                            {i.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={l.quantity}
+                        onChange={(e) => updateLine(l.id, { quantity: e.target.value })}
+                        className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5 text-right font-mono"
+                        aria-label="Quantity"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={l.unitCost}
+                        onChange={(e) => updateLine(l.id, { unitCost: e.target.value })}
+                        className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5 text-right font-mono"
+                        aria-label="Rate"
+                      />
+                    </td>
+                  </>
+                )}
                 <td className="px-3 py-2">
                   <select
                     value={l.accountId}
                     onChange={(e) => updateLine(l.id, { accountId: e.target.value })}
-                    className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5"
+                    disabled={isInventory(items, l.itemId)}
+                    title={isInventory(items, l.itemId) ? "Inventory items post to their asset account" : undefined}
+                    className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5 disabled:opacity-70"
                   >
                     <option value="">Choose account…</option>
                     {postingAccounts.map((a) => (
@@ -291,7 +353,7 @@ export function BillForm({
               <td></td>
               <td
                 className="px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground"
-                colSpan={1}
+                colSpan={items.length > 0 ? 4 : 1}
               >
                 Subtotal
               </td>

@@ -37,7 +37,7 @@ import { taxCodes } from "./tax";
  *           / Cr AR control (cash + discount)
  */
 
-export const itemType = pgEnum("item_type", ["service", "non_inventory"]);
+export const itemType = pgEnum("item_type", ["service", "non_inventory", "inventory"]);
 
 export const arInvoiceStatus = pgEnum("ar_invoice_status", [
   "draft",
@@ -137,9 +137,14 @@ export const items = pgTable(
       .references(() => accounts.id, { onDelete: "restrict" }),
     /** Default cost + expense account when bought (bills). Optional. */
     purchaseCost: numeric("purchase_cost", { precision: 20, scale: 4 }),
+    /** Expense account when bought; for inventory items, the COGS account debited when sold. */
     expenseAccountId: uuid("expense_account_id").references(() => accounts.id, {
       onDelete: "restrict",
     }),
+    /** Inventory items: the asset account their stock sits in. */
+    assetAccountId: uuid("asset_account_id").references(() => accounts.id, { onDelete: "restrict" }),
+    /** Inventory items: reorder when on hand falls to this. */
+    reorderPoint: numeric("reorder_point", { precision: 20, scale: 4 }),
     /** Charged sales tax when the document has a tax rate. */
     taxable: boolean("taxable").notNull().default(true),
 

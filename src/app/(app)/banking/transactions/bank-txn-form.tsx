@@ -9,13 +9,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { UndepositedPayment } from "@/lib/banking/transactions";
 import { formatMoney, money, sumMoney } from "@/lib/money";
+import { editItemLine, isInventory, itemPayload } from "@/app/(app)/_inventory/purchase-items";
 import { createDeposit, createExpense, createTransfer } from "../actions";
 import type { BankingChoices } from "../choices";
 import { accountOption, Picker } from "../picker";
 
 export type TxnType = "expense" | "check" | "deposit" | "transfer";
 
-type Line = { key: number; accountId: string; amount: string; description: string; customerId: string };
+type Line = {
+  key: number;
+  accountId: string;
+  amount: string;
+  description: string;
+  customerId: string;
+  itemId: string;
+  quantity: string;
+  unitCost: string;
+};
+
+const blankLine = (key: number): Line => ({ key, accountId: "", amount: "", description: "", customerId: "", itemId: "", quantity: "", unitCost: "" });
 
 const METHODS = [
   { value: "credit_card", label: "Credit card" },
@@ -61,7 +73,9 @@ export function BankTxnForm({
   const [memo, setMemo] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentIds, setPaymentIds] = useState<Set<string>>(new Set());
-  const [lines, setLines] = useState<Line[]>(type === "deposit" ? [] : [{ key: 1, accountId: "", amount: "", description: "", customerId: "" }]);
+  const [lines, setLines] = useState<Line[]>(type === "deposit" ? [] : [blankLine(1)]);
+  // Products go on expenses and checks (inventory items add to stock).
+  const products = type === "expense" || type === "check" ? choices.items : [];
 
   const payeeOptions = useMemo(
     () => [
@@ -77,10 +91,10 @@ export function BankTxnForm({
   const linesTotal = sumMoney(lines.map((l) => l.amount || "0"));
   const total = type === "transfer" ? money(amount || "0") : paymentsTotal.plus(linesTotal);
 
-  const updateLine = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
-  const addRow = () => setLines((ls) => [...ls, { key: Math.max(0, ...ls.map((l) => l.key)) + 1, accountId: "", amount: "", description: "", customerId: "" }]);
+  const updateLine = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? editItemLine(l, patch, products) : l)));
+  const addRow = () => setLines((ls) => [...ls, blankLine(Math.max(0, ...ls.map((l) => l.key)) + 1)]);
 
-  const filledLines = lines.filter((l) => l.accountId && l.amount);
+  const filledLines = lines.filter((l) => (l.accountId || l.itemId) && l.amount);
   const payeeFields = {
     vendorId: payee.startsWith("v:") ? payee.slice(2) : undefined,
     customerId: payee.startsWith("c:") ? payee.slice(2) : undefined,
@@ -91,10 +105,11 @@ export function BankTxnForm({
     setErr(null);
     start(async () => {
       const lineInput = filledLines.map((l) => ({
-        accountId: l.accountId,
+        accountId: l.accountId || undefined,
         amount: l.amount,
         description: l.description || undefined,
         customerId: l.customerId || undefined,
+        ...itemPayload(l),
       }));
       const r =
         type === "transfer"
@@ -251,6 +266,13 @@ export function BankTxnForm({
             <table className="w-full text-sm">
               <thead className="bg-muted/50">
                 <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {products.length > 0 && (
+                    <>
+                      <th className="text-left font-medium px-3 py-2 w-48">Product</th>
+                      <th className="text-right font-medium px-3 py-2 w-20">Qty</th>
+                      <th className="text-right font-medium px-3 py-2 w-24">Rate</th>
+                    </>
+                  )}
                   <th className="text-left font-medium px-3 py-2 w-72">{type === "deposit" ? "Account" : "Category"}</th>
                   <th className="text-left font-medium px-3 py-2">Description</th>
                   {type === "deposit" && <th className="text-left font-medium px-3 py-2 w-48">Received from</th>}
@@ -261,8 +283,33 @@ export function BankTxnForm({
               <tbody>
                 {lines.map((l) => (
                   <tr key={l.key} className="border-t border-border">
+                    {products.length > 0 && (
+                      <>
+                        <td className="px-3 py-2">
+                          <Picker
+                            ariaLabel="Product"
+                            options={products.map((i) => ({ value: i.id, label: i.name }))}
+                            value={l.itemId}
+                            onChange={(v) => updateLine(l.key, { itemId: v })}
+                            placeholder="Optional"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input inputMode="decimal" aria-label="Quantity" value={l.quantity} onChange={(e) => updateLine(l.key, { quantity: e.target.value })} className="font-mono text-right" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input inputMode="decimal" aria-label="Rate" value={l.unitCost} onChange={(e) => updateLine(l.key, { unitCost: e.target.value })} className="font-mono text-right" />
+                        </td>
+                      </>
+                    )}
                     <td className="px-3 py-2">
-                      <Picker ariaLabel="Category" options={categoryOptions} value={l.accountId} onChange={(v) => updateLine(l.key, { accountId: v })} placeholder="Choose…" />
+                      {isInventory(products, l.itemId) ? (
+                        <div className="text-xs text-muted-foreground px-2" title="Inventory items post to their asset account">
+                          {categoryOptions.find((o) => o.value === l.accountId)?.label ?? "Inventory asset"}
+                        </div>
+                      ) : (
+                        <Picker ariaLabel="Category" options={categoryOptions} value={l.accountId} onChange={(v) => updateLine(l.key, { accountId: v })} placeholder="Choose…" />
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <Input value={l.description} onChange={(e) => updateLine(l.key, { description: e.target.value })} />

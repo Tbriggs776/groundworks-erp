@@ -121,6 +121,11 @@ async function main() {
     ids.customers = await ok(rest(keyB, "POST", "/customers", { name: `${MARKER} customer` }), "customer");
     ids.items = await ok(rest(keyB, "POST", "/items", { name: `${MARKER} item`, salesPrice: "250", incomeAccountId: income.id }), "item");
     ids.vendors = await ok(rest(keyB, "POST", "/vendors", { name: `${MARKER} vendor` }), "vendor");
+    ids["stock-items"] = await ok(
+      rest(keyB, "POST", "/items", { name: `${MARKER} stock`, type: "inventory", salesPrice: "9", incomeAccountId: income.id, openingStock: { quantity: "3", unitCost: "4", asOf: "2026-05-01" } }),
+      "inventory item"
+    );
+    ids.inventory = (await rest(keyB, "GET", "/inventory/adjustments")).json.data[0].id as string;
     ids.invoices = await ok(
       rest(keyB, "POST", "/invoices", { customerId: ids.customers, invoiceDate: "2026-05-01", lines: [{ itemId: ids.items, quantity: 4 }], post: true }),
       "invoice"
@@ -293,6 +298,7 @@ async function main() {
   const bodyFor = (name: string) => ({ reason: "isolation test", date: "2026-05-05", ...bodies[name] });
   const aItem = (await rest(keyA, "POST", "/items", { name: "A's own item", salesPrice: "5", incomeAccountId: aIncome })).json.id as string;
   const aInvoice = (await rest(keyA, "POST", "/invoices", bodies.update_invoice)).json.id as string;
+  const aStock = (await rest(keyA, "POST", "/items", { name: "A's own stock", type: "inventory", salesPrice: "5", incomeAccountId: aIncome })).json.id as string;
   await check(`REST: all ${byId.length} by-id operations answer 404 for B's ids`, async () => {
     const misses: string[] = [];
     for (const op of byId) {
@@ -408,6 +414,11 @@ async function main() {
     ["purchase order line with B's item", "/purchase-orders", { vendorId: aVendor, poDate: "2026-05-01", lines: [{ itemId: ids.items, accountId: aExpense, unitCost: "1" }] }],
     ["bill line billing B's purchase order line", "/bills", { vendorId: aVendor, billDate: "2026-05-01", lines: [{ accountId: aExpense, amount: "1", purchaseOrderLineId: bPoLine }] }],
     ["printing B's queued check", "/checks/print", { bankAccountId: aBank, firstCheckNumber: 1, checks: [{ kind: "check", id: ids.checks }] }],
+    ["adjusting B's inventory item", "/inventory/adjustments", { adjustmentDate: "2026-05-05", offsetAccountId: account(a, "5900").id, lines: [{ itemId: ids["stock-items"], quantity: "1", unitCost: "1" }] }],
+    ["adjustment against B's account", "/inventory/adjustments", { adjustmentDate: "2026-05-05", offsetAccountId: ids.accounts, lines: [{ itemId: aStock, quantity: "1", unitCost: "1" }] }],
+    ["bill buying B's inventory item", "/bills", { vendorId: aVendor, billDate: "2026-05-01", lines: [{ itemId: ids["stock-items"], quantity: "1", unitCost: "1" }] }],
+    ["check buying B's inventory item", "/expenses", { type: "check", txnDate: "2026-05-05", bankAccountId: aBank, lines: [{ itemId: ids["stock-items"], quantity: "1", unitCost: "1" }] }],
+    ["inventory item in B's asset account", "/items", { name: "z", type: "inventory", incomeAccountId: aIncome, assetAccountId: account(b, "1300").id }],
     ["printing on B's bank account", "/checks/print", { bankAccountId: bBank, firstCheckNumber: 1, checks: [{ kind: "check", id: ids.checks }] }],
   ];
   for (const [label, path, body] of borrow) {
@@ -455,6 +466,7 @@ async function main() {
     const attempts: Array<[string, ReturnType<typeof sql>]> = [
       ["a line on A's invoice using B's account", sql`UPDATE ar_invoice_lines SET account_id = ${ids.accounts} WHERE invoice_id = ${aInvoice}`],
       ["A's item on B's income account", sql`UPDATE items SET income_account_id = ${ids.accounts} WHERE id = ${aItem}`],
+      ["A's inventory item in B's asset account", sql`UPDATE items SET asset_account_id = ${account(b, "1300").id} WHERE id = ${aStock}`],
       ["A's invoice billed to B's customer", sql`UPDATE ar_invoices SET customer_id = ${ids.customers} WHERE id = ${aInvoice}`],
       ["moving B's customer into A", sql`UPDATE customers SET organization_id = ${a.org.id} WHERE id = ${ids.customers}`],
     ];

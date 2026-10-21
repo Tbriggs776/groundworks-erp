@@ -86,6 +86,7 @@ export const DEFAULT_NUMBER_SERIES: Array<{
   { code: "VC", description: "Vendor Credits", prefix: "VC-", width: 6 },
   { code: "VR", description: "Vendor Refunds", prefix: "VR-", width: 6 },
   { code: "PO", description: "Purchase Orders", prefix: "PO-", width: 6 },
+  { code: "IA", description: "Inventory Adjustments", prefix: "IA-", width: 6 },
 ];
 
 export async function seedOrganizationDefaults(

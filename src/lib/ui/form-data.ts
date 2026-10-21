@@ -54,9 +54,15 @@ export async function salesFormData(organizationId: string) {
       .where(and(eq(taxCodes.organizationId, organizationId), eq(taxCodes.isActive, true), isNull(taxCodes.deletedAt)))
       .orderBy(asc(taxCodes.name)),
   ]);
+  // Inventory items carry what's on hand, so forms can warn before selling more.
+  const stock = await db.execute<{ item_id: string; on_hand: string }>(sql`
+    SELECT item_id, SUM(quantity)::text AS on_hand FROM inventory_movements
+     WHERE organization_id = ${organizationId} AND voided_at IS NULL GROUP BY item_id
+  `);
+  const onHand = new Map(stock.map((r) => [r.item_id, r.on_hand]));
   return {
     customers: customerRows,
-    items: itemRows,
+    items: itemRows.map((i) => ({ ...i, onHand: i.type === "inventory" ? (onHand.get(i.id) ?? "0") : null })),
     incomeAccounts: accountRows.filter(
       (a) => a.category === "income_statement" && a.directPosting && !a.isControl
     ),

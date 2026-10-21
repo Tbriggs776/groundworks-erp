@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -16,14 +17,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import type { ItemRow } from "@/lib/ar/items";
 import type { Account, Item } from "@/lib/db/schema";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, money } from "@/lib/money";
 import { createItem, updateItem, type ItemInput } from "./actions";
 
 const selectClass =
   "w-full text-sm bg-background border border-border rounded-md px-2 py-2";
 
-export function ItemsClient({ items, accounts }: { items: Item[]; accounts: Account[] }) {
+const TYPE_LABEL: Record<Item["type"], string> = { service: "Service", non_inventory: "Non-inventory", inventory: "Inventory" };
+
+export function ItemsClient({ items, accounts, today }: { items: ItemRow[]; accounts: Account[]; today: string }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Item | null>(null);
@@ -71,13 +75,14 @@ export function ItemsClient({ items, accounts }: { items: Item[]; accounts: Acco
               <th className="text-left font-medium px-3 py-2 w-28">SKU</th>
               <th className="text-left font-medium px-3 py-2 w-28">Type</th>
               <th className="text-left font-medium px-3 py-2">Income account</th>
+              <th className="text-right font-medium px-3 py-2 w-28">On hand</th>
               <th className="text-right font-medium px-3 py-2 w-32">Price</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-10 text-center text-xs text-muted-foreground">
+                <td colSpan={6} className="px-3 py-10 text-center text-xs text-muted-foreground">
                   {items.length === 0
                     ? "No products or services yet. Add what you sell so invoices fill themselves in."
                     : "No items match."}
@@ -110,7 +115,7 @@ export function ItemsClient({ items, accounts }: { items: Item[]; accounts: Acco
                   </td>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{i.sku ?? "—"}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">
-                    {i.type === "service" ? "Service" : "Non-inventory"}
+                    {TYPE_LABEL[i.type]}
                   </td>
                   <td className="px-3 py-2 text-xs">
                     {income ? (
@@ -119,6 +124,20 @@ export function ItemsClient({ items, accounts }: { items: Item[]; accounts: Acco
                       </>
                     ) : (
                       "—"
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs">
+                    {i.onHand === null ? (
+                      "—"
+                    ) : (
+                      <Link
+                        href={`/items/${i.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className={`hover:underline ${money(i.onHand).lt(0) ? "text-destructive" : i.reorderPoint !== null && money(i.onHand).lte(money(i.reorderPoint)) ? "text-amber-600" : "text-primary"}`}
+                        title="Stock and history"
+                      >
+                        {money(i.onHand).toDecimalPlaces(4).toString()}
+                      </Link>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-xs">
@@ -137,6 +156,7 @@ export function ItemsClient({ items, accounts }: { items: Item[]; accounts: Acco
         onOpenChange={setOpen}
         initial={editing}
         accounts={accounts}
+        today={today}
       />
     </div>
   );
@@ -147,11 +167,13 @@ function ItemForm({
   onOpenChange,
   initial,
   accounts,
+  today,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   initial: Item | null;
   accounts: Account[];
+  today: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -162,7 +184,14 @@ function ItemForm({
 
   const [name, setName] = useState(initial?.name ?? "");
   const [sku, setSku] = useState(initial?.sku ?? "");
-  const [type, setType] = useState<"service" | "non_inventory">(initial?.type ?? "service");
+  const [type, setType] = useState<Item["type"]>(initial?.type ?? "service");
+  const assetAccounts = accounts.filter((a) => a.subcategory === "inventory");
+  const costAccounts = accounts.filter((a) => a.category === "income_statement" && a.normalBalance === "debit");
+  const [assetAccountId, setAssetAccountId] = useState(initial?.assetAccountId ?? assetAccounts[0]?.id ?? "");
+  const [reorderPoint, setReorderPoint] = useState(initial?.reorderPoint ?? "");
+  const [openingQty, setOpeningQty] = useState("");
+  const [openingAsOf, setOpeningAsOf] = useState(today);
+  const inventory = type === "inventory";
   const [description, setDescription] = useState(initial?.description ?? "");
   const [salesPrice, setSalesPrice] = useState(initial?.salesPrice ?? "");
   const [incomeAccountId, setIncomeAccountId] = useState(
@@ -171,6 +200,10 @@ function ItemForm({
   const [expenseAccountId, setExpenseAccountId] = useState(initial?.expenseAccountId ?? "");
   const [purchaseCost, setPurchaseCost] = useState(initial?.purchaseCost ?? "");
   const [isActive, setIsActive] = useState(initial?.isActive ?? true);
+  const defaultCogs =
+    costAccounts.find((a) => a.code === "5050") ??
+    costAccounts.find((a) => a.subcategory === "cogs_materials") ??
+    costAccounts.find((a) => a.subcategory.startsWith("cogs"));
   const [taxable, setTaxable] = useState(initial?.taxable ?? true);
 
   function submit() {
@@ -184,9 +217,18 @@ function ItemForm({
         salesPrice: salesPrice || null,
         incomeAccountId,
         purchaseCost: purchaseCost || null,
-        expenseAccountId: expenseAccountId || null,
+        expenseAccountId: expenseAccountId || (inventory ? defaultCogs?.id : undefined) || null,
         taxable,
         isActive,
+        ...(inventory
+          ? {
+              assetAccountId: assetAccountId || null,
+              reorderPoint: reorderPoint || null,
+              ...(!initial && openingQty
+                ? { openingStock: { quantity: openingQty, unitCost: purchaseCost || undefined, asOf: openingAsOf } }
+                : {}),
+            }
+          : {}),
       };
       const r = initial ? await updateItem(initial.id, payload) : await createItem(payload);
       if (r.ok) {
@@ -221,6 +263,7 @@ function ItemForm({
               <select value={type} onChange={(e) => setType(e.target.value as typeof type)} className={selectClass}>
                 <option value="service">Service</option>
                 <option value="non_inventory">Non-inventory product</option>
+                <option value="inventory">Inventory product (track quantity)</option>
               </select>
             </div>
             <div>
@@ -242,14 +285,18 @@ function ItemForm({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-3">
             <div>
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Expense account (when purchased)</Label>
-              <select value={expenseAccountId} onChange={(e) => setExpenseAccountId(e.target.value)} className={selectClass}>
-                <option value="">—</option>
-                {accounts
-                  .filter((a) => a.category === "income_statement" && a.normalBalance === "debit")
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
-                  ))}
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
+                {inventory ? "Cost of goods sold account" : "Expense account (when purchased)"}
+              </Label>
+              <select
+                value={expenseAccountId || (inventory ? (defaultCogs?.id ?? "") : "")}
+                onChange={(e) => setExpenseAccountId(e.target.value)}
+                className={selectClass}
+              >
+                {!inventory && <option value="">—</option>}
+                {costAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -257,6 +304,40 @@ function ItemForm({
               <Input inputMode="decimal" value={purchaseCost} onChange={(e) => setPurchaseCost(e.target.value)} className="font-mono text-right" placeholder="0.00" />
             </div>
           </div>
+          {inventory && (
+            <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-3">
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Inventory asset account</Label>
+                <select value={assetAccountId} onChange={(e) => setAssetAccountId(e.target.value)} className={selectClass}>
+                  {assetAccounts.length === 0 && <option value="">Add an inventory account first</option>}
+                  {assetAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Reorder point</Label>
+                <Input inputMode="decimal" value={reorderPoint} onChange={(e) => setReorderPoint(e.target.value)} className="font-mono text-right" />
+              </div>
+            </div>
+          )}
+          {inventory && !initial && (
+            <div className="rounded-md border border-border p-3 space-y-2">
+              <div className="text-xs text-muted-foreground">
+                Quantity on hand now (optional). Posts opening stock at the cost above, against Opening Balance Equity.
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Initial quantity</Label>
+                  <Input inputMode="decimal" value={openingQty} onChange={(e) => setOpeningQty(e.target.value)} className="font-mono text-right" placeholder="0" />
+                </div>
+                <div>
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">As of</Label>
+                  <Input type="date" value={openingAsOf} onChange={(e) => setOpeningAsOf(e.target.value)} />
+                </div>
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-6">
             <label className="flex items-center gap-2 text-xs cursor-pointer">
               <Checkbox checked={taxable} onCheckedChange={(c) => setTaxable(!!c)} />
