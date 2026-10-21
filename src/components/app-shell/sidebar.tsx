@@ -83,6 +83,7 @@ const NAV: NavGroup[] = [
       { label: "Bank Accounts", href: "/banking", exact: true },
       { label: "Bank Feeds", href: "/banking/feeds" },
       { label: "For Review", href: "/banking/review" },
+      { label: "Receipts", href: "/banking/receipts" },
       { label: "Transactions", href: "/banking/transactions" },
       { label: "Bank Rules", href: "/banking/rules" },
       { label: "Reconcile", href: "/banking/reconcile" },

@@ -12,6 +12,10 @@
 //   DELETE /auth/v1/factors/:id           unenroll
 //   POST   /auth/v1/factors/:id/challenge
 //   POST   /auth/v1/factors/:id/verify    code 123456 verifies → aal2 session
+//   POST   /storage/v1/object/<bucket>/<path>   Storage, for attachments: upload,
+//   GET    /storage/v1/object/<bucket>/<path>   download, and delete
+//   DELETE /storage/v1/object/<bucket>          ({prefixes}); service role only
+//                                               (SUPABASE_SERVICE_ROLE_KEY=service-test)
 //
 //   DATABASE_URL=… node scripts/dev/fake-supabase-auth.mjs <profile-uuid> <email>
 //
@@ -77,6 +81,15 @@ function bearer(req) {
   }
 }
 
+const SERVICE_KEY = process.env.FAKE_SERVICE_KEY ?? "service-test";
+const objects = new Map();
+
+async function bytes(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
 async function body(req) {
   let raw = "";
   for await (const chunk of req) raw += chunk;
@@ -104,6 +117,28 @@ http
     const url = new URL(req.url, "http://localhost");
     const path = url.pathname;
     const grant = url.searchParams.get("grant_type");
+
+    if (path.startsWith("/storage/v1/object/")) {
+      if (req.headers.authorization !== `Bearer ${SERVICE_KEY}`) return send(403, { statusCode: "403", error: "Unauthorized", message: "service role only" });
+      const key = decodeURIComponent(path.slice("/storage/v1/object/".length));
+      if (req.method === "POST" && key.includes("/")) {
+        if (objects.has(key)) return send(409, { statusCode: "409", error: "Duplicate", message: "The resource already exists" });
+        objects.set(key, { bytes: await bytes(req), contentType: req.headers["content-type"] ?? "application/octet-stream" });
+        return send(200, { Key: key, Id: randomUUID() });
+      }
+      if (req.method === "GET") {
+        const o = objects.get(key);
+        if (!o) return send(404, { statusCode: "404", error: "not_found", message: "Object not found" });
+        res.writeHead(200, { "content-type": o.contentType, ...cors });
+        return res.end(o.bytes);
+      }
+      if (req.method === "DELETE") {
+        const { prefixes = [] } = await body(req);
+        const gone = prefixes.filter((p) => objects.delete(`${key}/${p}`));
+        return send(200, gone.map((name) => ({ name })));
+      }
+      return send(400, { statusCode: "400", error: "bad_request", message: "unsupported" });
+    }
 
     if (path === "/auth/v1/user") {
       const { user } = bearer(req);
