@@ -22,6 +22,7 @@ import * as salesSettings from "@/lib/ar/settings";
 import * as statements from "@/lib/ar/statements";
 import * as companyProfile from "@/lib/company/profile";
 import { ListActivitySchema, listActivity } from "@/lib/audit-query";
+import * as bankFeeds from "@/lib/banking/feeds/service";
 import * as reconcile from "@/lib/banking/reconcile";
 import * as bankReview from "@/lib/banking/review";
 import * as bankRules from "@/lib/banking/rules";
@@ -2286,6 +2287,30 @@ export const OPERATIONS: Operation[] = [
     scope: "read",
     input: Empty,
     run: (ctx) => bankTxns.listUndepositedPayments(ctx),
+  }),
+  op({
+    name: "list_bank_feeds",
+    title: "Bank feeds",
+    description:
+      "Banks connected through Plaid, each with status (active, login_required: a person must reconnect it on the Bank Feeds page, disconnected), when it last updated, and its accounts: which bank or card account in the chart each one feeds (null = not imported) and the date its transactions start. Feeds bring posted transactions into For review on their own (Plaid's notices and a daily run); people connect, link, and disconnect banks.",
+    group: "Banking",
+    method: "GET",
+    path: "/bank-feeds",
+    scope: "read",
+    input: Empty,
+    run: (ctx) => bankFeeds.listBankFeeds(ctx),
+  }),
+  op({
+    name: "sync_bank_feed",
+    title: "Update a bank feed now",
+    description:
+      "Pull the bank's newest posted transactions into For review now (pending ones wait until they post), instead of waiting for the next update. Bank rules run on the new lines. Lines still in For review follow the bank's edits and removals; changedAfterReview counts edits to lines already handled, which stay as they are. Returns counts; status login_required means a person has to reconnect the bank. Then use list_bank_lines.",
+    group: "Banking",
+    method: "POST",
+    path: "/bank-feeds/{id}/sync",
+    scope: "write",
+    input: z.object({ id }),
+    run: (ctx, input) => bankFeeds.syncBankFeed(ctx, input),
   }),
   op({
     name: "import_bank_statement",

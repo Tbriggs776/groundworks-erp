@@ -81,6 +81,7 @@ const NAV: NavGroup[] = [
     icon: Landmark,
     items: [
       { label: "Bank Accounts", href: "/banking", exact: true },
+      { label: "Bank Feeds", href: "/banking/feeds" },
       { label: "For Review", href: "/banking/review" },
       { label: "Transactions", href: "/banking/transactions" },
       { label: "Bank Rules", href: "/banking/rules" },

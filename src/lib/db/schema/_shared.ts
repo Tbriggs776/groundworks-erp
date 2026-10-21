@@ -389,7 +389,8 @@ export const statementLineStatus = pgEnum("statement_line_status", [
   "excluded",
 ]);
 
-export const statementFormat = pgEnum("statement_format", ["csv", "ofx", "qfx"]);
+/** Where For review lines came from: a statement file, or a live bank feed. */
+export const statementFormat = pgEnum("statement_format", ["csv", "ofx", "qfx", "feed"]);
 
 /** Which way money moves for a bank rule (from the bank account's side). */
 export const bankRuleDirection = pgEnum("bank_rule_direction", ["money_in", "money_out", "any"]);

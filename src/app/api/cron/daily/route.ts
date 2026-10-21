@@ -10,6 +10,7 @@ import { runRecurringForOrg } from "@/lib/gl/recurring";
 import { runRecurringInvoicesForOrg } from "@/lib/ar/recurring-invoices";
 import { runRecurringBillsForOrg } from "@/lib/ap/recurring-bills";
 import { runRemindersForOrg } from "@/lib/messaging/reminders";
+import { runBankFeedsForOrg } from "@/lib/banking/feeds/service";
 
 /**
  * Daily cron entry point. Called by Vercel Cron (see vercel.json).
@@ -27,6 +28,8 @@ import { runRemindersForOrg } from "@/lib/messaging/reminders";
  *   4. Create recurring bills due today (scheduled ones are submitted for
  *      approval; reminders wait in the review queue as drafts)
  *   5. Email payment reminders, for companies that turned them on
+ *   6. Pull new transactions from connected banks into For review (Plaid's
+ *      webhooks do this as they happen; this catches anything missed)
  * Then, once: prune API idempotency keys older than 24 hours, finished
  * rate-limit windows, and session rows that ended over 90 days ago (the
  * audit log keeps the sign-in history).
@@ -44,6 +47,7 @@ type OrgResult = {
   recurringInvoices: { checked: number; created: number; posted: number; errors: number };
   recurringBills: { checked: number; created: number; submitted: number; errors: number };
   reminders: { checked: number; sent: number; failed: number };
+  bankFeeds: { checked: number; synced: number; failed: number };
 };
 
 export async function POST(request: Request) {
@@ -69,6 +73,7 @@ export async function POST(request: Request) {
     const recurringBills = await runRecurringBillsForOrg(org.id, asOfDate);
     // After recurring invoices, so a new invoice due today can be reminded.
     const reminders = await runRemindersForOrg(org.id, asOfDate);
+    const bankFeeds = await runBankFeedsForOrg(org.id);
     results.push({
       organizationId: org.id,
       slug: org.slug,
@@ -99,6 +104,7 @@ export async function POST(request: Request) {
         sent: reminders.sent,
         failed: reminders.failed,
       },
+      bankFeeds: { checked: bankFeeds.checked, synced: bankFeeds.synced, failed: bankFeeds.failed },
     });
 
     // Log full error details server-side for debugging; don't leak to response.
@@ -119,6 +125,9 @@ export async function POST(request: Request) {
     }
     if (reminders.errors.length > 0) {
       console.warn(`[cron] ${org.slug} payment reminder errors:`, reminders.errors);
+    }
+    if (bankFeeds.errors.length > 0) {
+      console.warn(`[cron] ${org.slug} bank feed errors:`, bankFeeds.errors);
     }
   }
 

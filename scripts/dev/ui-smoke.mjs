@@ -5,7 +5,8 @@
  * create + post an invoice, sales tax (agency, rate, a taxed invoice, a
  * credit memo, a sales receipt, a refund), create an agent + key, approve
  * from the review queue, banking (record an expense, import a statement, match,
- * add, and rule its lines, reconcile, undo), invite someone, add a
+ * add, and rule its lines, reconcile, undo), bank feeds (against the fake
+ * Plaid when the app points at it), invite someone, add a
  * company and switch to it, import one from QuickBooks (against the fake
  * QuickBooks when the app points at it), AP (a vendor credit and refund, a purchase
  * order billed in part, a recurring bill, the 1099 report, a printed
@@ -115,6 +116,7 @@ const pages = [
   ["/items/adjustments", null], ["/items/adjustments/new", null], ["/settings/inventory", "inventory-settings"],
   ["/reports/inventory-valuation", null], ["/reports/inventory-valuation-detail", "valuation-detail"],
   ["/reports/inventory-stock-status", "stock-status"], ["/settings/quickbooks", "quickbooks-none"],
+  ["/banking/feeds", null],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -632,6 +634,53 @@ if (before > 0) {
 
   await visit("/banking/register", "bank-register");
   await visit("/banking", "banking-after");
+}
+
+// Flow F: bank feeds. With the app pointed at the fake Plaid
+// (scripts/dev/fake-plaid-server.ts on :54331), connect a bank through
+// the stand-in for Plaid's window, link its card to the books, see its
+// posted transactions arrive, update, take a signed webhook, disconnect.
+// Without Plaid keys, the page says feeds aren't set up.
+{
+  const res = await page.goto(BASE + "/banking/feeds", { waitUntil: "networkidle" });
+  const coop = res.headers()["cross-origin-opener-policy"];
+  const csp = res.headers()["content-security-policy"] ?? "";
+  if (coop !== "same-origin-allow-popups") problems.push(`bank feeds COOP is ${coop}`);
+  if (await page.getByText("Bank feeds aren't set up").count()) {
+    console.log("✓ flow: bank feeds say they aren't set up (no Plaid keys)");
+  } else {
+    if (!/frame-src 'self' http:\/\/127\.0\.0\.1:54331/.test(csp)) problems.push(`bank feeds CSP: ${csp}`);
+    page.on("dialog", (d) => d.accept());
+    // Clear any bank a failed earlier run left connected.
+    while (await page.getByRole("button", { name: "Disconnect" }).count()) {
+      await page.getByRole("button", { name: "Disconnect" }).first().click();
+      await page.getByText("Disconnected. Lines already in For review stay there.").waitFor({ timeout: 15000 });
+    }
+    await page.getByRole("button", { name: "Connect a bank" }).click();
+    await page.getByText(/^Connected\. Choose the account/).waitFor({ timeout: 20000 });
+    await page.getByRole("combobox", { name: "Account for Plaid Credit Card" }).click();
+    await page.getByRole("option", { name: "2100 · Credit Card" }).click();
+    await page.getByText(/Linked\. 2 new transactions in For review/).waitFor({ timeout: 20000 });
+    await page.screenshot({ path: `${outDir}/bank-feeds.png`, fullPage: true });
+    console.log("✓ flow: bank connected through Plaid's window, card linked, 2 posted transactions in For review");
+    await page.getByRole("button", { name: "Update now" }).click();
+    await page.getByText("Up to date: nothing new from the bank.").waitFor({ timeout: 20000 });
+    console.log("✓ flow: bank feed updated on demand");
+    const hook = await fetch("http://127.0.0.1:54331/fake/webhook", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then((r) => r.json());
+    const forged = await fetch(BASE + "/api/webhooks/plaid", { method: "POST", headers: { "content-type": "application/json", "plaid-verification": "a.b.c" }, body: "{}" });
+    if (hook.status !== 200 || forged.status !== 401) problems.push(`plaid webhook: signed ${hook.status}, forged ${forged.status}`);
+    else console.log("✓ flow: signed Plaid webhook accepted, forged one refused (401)");
+    await page.goto(BASE + "/banking/review", { waitUntil: "networkidle" });
+    await page.getByRole("combobox", { name: "Account" }).click();
+    await page.getByRole("option", { name: "2100 · Credit Card" }).click();
+    await page.getByText("Shell Oil 5678").first().waitFor({ timeout: 15000 });
+    await page.screenshot({ path: `${outDir}/bank-feed-review.png`, fullPage: true });
+    console.log("✓ flow: feed lines waiting in For review");
+    await page.goto(BASE + "/banking/feeds", { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Disconnect" }).first().click();
+    await page.getByText("Disconnected. Lines already in For review stay there.").waitFor({ timeout: 15000 });
+    console.log("✓ flow: bank disconnected");
+  }
 }
 
 // Security headers on a page: per-request CSP nonce + clickjacking guard.

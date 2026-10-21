@@ -22,7 +22,7 @@ import { postOrQueueForReview, type ReviewNotice } from "@/lib/review-policy";
 import { id, isoDate, optionalText, pagination, toPage, type Page } from "@/lib/schemas";
 import { DimensionTagSchema, lineAmount, requireBankingAccount } from "./common";
 import { clearLedgerLines } from "./matching";
-import { parseStatement } from "./parse";
+import { parseStatement, type ParsedLine } from "./parse";
 import { activeRules, firstMatchingRule } from "./rules";
 import {
   createDeposit,
@@ -76,8 +76,7 @@ export type ImportResult = {
 export async function importStatement(ctx: Ctx, input: ImportStatementInput): Promise<ImportResult> {
   requirePermission(ctx.actor, "write", "bookkeeper", "import bank statements");
   const d = ImportStatementSchema.parse(input);
-  const org = ctx.actor.organizationId;
-  const account = await requireBankingAccount(ctx.tx, org, d.accountId, { reconcilable: true });
+  const account = await requireBankingAccount(ctx.tx, ctx.actor.organizationId, d.accountId, { reconcilable: true });
 
   let parsed;
   try {
@@ -88,32 +87,64 @@ export async function importStatement(ctx: Ctx, input: ImportStatementInput): Pr
   if (parsed.lines.length === 0) {
     throw new AppError("invalid_input", "No transactions found in the file.", { skipped: parsed.skipped });
   }
-  const dates = parsed.lines.map((l) => l.postedDate).sort();
+  const r = await ingestLines(ctx, {
+    accountId: account.id,
+    format: parsed.format,
+    fileName: d.fileName ?? null,
+    lines: parsed.lines,
+    ledgerBalance: parsed.ledgerBalance,
+    ledgerBalanceDate: parsed.ledgerBalanceDate,
+    applyRules: d.applyRules !== false,
+    audit: { skipped: parsed.skipped.length },
+  });
+  return { ...r, format: parsed.format, skipped: parsed.skipped, ledgerBalance: parsed.ledgerBalance };
+}
+
+/**
+ * Put statement lines into For review: a statement file's, or a bank
+ * feed's. A line whose fit id the account already has is a duplicate and
+ * skipped. Rules run over the new lines.
+ */
+export async function ingestLines(
+  ctx: Ctx,
+  opts: {
+    accountId: string;
+    format: "csv" | "ofx" | "feed";
+    fileName: string | null;
+    lines: ParsedLine[];
+    ledgerBalance?: string | null;
+    ledgerBalanceDate?: string | null;
+    applyRules: boolean;
+    audit?: Record<string, unknown>;
+  }
+): Promise<Pick<ImportResult, "importId" | "lineCount" | "newCount" | "duplicateCount" | "rules">> {
+  const org = ctx.actor.organizationId;
+  const dates = opts.lines.map((l) => l.postedDate).sort();
   const [imp] = await ctx.tx
     .insert(bankStatementImports)
     .values({
       organizationId: org,
-      accountId: account.id,
-      fileName: d.fileName ?? null,
-      format: parsed.format,
-      lineCount: parsed.lines.length,
+      accountId: opts.accountId,
+      fileName: opts.fileName,
+      format: opts.format,
+      lineCount: opts.lines.length,
       startDate: dates[0],
       endDate: dates[dates.length - 1],
-      ledgerBalance: parsed.ledgerBalance,
-      ledgerBalanceDate: parsed.ledgerBalanceDate,
+      ledgerBalance: opts.ledgerBalance ?? null,
+      ledgerBalanceDate: opts.ledgerBalanceDate ?? null,
       importedBy: ctx.actor.userId,
       importedByAgentId: ctx.actor.agentId,
     })
     .returning();
   const inserted = await ctx.tx
     .insert(bankStatementLines)
-    .values(parsed.lines.map((l) => ({ ...l, organizationId: org, accountId: account.id, importId: imp.id })))
+    .values(opts.lines.map((l) => ({ ...l, organizationId: org, accountId: opts.accountId, importId: imp.id })))
     .onConflictDoNothing({ target: [bankStatementLines.accountId, bankStatementLines.fitId] })
     .returning({ id: bankStatementLines.id });
   const newCount = inserted.length;
   await ctx.tx
     .update(bankStatementImports)
-    .set({ newCount, duplicateCount: parsed.lines.length - newCount })
+    .set({ newCount, duplicateCount: opts.lines.length - newCount })
     .where(eq(bankStatementImports.id, imp.id));
   await writeAudit(
     {
@@ -123,31 +154,22 @@ export async function importStatement(ctx: Ctx, input: ImportStatementInput): Pr
       entityType: "bank_statement_import",
       entityId: imp.id,
       metadata: {
-        accountId: account.id,
-        fileName: d.fileName ?? null,
-        format: parsed.format,
-        lines: parsed.lines.length,
+        accountId: opts.accountId,
+        fileName: opts.fileName,
+        format: opts.format,
+        lines: opts.lines.length,
         new: newCount,
-        duplicates: parsed.lines.length - newCount,
-        skipped: parsed.skipped.length,
+        duplicates: opts.lines.length - newCount,
+        ...opts.audit,
       },
     },
     ctx.tx
   );
   const rules =
-    d.applyRules === false || newCount === 0
+    !opts.applyRules || newCount === 0
       ? { categorized: 0, autoAdded: 0, autoAddHeld: 0, errors: [] }
       : await runRules(ctx, inserted.map((r) => r.id));
-  return {
-    importId: imp.id,
-    format: parsed.format,
-    lineCount: parsed.lines.length,
-    newCount,
-    duplicateCount: parsed.lines.length - newCount,
-    skipped: parsed.skipped,
-    ledgerBalance: parsed.ledgerBalance,
-    rules,
-  };
+  return { importId: imp.id, lineCount: opts.lines.length, newCount, duplicateCount: opts.lines.length - newCount, rules };
 }
 
 // ---------------------------------------------------------------------------

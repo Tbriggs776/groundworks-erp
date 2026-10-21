@@ -9,7 +9,7 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
-import { auditLog, dimensions, fiscalPeriods, fiscalYears, memberships, workspaceMembers } from "../src/lib/db/schema";
+import { auditLog, bankFeedAccounts, bankFeedConnections, dimensions, fiscalPeriods, fiscalYears, memberships, workspaceMembers } from "../src/lib/db/schema";
 import { createBudget } from "../src/lib/gl/budgets";
 import { runAsWorkspace, workspaceActor } from "../src/lib/actor";
 import * as agentsSvc from "../src/lib/agents/service";
@@ -219,6 +219,13 @@ async function main() {
       rest(keyB, "POST", "/reconciliations", { accountId: bank.id, statementEndDate: "2026-05-31", statementEndingBalance: "0" }),
       "reconciliation"
     );
+    // A bank feed: made here directly, since connecting one takes a person in Plaid's window.
+    const [feed] = await db
+      .insert(bankFeedConnections)
+      .values({ organizationId: b.org.id, itemId: `${MARKER}-item`, institutionName: `${MARKER} bank`, status: "active" })
+      .returning();
+    await db.insert(bankFeedAccounts).values({ organizationId: b.org.id, connectionId: feed.id, externalId: `${MARKER}-acct`, name: `${MARKER} checking`, accountId: bank.id });
+    ids["bank-feeds"] = feed.id;
     // Sales tax and the other sales documents.
     ids["tax-agencies"] = await ok(rest(keyB, "POST", "/tax-agencies", { name: `${MARKER} agency` }), "tax agency");
     ids["tax-rates"] = await ok(
