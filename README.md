@@ -69,7 +69,15 @@ bill payments with discounts
 - Import bank and card statements (CSV, OFX, QFX, Web Connect); lines
   already imported are skipped
 - For review: match each line to what's in the books (suggested by amount
-  and date), add it as a new transaction, or exclude it; undo any of these
+  and date), add it as a new transaction (one category, or split across
+  several), or exclude it; undo any of these
+- Receipts: upload receipts and bills (or drop them in); Claude reads each
+  one (vendor, date, total, tax, card) and suggests where it belongs: the
+  bank line waiting in For review, an expense, or a bill. Attach it there,
+  or record it as a new expense in one step. A receipt on a bank line
+  follows it into the books
+- Attachments on every transaction and document (receipts, bills,
+  contracts, W-9s): PDFs, photos, and spreadsheets, kept in private storage
 - Bank rules that categorize lines, or record them at import
 - Reconcile to a statement: tick what cleared until the difference is zero;
   reconciled items can't be voided; only the latest reconciliation can be
@@ -174,7 +182,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 232 operations: QuickBooks import status and tie-out, accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, bank feeds, statement import, For review, rules, reconciliation), month-end close (checklist, close and reopen, checklist items), inventory (costing method, lots, item stock, adjustments, valuation, valuation detail, stock status), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
+| Tools | 240 operations: QuickBooks import status and tie-out, accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, bank feeds, statement import, For review with splits, rules, reconciliation, receipts and attachments), month-end close (checklist, close and reopen, checklist items), inventory (costing method, lots, item stock, adjustments, valuation, valuation detail, stock status), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -221,7 +229,11 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-31 suites: bank feeds (against a fake Plaid: who may connect, sealed
+32 suites: receipts and attachments (against a fake Claude: file types
+by their bytes, reading and cleaning what comes back, failures, duplicates,
+suggestions, receipts following bank lines through add, split, match,
+exclude, and undo, expenses from receipts, deleting, the daily upkeep,
+another company and the database guard), bank feeds (against a fake Plaid: who may connect, sealed
 tokens, start dates, posted only, signs, rules, no duplicates, the bank's
 edits and removals, paging and restarts, sign-in again, signed webhooks,
 the daily run, agents, another company, disconnecting), QuickBooks import (against a fake QuickBooks: sign-in state,
@@ -266,7 +278,7 @@ Environment variables (Production + Preview):
 | Key | Notes |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API |
-| `SUPABASE_SERVICE_ROLE_KEY` | mark Sensitive |
+| `SUPABASE_SERVICE_ROLE_KEY` | mark Sensitive; also stores attachments (private bucket `attachments`) |
 | `DATABASE_URL` | **pooled** connection (port 6543); the client uses `prepare: false` |
 | `NEXT_PUBLIC_APP_URL` | public URL; used in invite links and connection snippets |
 | `CRON_SECRET` | required for the daily job (recurring entries, auto-reversals, pruning) |
@@ -278,6 +290,8 @@ Environment variables (Production + Preview):
 | `APP_ENCRYPTION_KEY` | 32 random bytes, base64 (`openssl rand -base64 32`); seals QuickBooks and bank feed tokens. Mark Sensitive; changing it disconnects every QuickBooks connection and bank feed |
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | Bank feeds: your Plaid team's keys (mark the secret Sensitive); `sandbox` or `production` |
 | `PLAID_REDIRECT_URI` | optional: `https://<your app>/banking/feeds`, for banks that sign in with OAuth (register it in Plaid) |
+| `ANTHROPIC_API_KEY` | Receipts: Claude reads uploaded receipts (mark Sensitive). Without it, receipts are kept and filled in by hand |
+| `RECEIPT_READER_MODEL` | optional; default `claude-opus-5-5` (about 1 to 2 cents a receipt); `claude-haiku-5-5` costs a fraction of a cent |
 
 Migrations run from your machine against the direct (port 5432) connection:
 `DATABASE_URL_MIGRATE=… npm run db:migrate`. Add your production URL to
@@ -309,6 +323,17 @@ Supabase's redirect URLs. Point an uptime monitor at `/api/health`.
    every feed, so a missed webhook only delays lines a day.
 5. Admins and owners connect banks under **Banking → Bank Feeds**.
 
+### Receipts and attachments
+
+1. Files live in a private Supabase Storage bucket, `attachments`, made by
+   migration 0039 (no storage policies: only the server reaches it, with
+   `SUPABASE_SERVICE_ROLE_KEY`). People open them through `/files/<id>`
+   after the app's own checks.
+2. Set `ANTHROPIC_API_KEY` for Claude to read receipts. Readings use
+   server-side fallbacks, so a declined read retries on another model.
+3. Up to 4 MB a file (large photos are shrunk in the browser first); PDFs,
+   JPEG, PNG, WebP, GIF, CSV, TXT, XLSX, DOCX, judged by their bytes.
+
 ### Support access
 
 Nobody at Groundworks can see inside a customer's workspace by default.
@@ -323,19 +348,15 @@ Nobody at Groundworks can see inside a customer's workspace by default.
 
 ## Roadmap to QuickBooks parity
 
-- **Banking**: split a statement line across
-  categories, attachments on bank transactions
-- **Sales**: estimates, recurring invoices, invoice and statement PDFs +
-  email, online payments, automated sales tax rates
-- **Expenses**: vendor credits, receipt capture, purchase orders, recurring
-  bills, 1099 reporting
+- **Banking**: receipts by email (forward to a company address), payouts
+  from payment processors (Stripe, Square) matched to their deposits
+- **Sales**: online payments, automated sales tax rates
 - **Inventory**: serial numbers, multiple locations and transfers, assemblies
   and bundles
-- **Reports**: cash flow statement, P&L by class / location, sales by
-  customer / item, expenses by vendor
+- **Reports**: P&L by location, a custom report builder
 - **Agent platform**: OAuth for MCP (so claude.ai connectors work without
   pasting a key), webhooks / events (`invoice.paid`…), per-type approval
-  policies, attachments
+  policies
 - **Accounts**: billing and plans, SSO enforcement and SCIM, IP allowlists,
   company data export and deletion, consolidated reports across companies
 
