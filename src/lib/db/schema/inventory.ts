@@ -15,7 +15,7 @@ import { glJournals } from "./journals";
  */
 
 export const costingMethod = pgEnum("costing_method", ["fifo", "average", "specific"]);
-export const inventoryMovementKind = pgEnum("inventory_movement_kind", ["opening", "purchase", "sale", "return", "adjustment"]);
+export const inventoryMovementKind = pgEnum("inventory_movement_kind", ["opening", "purchase", "sale", "return", "adjustment", "vendor_return"]);
 /** document: the source document fixed the cost. engine: the costing engine costs it. */
 export const inventoryCostSource = pgEnum("inventory_cost_source", ["document", "engine"]);
 export const inventoryAdjustmentStatus = pgEnum("inventory_adjustment_status", ["posted", "voided"]);
@@ -33,6 +33,28 @@ export const inventorySettings = pgTable(
   (t) => [uniqueIndex("inventory_settings_org_key").on(t.organizationId)]
 );
 
+/**
+ * Lots, for companies that cost by specific identification: each unit in
+ * stock belongs to a lot, every line that moves stock names one, and a lot
+ * is costed on its own (oldest units of the lot first).
+ */
+export const inventoryLots = pgTable(
+  "inventory_lots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "restrict" }),
+    lotNumber: text("lot_number").notNull(),
+    expiresOn: date("expires_on"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("inventory_lots_item_number_key").on(t.organizationId, t.itemId, t.lotNumber)]
+);
+
 export const inventoryMovements = pgTable(
   "inventory_movements",
   {
@@ -47,6 +69,8 @@ export const inventoryMovements = pgTable(
     /** Order within a day: first recorded, first costed. */
     sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity(),
     kind: inventoryMovementKind("kind").notNull(),
+    /** Specific identification: the lot these units belong to. */
+    lotId: uuid("lot_id").references(() => inventoryLots.id, { onDelete: "restrict" }),
     /** Signed: + into stock, − out of it. */
     quantity: numeric("quantity", { precision: 20, scale: 4 }).notNull(),
     costSource: inventoryCostSource("cost_source").notNull(),
@@ -148,11 +172,15 @@ export const inventoryAdjustmentLines = pgTable(
     quantity: numeric("quantity", { precision: 20, scale: 4 }).notNull(),
     /** Stock added: its cost per unit. */
     unitCost: numeric("unit_cost", { precision: 20, scale: 4 }),
+    /** Specific identification: the lot (stock added may start a new one). */
+    lotNumber: text("lot_number"),
+    lotExpiresOn: date("lot_expires_on"),
     ...timestamps,
   },
   (t) => [uniqueIndex("inventory_adjustment_lines_key").on(t.adjustmentId, t.lineNumber)]
 );
 
+export type InventoryLot = typeof inventoryLots.$inferSelect;
 export type InventoryMovement = typeof inventoryMovements.$inferSelect;
 export type InventoryAdjustment = typeof inventoryAdjustments.$inferSelect;
 export type InventoryAdjustmentLine = typeof inventoryAdjustmentLines.$inferSelect;

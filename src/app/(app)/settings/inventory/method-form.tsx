@@ -7,9 +7,10 @@ import { setCostingMethod } from "../../items/inventory-actions";
 const OPTIONS = [
   { value: "fifo", label: "FIFO (first in, first out)" },
   { value: "average", label: "Weighted average" },
+  { value: "specific", label: "Specific identification (by lot number, with expiration dates)" },
 ] as const;
 
-export function MethodForm({ method, canEdit }: { method: "fifo" | "average"; canEdit: boolean }) {
+export function MethodForm({ method, canEdit }: { method: (typeof OPTIONS)[number]["value"]; canEdit: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -34,7 +35,6 @@ export function MethodForm({ method, canEdit }: { method: "fifo" | "average"; ca
           {o.label}
         </label>
       ))}
-      <p className="text-[11px] text-muted-foreground">Specific identification by lot number is coming next.</p>
       {!canEdit && <p className="text-[11px] text-muted-foreground">Only admins can change this.</p>}
       {err && <p className="text-xs text-destructive">{err}</p>}
     </div>

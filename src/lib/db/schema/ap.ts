@@ -247,6 +247,9 @@ export const apBillLines = pgTable(
     itemId: uuid("item_id").references(() => items.id, { onDelete: "restrict" }),
     quantity: numeric("quantity", { precision: 20, scale: 4 }),
     unitCost: numeric("unit_cost", { precision: 20, scale: 4 }),
+    /** Specific identification: the lot bought into, and when it expires. */
+    lotNumber: text("lot_number"),
+    lotExpiresOn: date("lot_expires_on"),
 
     /** The purchase order line this bill line bills (progress billing). */
     purchaseOrderLineId: uuid("purchase_order_line_id").references(

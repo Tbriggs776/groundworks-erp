@@ -112,7 +112,8 @@ const pages = [
   ["/reports/unpaid-bills", null], ["/reports/audit-trail", "audit-trail"],
   ["/periods", "close-books"], ["/reports/changes-after-close", null], ["/settings/email", "email-settings"],
   ["/items/adjustments", null], ["/items/adjustments/new", null], ["/settings/inventory", "inventory-settings"],
-  ["/reports/inventory-valuation", null],
+  ["/reports/inventory-valuation", null], ["/reports/inventory-valuation-detail", "valuation-detail"],
+  ["/reports/inventory-stock-status", "stock-status"],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -330,6 +331,7 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   const poPdfRes = await page.request.get(BASE + poPdf);
   const poPdfOk = poPdfRes.status() === 200 && (await poPdfRes.body()).subarray(0, 5).toString() === "%PDF-";
   await page.getByRole("button", { name: "Create bill" }).click();
+  await page.getByRole("radio", { name: "Quantity received per line" }).waitFor({ timeout: 10000 });
   await page.getByRole("radio", { name: "A percent of each line" }).click();
   await page.getByRole("dialog").getByLabel("Percent").fill("50");
   await page.getByRole("dialog").getByRole("button", { name: "Create bill" }).click();
@@ -466,6 +468,7 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   await dlg.waitFor({ state: "hidden", timeout: 15000 });
   await page.getByRole("row", { name: new RegExp(name) }).getByRole("link", { name: "5" }).click();
   await page.waitForURL(/\/items\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  const itemUrl = page.url();
   await page.getByText("$50.00").first().waitFor({ timeout: 10000 });
   await page.screenshot({ path: `${outDir}/item-stock.png`, fullPage: true });
   await page.getByRole("link", { name: "Adjust quantity" }).click();
@@ -483,9 +486,20 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   await page.locator("tbody select").first().selectOption({ label: name });
   await page.locator('tbody input[inputmode="decimal"]').first().fill("10");
   const warned = await page.getByText("Only 4 on hand").isVisible();
-  const ok = val.includes(name) && val.includes("$40.00") && warned;
-  console.log(ok ? "✓ flow: inventory item, stock page, adjustment, valuation, and the stock warning" : "✗ flow: inventory");
-  if (!ok) problems.push(`inventory flow: valuation has item ${val.includes(name)}, $40 ${val.includes("$40.00")}, warned ${warned}`);
+  // Send one back to a vendor: a vendor credit with the product.
+  await page.goto(BASE + "/ap/vendor-credits/new", { waitUntil: "networkidle" });
+  await page.getByLabel("Vendor", { exact: true }).selectOption({ index: 1 });
+  await page.getByLabel("Line 1 product").selectOption({ label: name });
+  await page.getByLabel("Line 1 quantity").fill("1");
+  await page.screenshot({ path: `${outDir}/vendor-credit-stock.png`, fullPage: true });
+  await page.getByRole("button", { name: "Save and post" }).click();
+  await page.waitForURL(/\/ap\/vendor-credits\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.goto(itemUrl, { waitUntil: "networkidle" });
+  const stockText = await page.locator("main").innerText();
+  const sentBack = stockText.includes("Sent back") && stockText.includes("$30.00");
+  const ok = val.includes(name) && val.includes("$40.00") && warned && sentBack;
+  console.log(ok ? "✓ flow: inventory item, stock page, adjustment, valuation, stock warning, and a vendor credit sending stock back" : "✗ flow: inventory");
+  if (!ok) problems.push(`inventory flow: valuation has item ${val.includes(name)}, $40 ${val.includes("$40.00")}, warned ${warned}, sent back ${sentBack}`);
 }
 
 // Flow 2: create an agent and mint a key.

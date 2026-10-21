@@ -10,15 +10,33 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { Account, Vendor } from "@/lib/db/schema";
 import { formatMoney, money, sumMoney } from "@/lib/money";
+import { LotField } from "@/app/(app)/_inventory/lot-field";
+import { editItemLine, isInventory, itemPayload, type LotChoice, type PurchaseItem } from "@/app/(app)/_inventory/purchase-items";
 import { saveVendorCredit } from "../ap-actions";
 
-type Line = { key: string; accountId: string; description: string; amount: string };
+type Line = { key: string; accountId: string; description: string; amount: string; itemId: string; quantity: string; unitCost: string; lotNumber: string };
 const cell = "w-full text-xs bg-background border border-border rounded-md px-2 py-1.5";
 const label = "text-xs uppercase tracking-wider text-muted-foreground mb-1.5";
-const blank = (): Line => ({ key: crypto.randomUUID(), accountId: "", description: "", amount: "" });
+const blank = (): Line => ({ key: crypto.randomUUID(), accountId: "", description: "", amount: "", itemId: "", quantity: "", unitCost: "", lotNumber: "" });
 
-/** A vendor's credit memo: lines credit the accounts the original bills hit. */
-export function VendorCreditForm({ vendors, accounts, defaultVendorId }: { vendors: Vendor[]; accounts: Account[]; defaultVendorId?: string }) {
+/**
+ * A vendor's credit memo: lines credit the accounts the original bills
+ * hit. A product sent back (an inventory item with a quantity) leaves stock
+ * and credits the item's cost of goods sold account.
+ */
+export function VendorCreditForm({
+  vendors,
+  accounts,
+  items = [],
+  lots,
+  defaultVendorId,
+}: {
+  vendors: Vendor[];
+  accounts: Account[];
+  items?: PurchaseItem[];
+  lots?: { lotTracking: boolean; lots: LotChoice[] };
+  defaultVendorId?: string;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -36,7 +54,8 @@ export function VendorCreditForm({ vendors, accounts, defaultVendorId }: { vendo
       return money(0);
     }
   }));
-  const update = (key: string, patch: Partial<Line>) => setLines((p) => p.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const update = (key: string, patch: Partial<Line>) =>
+    setLines((p) => p.map((l) => (l.key === key ? editItemLine(l, patch, items, { returning: true }) : l)));
 
   function submit(post: boolean) {
     setErr(null);
@@ -47,7 +66,9 @@ export function VendorCreditForm({ vendors, accounts, defaultVendorId }: { vendo
           creditDate,
           vendorReference,
           memo,
-          lines: lines.filter((l) => l.accountId || l.amount).map((l) => ({ accountId: l.accountId, amount: l.amount, description: l.description })),
+          lines: lines
+            .filter((l) => l.accountId || l.itemId || l.amount)
+            .map((l) => ({ accountId: l.accountId || undefined, amount: l.amount, description: l.description, ...itemPayload(l) })),
         },
         post
       );
@@ -82,6 +103,13 @@ export function VendorCreditForm({ vendors, accounts, defaultVendorId }: { vendo
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
             <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              {items.length > 0 && (
+                <>
+                  <th className="text-left font-medium px-3 py-2 w-44">Product</th>
+                  <th className="text-right font-medium px-3 py-2 w-20">Qty</th>
+                  <th className="text-right font-medium px-3 py-2 w-24">Rate</th>
+                </>
+              )}
               <th className="text-left font-medium px-3 py-2 w-56">Account</th>
               <th className="text-left font-medium px-3 py-2">Description</th>
               <th className="text-right font-medium px-3 py-2 w-32">Amount</th>
@@ -90,9 +118,39 @@ export function VendorCreditForm({ vendors, accounts, defaultVendorId }: { vendo
           </thead>
           <tbody>
             {lines.map((l, i) => (
-              <tr key={l.key} className="border-t border-border">
+              <tr key={l.key} className="border-t border-border align-top">
+                {items.length > 0 && (
+                  <>
+                    <td className="px-3 py-2">
+                      <select value={l.itemId} onChange={(e) => update(l.key, { itemId: e.target.value })} className={cell} aria-label={`Line ${i + 1} product`}>
+                        <option value="">—</option>
+                        {items.map((it) => (
+                          <option key={it.id} value={it.id}>{it.name}</option>
+                        ))}
+                      </select>
+                      {lots?.lotTracking && isInventory(items, l.itemId) && (
+                        <div className="mt-1">
+                          <LotField lots={lots.lots} itemId={l.itemId} value={l.lotNumber} onChange={(v) => update(l.key, { lotNumber: v })} />
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <input inputMode="decimal" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} className={`${cell} text-right font-mono`} aria-label={`Line ${i + 1} quantity`} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input inputMode="decimal" value={l.unitCost} onChange={(e) => update(l.key, { unitCost: e.target.value })} className={`${cell} text-right font-mono`} aria-label={`Line ${i + 1} rate`} />
+                    </td>
+                  </>
+                )}
                 <td className="px-3 py-2">
-                  <select value={l.accountId} onChange={(e) => update(l.key, { accountId: e.target.value })} className={cell} aria-label={`Line ${i + 1} account`}>
+                  <select
+                    value={l.accountId}
+                    onChange={(e) => update(l.key, { accountId: e.target.value })}
+                    disabled={isInventory(items, l.itemId)}
+                    title={isInventory(items, l.itemId) ? "Stock sent back credits the item's cost of goods sold account" : undefined}
+                    className={`${cell} disabled:opacity-70`}
+                    aria-label={`Line ${i + 1} account`}
+                  >
                     <option value="">Choose…</option>
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
@@ -128,7 +186,7 @@ export function VendorCreditForm({ vendors, accounts, defaultVendorId }: { vendo
           </tbody>
           <tfoot className="bg-muted/30">
             <tr className="border-t-2 border-border">
-              <td colSpan={2} className="px-3 py-2 text-right text-[10px] uppercase tracking-wider text-muted-foreground">Total credit</td>
+              <td colSpan={items.length > 0 ? 5 : 2} className="px-3 py-2 text-right text-[10px] uppercase tracking-wider text-muted-foreground">Total credit</td>
               <td className="px-3 py-2 text-right font-mono text-sm font-semibold">{formatMoney(total, { currency })}</td>
               <td></td>
             </tr>

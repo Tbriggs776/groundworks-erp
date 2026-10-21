@@ -116,6 +116,8 @@ const NAV: NavGroup[] = [
       { label: "Sales by Customer", href: "/reports/sales-by-customer" },
       { label: "Sales by Item", href: "/reports/sales-by-item" },
       { label: "Inventory Valuation", href: "/reports/inventory-valuation" },
+      { label: "Valuation Detail", href: "/reports/inventory-valuation-detail" },
+      { label: "Stock Status", href: "/reports/inventory-stock-status" },
       { label: "Expenses by Vendor", href: "/reports/expenses-by-vendor" },
       { label: "AR Aging", href: "/reports/ar-aging" },
       { label: "Open Invoices", href: "/reports/open-invoices" },

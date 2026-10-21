@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/schema";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { toPurchaseItems } from "@/app/(app)/_inventory/purchase-items";
+import { lotChoices } from "@/lib/ui/form-data";
 import { BillForm } from "../../bill-form";
 
 export default async function EditBillPage({
@@ -78,6 +79,7 @@ export default async function EditBillPage({
         vendors={vendorRows}
         accounts={acctRows}
         items={toPurchaseItems(itemRows)}
+        lots={await lotChoices(organization.id)}
         initial={bill}
         initialLines={lineRows}
       />

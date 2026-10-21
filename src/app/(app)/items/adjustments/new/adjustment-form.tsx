@@ -9,10 +9,12 @@ import { Label } from "@/components/ui/label";
 import type { ItemRow } from "@/lib/ar/items";
 import type { Account } from "@/lib/db/schema";
 import { formatMoney, money } from "@/lib/money";
+import { LotField } from "@/app/(app)/_inventory/lot-field";
+import type { LotChoice } from "@/app/(app)/_inventory/purchase-items";
 import { createAdjustment } from "../../inventory-actions";
 
 type AccountOption = Pick<Account, "id" | "code" | "name" | "category" | "subcategory">;
-type Line = { key: number; itemId: string; change: string; unitCost: string };
+type Line = { key: number; itemId: string; change: string; unitCost: string; lotNumber: string; lotExpiresOn: string };
 
 const selectClass = "w-full text-sm bg-background border border-border rounded-md px-2 py-2";
 const num = (v: string) => {
@@ -27,11 +29,13 @@ const num = (v: string) => {
 export function AdjustmentForm({
   items,
   accounts,
+  lots,
   today,
   presetItemId,
 }: {
   items: ItemRow[];
   accounts: AccountOption[];
+  lots: { lotTracking: boolean; lots: LotChoice[] };
   today: string;
   presetItemId?: string;
 }) {
@@ -47,11 +51,13 @@ export function AdjustmentForm({
   const [memo, setMemo] = useState("");
   const [next, setNext] = useState(1);
   const [lines, setLines] = useState<Line[]>([
-    { key: 0, itemId: presetItemId && byId.has(presetItemId) ? presetItemId : "", change: "", unitCost: "" },
+    { key: 0, itemId: presetItemId && byId.has(presetItemId) ? presetItemId : "", change: "", unitCost: "", lotNumber: "", lotExpiresOn: "" },
   ]);
 
   const update = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
-  const onHandOf = (itemId: string) => money(byId.get(itemId)?.onHand ?? 0);
+  const lotOf = (l: Line) => lots.lots.find((x) => x.itemId === l.itemId && x.lotNumber === l.lotNumber);
+  // With lots, on hand is the lot's.
+  const onHandOf = (l: Line) => (lots.lotTracking ? money(lotOf(l)?.onHand ?? 0) : money(byId.get(l.itemId)?.onHand ?? 0));
   const avgOf = (itemId: string) => {
     const i = byId.get(itemId);
     const q = money(i?.onHand ?? 0);
@@ -67,7 +73,12 @@ export function AdjustmentForm({
         memo: memo || undefined,
         lines: lines
           .filter((l) => l.itemId && num(l.change) && !num(l.change)!.isZero())
-          .map((l) => ({ itemId: l.itemId, quantity: l.change, unitCost: num(l.change)!.gt(0) && l.unitCost ? l.unitCost : undefined })),
+          .map((l) => ({
+            itemId: l.itemId,
+            quantity: l.change,
+            unitCost: num(l.change)!.gt(0) && l.unitCost ? l.unitCost : undefined,
+            ...(lots.lotTracking ? { lotNumber: l.lotNumber || undefined, lotExpiresOn: num(l.change)!.gt(0) ? l.lotExpiresOn || undefined : undefined } : {}),
+          })),
       });
       if (r.ok && "id" in r) router.push(`/items/adjustments/${r.id}`);
       else if (!r.ok) setErr(r.error);
@@ -117,18 +128,31 @@ export function AdjustmentForm({
           </thead>
           <tbody>
             {lines.map((l) => {
-              const onHand = l.itemId ? onHandOf(l.itemId) : null;
+              const onHand = l.itemId ? onHandOf(l) : null;
               const change = num(l.change);
               const adding = change?.gt(0) ?? false;
               return (
                 <tr key={l.key} className="border-t border-border">
                   <td className="px-3 py-2">
-                    <select value={l.itemId} onChange={(e) => update(l.key, { itemId: e.target.value })} className={selectClass}>
+                    <select value={l.itemId} onChange={(e) => update(l.key, { itemId: e.target.value, lotNumber: "", lotExpiresOn: "" })} className={selectClass}>
                       <option value="">Choose a product…</option>
                       {items.map((i) => (
                         <option key={i.id} value={i.id}>{i.name}{i.sku ? ` (${i.sku})` : ""}</option>
                       ))}
                     </select>
+                    {lots.lotTracking && l.itemId && (
+                      <div className="mt-1">
+                        <LotField
+                          lots={lots.lots}
+                          itemId={l.itemId}
+                          value={l.lotNumber}
+                          onChange={(v) => update(l.key, { lotNumber: v })}
+                          incoming={!change || change.gt(0)}
+                          expiresOn={l.lotExpiresOn}
+                          onExpiresOn={(v) => update(l.key, { lotExpiresOn: v })}
+                        />
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-xs">{onHand ? onHand.toDecimalPlaces(4).toString() : "—"}</td>
                   <td className="px-3 py-2">
@@ -181,7 +205,7 @@ export function AdjustmentForm({
           variant="ghost"
           size="sm"
           onClick={() => {
-            setLines((ls) => [...ls, { key: next, itemId: "", change: "", unitCost: "" }]);
+            setLines((ls) => [...ls, { key: next, itemId: "", change: "", unitCost: "", lotNumber: "", lotExpiresOn: "" }]);
             setNext(next + 1);
           }}
         >

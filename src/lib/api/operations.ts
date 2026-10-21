@@ -38,6 +38,7 @@ import * as reportDetail from "@/lib/reports/detail";
 import * as reportExports from "@/lib/reports/exports";
 import * as finStatements from "@/lib/reports/statements";
 import * as inventoryAdjustments from "@/lib/inventory/adjustments";
+import * as lots from "@/lib/inventory/lots";
 import * as stock from "@/lib/inventory/stock";
 import * as pdf from "@/lib/pdf/documents";
 import { listReviewQueue } from "@/lib/review";
@@ -494,7 +495,7 @@ export const OPERATIONS: Operation[] = [
     name: "get_inventory_settings",
     title: "Get the inventory costing method",
     description:
-      "The company's costing method (fifo or average) and whether it's locked. It's set once: after the first stock movement it can't change.",
+      "The company's costing method (fifo, average, or specific) and whether it's locked. It's set once: after the first stock movement it can't change. With specific, every inventory line needs a lotNumber (list_inventory_lots).",
     group: "Inventory",
     method: "GET",
     path: "/inventory/settings",
@@ -506,7 +507,7 @@ export const OPERATIONS: Operation[] = [
     name: "update_inventory_settings",
     title: "Set the inventory costing method",
     description:
-      "Choose how sales are costed: fifo (oldest units first) or average (running weighted average). Only before the company's first stock movement. Requires admin.",
+      "Choose how sales are costed: fifo (oldest units first), average (running weighted average), or specific (by lot: every purchase, sale, return, and adjustment line names a lotNumber, with optional expiration dates). Only before the company's first stock movement. Requires admin.",
     group: "Inventory",
     method: "PATCH",
     path: "/inventory/settings",
@@ -571,6 +572,42 @@ export const OPERATIONS: Operation[] = [
     destructive: true,
     input: Void,
     run: (ctx, input) => inventoryAdjustments.voidInventoryAdjustment(ctx, input),
+  }),
+  op({
+    name: "list_inventory_lots",
+    title: "List lots",
+    description:
+      "Specific identification: lots with their item, expiration date, quantity on hand, and value, soonest to expire first. Filter by itemId; inStock=true for lots with stock. Use it to pick lotNumber for sales, returns, vendor credits, and adjustments.",
+    group: "Inventory",
+    method: "GET",
+    path: "/inventory/lots",
+    scope: "read",
+    input: lots.ListLotsSchema,
+    run: (ctx, input) => lots.listLots(ctx, input),
+  }),
+  op({
+    name: "report_inventory_stock_status",
+    title: "Inventory stock status",
+    description:
+      "What to reorder: per inventory item, quantity on hand, reorder point, quantity on open purchase orders, next expected delivery, earliest lot expiration, and a status (Reorder, On order, Negative, Lot expiring, Lot expired). With lots, each lot with stock is listed under its item. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/inventory-stock-status",
+    scope: "read",
+    input: stock.StockStatusSchema,
+    run: (ctx, input) => stock.stockStatus(ctx, input),
+  }),
+  op({
+    name: "report_inventory_valuation_detail",
+    title: "Inventory valuation detail",
+    description:
+      "Every change to each inventory item's quantity and value for a date range (default: year to date), from the opening balance to the closing one, on the day it reached the ledger (recosts included). Optional itemId. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/inventory-valuation-detail",
+    scope: "read",
+    input: stock.ValuationDetailSchema,
+    run: (ctx, input) => stock.valuationDetail(ctx, input),
   }),
   op({
     name: "report_inventory_valuation",
@@ -1713,7 +1750,7 @@ export const OPERATIONS: Operation[] = [
     name: "create_bill_from_purchase_order",
     title: "Bill a purchase order (partial billing)",
     description:
-      "Turn what the vendor delivered and invoiced into a bill: mode remaining (everything not billed yet), percent (that % of each line), or custom (an amount per PO line). Lines keep the PO's accounts and descriptions and remember their PO line, so billing can't pass the PO. The bill starts as a draft and follows the normal bill approval and posting. The PO closes once fully billed; voiding or deleting the bill gives the lines back. Returns the bill.",
+      "Turn what the vendor delivered and invoiced into a bill: mode remaining (everything not billed yet), percent (that % of each line), custom (an amount per PO line), or quantity (units received per PO line, at the line's unit cost; with lots, give each line's lotNumber). Lines keep the PO's accounts and descriptions and remember their PO line, so billing can't pass the PO. The bill starts as a draft and follows the normal bill approval and posting. The PO closes once fully billed; voiding or deleting the bill gives the lines back. Returns the bill.",
     group: "Expenses",
     method: "POST",
     path: "/purchase-orders/{id}/bill",
@@ -1914,7 +1951,7 @@ export const OPERATIONS: Operation[] = [
   op({
     name: "create_vendor_credit",
     title: "Create a vendor credit",
-    description: `Record a credit from a vendor: lines credit the accounts the original bills hit. Posting: Dr AP / Cr those accounts. Use it with apply_vendor_credit (against the vendor's bills) or create_vendor_refund (money back). ${POSTING_NOTE}`,
+    description: `Record a credit from a vendor: lines credit the accounts the original bills hit. Posting: Dr AP / Cr those accounts. Stock sent back: a line with an inventory itemId and quantity (and lotNumber with lots) takes the units out of stock at their cost; the line credits the item's COGS account, so COGS keeps any difference. Use it with apply_vendor_credit (against the vendor's bills) or create_vendor_refund (money back). ${POSTING_NOTE}`,
     group: "Expenses",
     method: "POST",
     path: "/vendor-credits",

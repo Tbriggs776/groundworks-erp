@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { UndepositedPayment } from "@/lib/banking/transactions";
 import { formatMoney, money, sumMoney } from "@/lib/money";
+import { LotField } from "@/app/(app)/_inventory/lot-field";
 import { editItemLine, isInventory, itemPayload } from "@/app/(app)/_inventory/purchase-items";
 import { createDeposit, createExpense, createTransfer } from "../actions";
 import type { BankingChoices } from "../choices";
@@ -25,9 +26,22 @@ type Line = {
   itemId: string;
   quantity: string;
   unitCost: string;
+  lotNumber: string;
+  lotExpiresOn: string;
 };
 
-const blankLine = (key: number): Line => ({ key, accountId: "", amount: "", description: "", customerId: "", itemId: "", quantity: "", unitCost: "" });
+const blankLine = (key: number): Line => ({
+  key,
+  accountId: "",
+  amount: "",
+  description: "",
+  customerId: "",
+  itemId: "",
+  quantity: "",
+  unitCost: "",
+  lotNumber: "",
+  lotExpiresOn: "",
+});
 
 const METHODS = [
   { value: "credit_card", label: "Credit card" },
@@ -293,6 +307,19 @@ export function BankTxnForm({
                             onChange={(v) => updateLine(l.key, { itemId: v })}
                             placeholder="Optional"
                           />
+                          {choices.lots.lotTracking && isInventory(products, l.itemId) && (
+                            <div className="mt-1">
+                              <LotField
+                                lots={choices.lots.lots}
+                                itemId={l.itemId}
+                                value={l.lotNumber}
+                                onChange={(v) => updateLine(l.key, { lotNumber: v })}
+                                incoming
+                                expiresOn={l.lotExpiresOn}
+                                onExpiresOn={(v) => updateLine(l.key, { lotExpiresOn: v })}
+                              />
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <Input inputMode="decimal" aria-label="Quantity" value={l.quantity} onChange={(e) => updateLine(l.key, { quantity: e.target.value })} className="font-mono text-right" />

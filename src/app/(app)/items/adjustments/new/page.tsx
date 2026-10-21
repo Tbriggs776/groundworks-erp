@@ -6,6 +6,7 @@ import { listItems } from "@/lib/ar/items";
 import { getUser, requireActor, requireCurrentOrg } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { accounts } from "@/lib/db/schema";
+import { lotChoices } from "@/lib/ui/form-data";
 import { AdjustmentForm } from "./adjustment-form";
 
 export default async function NewInventoryAdjustmentPage({ searchParams }: { searchParams: Promise<{ itemId?: string }> }) {
@@ -31,7 +32,13 @@ export default async function NewInventoryAdjustmentPage({ searchParams }: { sea
   ]);
   return (
     <AppShell title="New Inventory Adjustment" crumb={`${organization.name} · Sales · Inventory Adjustments`} userEmail={user?.email}>
-      <AdjustmentForm items={page.data} accounts={acctRows} today={format(new Date(), "yyyy-MM-dd")} presetItemId={itemId} />
+      <AdjustmentForm
+        items={page.data}
+        accounts={acctRows}
+        lots={await lotChoices(organization.id)}
+        today={format(new Date(), "yyyy-MM-dd")}
+        presetItemId={itemId}
+      />
     </AppShell>
   );
 }

@@ -18,12 +18,15 @@ import { AppError, invalidState, notFound } from "@/lib/errors";
 import { lineAmount } from "@/lib/ar/documents";
 import { nextNumber } from "@/lib/gl/number-series";
 import { requireLineAccounts } from "@/lib/gl/lookups";
+import { lotExpiresField, lotNumberField } from "@/lib/inventory/lots";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { amount, currency, flag, id, isoDate, likePattern, optionalText, pagination, toPage, type Page } from "@/lib/schemas";
 import { canApproveAtRole, resolveApprovalRouting } from "./approval";
 import { createBill, type BillDetail } from "./bills";
 import {
   billedByPoLine,
+  billedQtyByPoLine,
+  quantityForAmount,
   linesOfPurchaseOrder,
   loadPurchaseOrder,
   poRemainingOf,
@@ -94,21 +97,36 @@ export const CreateBillFromPurchaseOrderSchema = z
     dueDate: isoDate.optional().describe("Defaults to bill date + the vendor's terms."),
     vendorInvoiceNumber: optionalText(100),
     mode: z
-      .enum(["remaining", "percent", "custom"])
+      .enum(["remaining", "percent", "custom", "quantity"])
       .default("remaining")
-      .describe("remaining: bill everything not billed yet. percent: bill `percent` of each line. custom: bill the `lines` amounts."),
+      .describe(
+        "remaining: bill everything not billed yet. percent: bill `percent` of each line. custom: bill the `lines` amounts. quantity: bill the `lines` quantities received, at each line's unit cost."
+      ),
     percent: amount.optional().describe("With mode percent: 0 < percent ≤ 100."),
     lines: z
-      .array(z.object({ purchaseOrderLineId: id, amount }))
+      .array(
+        z.object({
+          purchaseOrderLineId: id,
+          amount: amount.optional().describe("Mode custom: amount to bill."),
+          quantity: amount.optional().describe("Mode quantity: units received."),
+          lotNumber: lotNumberField,
+          lotExpiresOn: lotExpiresField,
+        })
+      )
       .optional()
-      .describe("With mode custom: amount to bill per PO line. Lines left out bill nothing."),
+      .describe("Modes custom and quantity: what to bill per PO line. Lines left out bill nothing."),
     description: optionalText(500),
     submit: z.boolean().optional().describe("Also submit the bill for approval."),
   })
   .refine((d) => d.mode !== "percent" || (d.percent && money(d.percent).gt(0) && money(d.percent).lte(100)), {
     message: "percent must be more than 0 and at most 100.",
   })
-  .refine((d) => d.mode !== "custom" || (d.lines && d.lines.length > 0), { message: "mode custom needs lines." });
+  .refine((d) => d.mode !== "custom" || (d.lines && d.lines.length > 0 && d.lines.every((l) => l.amount)), {
+    message: "mode custom needs lines with amounts.",
+  })
+  .refine((d) => d.mode !== "quantity" || (d.lines && d.lines.length > 0 && d.lines.every((l) => l.quantity)), {
+    message: "mode quantity needs lines with quantities.",
+  });
 export type CreateBillFromPurchaseOrderInput = z.input<typeof CreateBillFromPurchaseOrderSchema>;
 
 const IdSchema = z.object({ id });
@@ -121,10 +139,14 @@ const ReasonSchema = z.object({ id, reason: z.string().trim().min(1, "A reason i
 export type PurchaseOrderRow = PurchaseOrder & { vendorName: string; billedAmount: string };
 export type PurchaseOrderLineRow = PurchaseOrderLine & {
   itemName: string | null;
+  itemType: "service" | "non_inventory" | "inventory" | null;
   accountCode: string;
   accountName: string;
   billed: string;
   remaining: string;
+  /** Quantity billed (received) so far: the billed share of the line's quantity. */
+  billedQuantity: string;
+  remainingQuantity: string;
 };
 export type PurchaseOrderDetail = PurchaseOrderRow & {
   lines: PurchaseOrderLineRow[];
@@ -175,22 +197,27 @@ export async function getPurchaseOrder(ctx: Ctx, input: { id: string }): Promise
   const po = await loadPurchaseOrder(ctx, poId);
   const [v] = await ctx.tx.select({ name: vendors.name }).from(vendors).where(eq(vendors.id, po.vendorId));
   const lines = await ctx.tx
-    .select({ line: purchaseOrderLines, itemName: items.name, accountCode: accounts.code, accountName: accounts.name })
+    .select({ line: purchaseOrderLines, itemName: items.name, itemType: items.type, accountCode: accounts.code, accountName: accounts.name })
     .from(purchaseOrderLines)
     .innerJoin(accounts, eq(accounts.id, purchaseOrderLines.accountId))
     .leftJoin(items, eq(items.id, purchaseOrderLines.itemId))
     .where(eq(purchaseOrderLines.purchaseOrderId, po.id))
     .orderBy(asc(purchaseOrderLines.lineNumber));
   const billed = await billedByPoLine(ctx, po.id);
+  const billedQty = await billedQtyByPoLine(ctx, po.id);
   const rows = lines.map((l) => {
     const b = billed.get(l.line.id) ?? money(0);
+    const q = billedQty.get(l.line.id) ?? money(0);
     return {
       ...l.line,
       itemName: l.itemName,
+      itemType: l.itemType,
       accountCode: l.accountCode,
       accountName: l.accountName,
       billed: toDbMoney(b),
       remaining: toDbMoney(poRemainingOf(l.line, b)),
+      billedQuantity: toDbMoney(q),
+      remainingQuantity: toDbMoney(money(l.line.quantity).minus(q)),
     };
   });
   const bills = await ctx.tx
@@ -485,7 +512,8 @@ export async function createBillFromPurchaseOrder(ctx: Ctx, input: CreateBillFro
   requireBillablePo(po);
   const lines = await linesOfPurchaseOrder(ctx, po.id);
   const billed = await billedByPoLine(ctx, po.id);
-  const custom = new Map((d.lines ?? []).map((l) => [l.purchaseOrderLineId, money(l.amount)]));
+  const billedQty = await billedQtyByPoLine(ctx, po.id);
+  const custom = new Map((d.lines ?? []).map((l) => [l.purchaseOrderLineId, l]));
   for (const lineId of custom.keys()) {
     if (!lines.some((l) => l.id === lineId)) throw new AppError("invalid_input", `That line isn't on ${po.poNumber}.`);
   }
@@ -493,15 +521,26 @@ export async function createBillFromPurchaseOrder(ctx: Ctx, input: CreateBillFro
   const billLines = lines
     .map((pl) => {
       const left = poRemainingOf(pl, billed.get(pl.id));
+      const asked = custom.get(pl.id);
       let amt: Decimal;
+      let qty: Decimal | null = null;
       if (d.mode === "remaining") amt = left;
-      else if (d.mode === "custom") amt = custom.get(pl.id) ?? money(0);
-      else {
+      else if (d.mode === "custom") amt = asked ? money(asked.amount!) : money(0);
+      else if (d.mode === "quantity") {
+        qty = asked ? money(asked.quantity!) : money(0);
+        const qtyLeft = money(pl.quantity).minus(billedQty.get(pl.id) ?? 0);
+        if (qty.gt(qtyLeft)) {
+          throw new AppError("invalid_input", `${po.poNumber} line ${pl.lineNumber}: billing ${qty.toString()} but only ${qtyLeft.toString()} is left.`);
+        }
+        amt = qty.times(money(pl.unitCost)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        // Receiving the rest of the line bills the rest of its amount (rounding).
+        if (qty.gt(0) && qty.eq(qtyLeft)) amt = left;
+      } else {
         amt = money(pl.amount).times(money(d.percent!)).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         // Never past what's left: the last percent bills the rounding remainder.
         if (amt.gt(left)) amt = left;
       }
-      return { pl, amt };
+      return { pl, amt, qty, lot: asked };
     })
     .filter((x) => x.amt.gt(0));
   if (billLines.length === 0) throw invalidState(`Nothing left to bill on ${po.poNumber}.`);
@@ -517,13 +556,15 @@ export async function createBillFromPurchaseOrder(ctx: Ctx, input: CreateBillFro
       // Stored with 10 places; the rate itself came in with at most 4.
       exchangeRate: money(po.exchangeRate).toString(),
       description: d.description ?? `Bills ${po.poNumber}`,
-      lines: billLines.map(({ pl, amt }) => ({
+      lines: billLines.map(({ pl, amt, qty, lot }) => ({
         accountId: pl.accountId,
         amount: toDbMoney(amt),
         description: pl.description,
         // Billing part of a line bills that share of its quantity.
         itemId: pl.itemId,
-        quantity: pl.itemId ? toDbMoney(money(pl.quantity).times(amt).div(money(pl.amount))) : null,
+        quantity: toDbMoney(qty ?? quantityForAmount(pl, amt)),
+        lotNumber: lot?.lotNumber,
+        lotExpiresOn: lot?.lotExpiresOn,
         purchaseOrderLineId: pl.id,
       })),
       submit: d.submit,

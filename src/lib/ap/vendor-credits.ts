@@ -7,6 +7,8 @@ import { AppError, invalidState, notFound } from "@/lib/errors";
 import { nextNumber } from "@/lib/gl/number-series";
 import { controlAccount, requireLineAccounts, sourceCodeId } from "@/lib/gl/lookups";
 import { createAndPostJournal, reverseJournal, type JournalLineInput } from "@/lib/gl/posting";
+import { PurchaseLineItemFields, recordSale, resolvePurchaseLines } from "@/lib/inventory/documents";
+import { voidMovements } from "@/lib/inventory/engine";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { requireActiveVendor } from "@/lib/parties/service";
 import { postOrQueueForReview, type ReviewNotice } from "@/lib/review-policy";
@@ -19,12 +21,22 @@ import { releaseVendorCreditApplications, usesOfVendorCredit } from "./credits";
  * rebate, an overcharge). Lifecycle draft → open → applied | voided.
  * Posting: Dr AP / Cr each line's account. The credit pays down the
  * vendor's bills (apply_vendor_credit) or comes back as a vendor refund.
+ * Inventory items sent back leave stock (see src/lib/inventory/documents.ts).
  */
 
 const LineSchema = z.object({
-  accountId: id.describe("Account to credit: usually the expense or asset the original bill hit."),
-  amount: positiveAmount,
+  accountId: id
+    .optional()
+    .nullable()
+    .describe("Account to credit: usually the expense or asset the original bill hit. Optional with an item."),
+  amount: positiveAmount.optional().nullable().describe("Optional when quantity and unit cost are given."),
   description: optionalText(500),
+  itemId: PurchaseLineItemFields.itemId.describe(
+    "A product sent back. An inventory item leaves stock at its cost; the line credits the item's cost of goods sold account, so COGS keeps any difference."
+  ),
+  quantity: PurchaseLineItemFields.quantity.describe("Units sent back. Required for inventory items."),
+  unitCost: PurchaseLineItemFields.unitCost,
+  lotNumber: PurchaseLineItemFields.lotNumber,
 });
 
 export const CreateVendorCreditSchema = z.object({
@@ -130,8 +142,9 @@ export async function createVendorCredit(ctx: Ctx, input: CreateVendorCreditInpu
   const d = CreateVendorCreditSchema.parse(input);
   const org = ctx.actor.organizationId;
   const vendor = await requireActiveVendor(ctx, d.vendorId);
-  await requireLineAccounts(ctx.tx, org, d.lines.map((l) => l.accountId));
-  const total = sumMoney(d.lines.map((l) => l.amount));
+  const lines = await resolvePurchaseLines(ctx, d.lines, { allowInventory: true, returning: true });
+  await requireLineAccounts(ctx.tx, org, lines.map((l) => l.accountId));
+  const total = sumMoney(lines.map((l) => l.amount));
   const creditNumber = await nextNumber(ctx.tx, org, "VC");
   const [c] = await ctx.tx
     .insert(vendorCredits)
@@ -151,7 +164,20 @@ export async function createVendorCredit(ctx: Ctx, input: CreateVendorCreditInpu
     .returning();
   await ctx.tx
     .insert(vendorCreditLines)
-    .values(d.lines.map((l, i) => ({ organizationId: org, vendorCreditId: c.id, lineNumber: i + 1, accountId: l.accountId, amount: l.amount, description: l.description })));
+    .values(
+      lines.map((l, i) => ({
+        organizationId: org,
+        vendorCreditId: c.id,
+        lineNumber: i + 1,
+        accountId: l.accountId,
+        amount: l.amount,
+        description: l.description,
+        itemId: l.itemId,
+        quantity: l.quantity,
+        unitCost: l.unitCost,
+        lotNumber: l.lotNumber,
+      }))
+    );
   await writeAudit(
     {
       organizationId: org,
@@ -200,6 +226,7 @@ export async function postVendorCredit(ctx: Ctx, input: { id: string }): Promise
     ctx.tx
   );
   if (!result.ok) throw new AppError("posting_failed", result.error, { postingCode: result.code, ...result.meta });
+  await recordSale(ctx, { direction: "vendor_return", sourceType: "vendor_credit", sourceId: c.id, label, date: c.creditDate, lines });
   await ctx.tx
     .update(vendorCredits)
     .set({ status: "open", postedAt: sql`now()`, postedBy: ctx.actor.userId, glJournalId: result.journalId, updatedAt: sql`now()` })
@@ -232,6 +259,7 @@ export async function voidVendorCredit(ctx: Ctx, input: z.input<typeof VoidSchem
     ctx.tx
   );
   if (!result.ok) throw new AppError("posting_failed", result.error, { postingCode: result.code, ...result.meta });
+  await voidMovements(ctx, "vendor_credit", c.id);
   await ctx.tx
     .update(vendorCredits)
     .set({ status: "voided", voidedAt: sql`now()`, voidedBy: ctx.actor.userId, voidReason: reason, voidGlJournalId: result.journalId, updatedAt: sql`now()` })

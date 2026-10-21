@@ -25,7 +25,7 @@ export async function voidAdjustment(adjustmentId: string, reason: string): Prom
   return r;
 }
 
-export async function setCostingMethod(costingMethod: "fifo" | "average"): Promise<ActionResult> {
+export async function setCostingMethod(costingMethod: "fifo" | "average" | "specific"): Promise<ActionResult> {
   const r = await serviceAction("admin", async (ctx) => {
     await stock.updateInventorySettings(ctx, { costingMethod });
     return { id: ctx.actor.organizationId };

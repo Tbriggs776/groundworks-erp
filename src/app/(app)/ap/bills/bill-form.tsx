@@ -16,7 +16,8 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import type { Account, ApBill, ApBillLine, Vendor } from "@/lib/db/schema";
 import { formatMoney, money, sumMoney } from "@/lib/money";
-import { editItemLine, isInventory, itemPayload, type PurchaseItem } from "@/app/(app)/_inventory/purchase-items";
+import { LotField } from "@/app/(app)/_inventory/lot-field";
+import { editItemLine, isInventory, itemPayload, type LotChoice, type PurchaseItem } from "@/app/(app)/_inventory/purchase-items";
 import {
   createBill,
   updateBill,
@@ -32,6 +33,8 @@ type Line = {
   itemId: string;
   quantity: string;
   unitCost: string;
+  lotNumber: string;
+  lotExpiresOn: string;
   /** Kept when editing a bill made from a purchase order. */
   purchaseOrderLineId: string | null;
 };
@@ -44,6 +47,8 @@ const EMPTY: Line = {
   itemId: "",
   quantity: "",
   unitCost: "",
+  lotNumber: "",
+  lotExpiresOn: "",
   purchaseOrderLineId: null,
 };
 
@@ -55,6 +60,7 @@ export function BillForm({
   vendors,
   accounts,
   items = [],
+  lots,
   initial,
   initialLines,
 }: {
@@ -62,6 +68,8 @@ export function BillForm({
   accounts: Account[];
   /** Products that can go on a line (inventory items add to stock). */
   items?: PurchaseItem[];
+  /** Specific identification: every lot, so a line can name one. */
+  lots?: { lotTracking: boolean; lots: LotChoice[] };
   initial?: ApBill;
   initialLines?: ApBillLine[];
 }) {
@@ -97,6 +105,8 @@ export function BillForm({
           itemId: l.itemId ?? "",
           quantity: l.quantity ? money(l.quantity).toString() : "",
           unitCost: l.unitCost ? money(l.unitCost).toString() : "",
+          lotNumber: l.lotNumber ?? "",
+          lotExpiresOn: l.lotExpiresOn ?? "",
           purchaseOrderLineId: l.purchaseOrderLineId,
         }))
       : [newLine()]
@@ -278,6 +288,19 @@ export function BillForm({
                           </option>
                         ))}
                       </select>
+                      {lots?.lotTracking && isInventory(items, l.itemId) && (
+                        <div className="mt-1">
+                          <LotField
+                            lots={lots.lots}
+                            itemId={l.itemId}
+                            value={l.lotNumber}
+                            onChange={(v) => updateLine(l.id, { lotNumber: v })}
+                            incoming
+                            expiresOn={l.lotExpiresOn}
+                            onExpiresOn={(v) => updateLine(l.id, { lotExpiresOn: v })}
+                          />
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <input

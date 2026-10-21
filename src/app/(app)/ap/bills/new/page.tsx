@@ -4,6 +4,7 @@ import { db } from "@/lib/db/client";
 import { accounts, items, vendors } from "@/lib/db/schema";
 import { getUser, requireCurrentOrg } from "@/lib/auth";
 import { toPurchaseItems } from "@/app/(app)/_inventory/purchase-items";
+import { lotChoices } from "@/lib/ui/form-data";
 import { BillForm } from "../bill-form";
 
 export default async function NewBillPage() {
@@ -40,7 +41,7 @@ export default async function NewBillPage() {
       crumb={`${organization.name} · Expenses`}
       userEmail={user?.email}
     >
-      <BillForm vendors={vendorRows} accounts={acctRows} items={toPurchaseItems(itemRows)} />
+      <BillForm vendors={vendorRows} accounts={acctRows} items={toPurchaseItems(itemRows)} lots={await lotChoices(organization.id)} />
     </AppShell>
   );
 }

@@ -22,7 +22,22 @@ export const toPurchaseItems = (rows: Item[]): PurchaseItem[] =>
     assetAccountId,
   }));
 
-export type ItemLineFields = { itemId: string; quantity: string; unitCost: string; amount: string; accountId: string; description: string };
+export type ItemLineFields = {
+  itemId: string;
+  quantity: string;
+  unitCost: string;
+  amount: string;
+  accountId: string;
+  description: string;
+  lotNumber?: string;
+  lotExpiresOn?: string;
+};
+
+/** A lot and what's on hand in it (specific identification). */
+export type LotChoice = { itemId: string; lotNumber: string; expiresOn: string | null; onHand: string };
+
+export const lotLabel = (l: LotChoice) =>
+  `${l.lotNumber} · ${money(l.onHand).toDecimalPlaces(4).toString()} on hand${l.expiresOn ? ` · expires ${l.expiresOn}` : ""}`;
 
 const num = (v: string) => {
   try {
@@ -40,13 +55,19 @@ export function lineTotal(quantity: string, unitCost: string): string | null {
   return q && r ? cents(q.times(r)).toFixed(2) : null;
 }
 
-/** Apply an edit to a line: picking a product fills the rest, quantity or rate refills the amount. */
-export function editItemLine<L extends ItemLineFields>(line: L, patch: Partial<ItemLineFields>, items: PurchaseItem[]): L {
+/**
+ * Apply an edit to a line: picking a product fills the rest, quantity or
+ * rate refills the amount. `returning` (vendor credits): inventory lines
+ * credit the item's COGS account.
+ */
+export function editItemLine<L extends ItemLineFields>(line: L, patch: Partial<ItemLineFields>, items: PurchaseItem[], opts: { returning?: boolean } = {}): L {
   const next = { ...line, ...patch };
   if (patch.itemId !== undefined) {
+    next.lotNumber = "";
+    next.lotExpiresOn = "";
     const item = items.find((i) => i.id === patch.itemId);
     if (item) {
-      next.accountId = (item.type === "inventory" ? item.assetAccountId : item.expenseAccountId) ?? next.accountId;
+      next.accountId = (item.type === "inventory" && !opts.returning ? item.assetAccountId : item.expenseAccountId) ?? next.accountId;
       next.unitCost = item.purchaseCost ? money(item.purchaseCost).toString() : next.unitCost;
       next.quantity = next.quantity || "1";
       next.description = next.description || item.description || item.name;
@@ -68,5 +89,7 @@ export function itemPayload(line: ItemLineFields) {
     itemId: line.itemId,
     quantity: line.quantity || undefined,
     unitCost: fromRate && money(fromRate).eq(money(line.amount || "0")) ? line.unitCost : undefined,
+    lotNumber: line.lotNumber || undefined,
+    lotExpiresOn: line.lotExpiresOn || undefined,
   };
 }

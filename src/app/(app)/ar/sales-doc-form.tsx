@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { Account, ArInvoiceLine, Customer, Item, RecurringInvoice } from "@/lib/db/schema";
+import { LotField } from "@/app/(app)/_inventory/lot-field";
+import type { LotChoice } from "@/app/(app)/_inventory/purchase-items";
 import { formatMoney, money, sumMoney } from "@/lib/money";
 import { saveEstimate } from "./estimates/actions";
 import { saveInvoice } from "./invoices/actions";
@@ -35,7 +37,7 @@ export type SalesDocInitial = {
   schedule?: Pick<RecurringInvoice, "name" | "type" | "frequency" | "endDate" | "maxOccurrences" | "daysInAdvance">;
 };
 
-export type SalesDocInitialLine = Pick<ArInvoiceLine, "itemId" | "description" | "quantity" | "unitPrice" | "accountId" | "taxable"> & {
+export type SalesDocInitialLine = Pick<ArInvoiceLine, "itemId" | "description" | "quantity" | "unitPrice" | "accountId" | "taxable" | "lotNumber"> & {
   estimateLineId?: string | null;
 };
 
@@ -47,6 +49,8 @@ type Line = {
   unitPrice: string;
   accountId: string;
   taxable: boolean;
+  /** Specific identification: the lot sold from or returned to. */
+  lotNumber: string;
   /** Progress invoicing: the estimate line this bills. */
   estimateLineId?: string;
 };
@@ -91,7 +95,7 @@ const COPY: Record<SalesDocFormKind, { date: string; party: string; post: string
 };
 
 function blankLine(): Line {
-  return { key: crypto.randomUUID(), itemId: "", description: "", quantity: "1", unitPrice: "", accountId: "", taxable: false };
+  return { key: crypto.randomUUID(), itemId: "", description: "", quantity: "1", unitPrice: "", accountId: "", taxable: false, lotNumber: "" };
 }
 
 /** Same rounding the server applies: qty × price, half-up to cents. */
@@ -123,8 +127,8 @@ export function SalesDocForm({
 }: {
   kind: SalesDocFormKind;
   customers: Customer[];
-  /** Inventory items carry onHand. */
-  items: Array<Item & { onHand?: string | null }>;
+  /** Inventory items carry onHand; with specific identification, their lots. */
+  items: Array<Item & { onHand?: string | null; lots?: LotChoice[] }>;
   incomeAccounts: Account[];
   taxRates: TaxRateChoice[];
   depositAccounts?: Account[];
@@ -167,6 +171,7 @@ export function SalesDocForm({
           unitPrice: money(l.unitPrice).toFixed(2),
           accountId: l.accountId,
           taxable: l.taxable,
+          lotNumber: l.lotNumber ?? "",
           estimateLineId: l.estimateLineId ?? undefined,
         }))
       : [blankLine()]
@@ -183,19 +188,24 @@ export function SalesDocForm({
   const unscheduled = recurring && recurringType === "unscheduled";
 
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
-  // Selling more than is on hand is allowed; say so before it posts.
+  // Selling more than is on hand (or in the lot) is allowed; say so before it posts.
   const selling = kind === "invoice" || kind === "sales_receipt";
+  const movesStock = selling || kind === "credit_memo" || kind === "refund";
+  const lotsOf = (itemId: string) => (itemId ? itemById.get(itemId)?.lots : undefined);
+  const stockKey = (l: Line) => (lotsOf(l.itemId) ? `${l.itemId}|${l.lotNumber}` : l.itemId);
   const short = new Map<string, string>();
   if (selling) {
     const wanted = new Map<string, Decimal>();
     for (const l of lines) {
       const onHand = l.itemId ? itemById.get(l.itemId)?.onHand : null;
-      if (onHand === null || onHand === undefined) continue;
-      wanted.set(l.itemId, (wanted.get(l.itemId) ?? money(0)).plus(money(l.quantity || "0")));
+      if (onHand === null || onHand === undefined || (lotsOf(l.itemId) && !l.lotNumber)) continue;
+      wanted.set(stockKey(l), (wanted.get(stockKey(l)) ?? money(0)).plus(money(l.quantity || "0")));
     }
-    for (const [itemId, q] of wanted) {
-      const onHand = money(itemById.get(itemId)!.onHand!);
-      if (q.gt(onHand)) short.set(itemId, onHand.toDecimalPlaces(4).toString());
+    for (const [key, q] of wanted) {
+      const [itemId, lotNumber] = key.split("|");
+      const lot = lotNumber !== undefined ? lotsOf(itemId)?.find((x) => x.lotNumber === lotNumber) : undefined;
+      const onHand = money(lot ? lot.onHand : lotNumber !== undefined ? "0" : itemById.get(itemId)!.onHand!);
+      if (q.gt(onHand)) short.set(key, onHand.toDecimalPlaces(4).toString());
     }
   }
   const customer = customers.find((c) => c.id === customerId);
@@ -230,6 +240,7 @@ export function SalesDocForm({
       unitPrice: item?.salesPrice ? money(item.salesPrice).toFixed(2) : "",
       accountId: item?.incomeAccountId ?? "",
       taxable: item?.taxable ?? false,
+      lotNumber: "",
     });
   }
 
@@ -245,6 +256,7 @@ export function SalesDocForm({
           quantity: l.quantity || "1",
           unitPrice: l.unitPrice || undefined,
           taxable: l.taxable,
+          lotNumber: movesStock && l.lotNumber ? l.lotNumber : undefined,
         }));
       const common = { taxCodeId: taxCodeId || null, memo, privateNote, lines: lineInput };
       const r =
@@ -480,15 +492,20 @@ export function SalesDocForm({
                       <option key={i.id} value={i.id}>{i.name}</option>
                     ))}
                   </select>
+                  {movesStock && lotsOf(l.itemId) && (
+                    <div className="mt-1">
+                      <LotField lots={lotsOf(l.itemId)!} itemId={l.itemId} value={l.lotNumber} onChange={(v) => update(l.key, { lotNumber: v })} />
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <input value={l.description} onChange={(e) => update(l.key, { description: e.target.value })} className={cell} />
                 </td>
                 <td className="px-3 py-2">
                   <input inputMode="decimal" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} className={`${cell} text-right font-mono`} />
-                  {short.has(l.itemId) && (
+                  {short.has(stockKey(l)) && (
                     <div className="text-[10px] text-amber-600 mt-1 text-right" title="It can still post: those units are costed at the last known cost until stock comes in.">
-                      Only {short.get(l.itemId)} on hand
+                      Only {short.get(stockKey(l))} {lotsOf(l.itemId) ? "in the lot" : "on hand"}
                     </div>
                   )}
                 </td>

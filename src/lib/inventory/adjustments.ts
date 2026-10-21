@@ -18,7 +18,8 @@ import { nextNumber } from "@/lib/gl/number-series";
 import { createAndPostJournal, reverseJournal, type JournalLineInput } from "@/lib/gl/posting";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { amount, id, isoDate, likePattern, nonNegativeAmount, optionalText, type Page, pagination, toPage } from "@/lib/schemas";
-import { inventoryItems, recordMovements, stockOf, voidMovements, type NewMovement } from "./engine";
+import { costingMethod, inventoryItems, recordMovements, stockOf, voidMovements, type NewMovement } from "./engine";
+import { checkLotNumbers, lotExpiresField, lotId, lotNumberField, requireLotNumber } from "./lots";
 
 /**
  * INVENTORY ADJUSTMENTS: stock counted, damaged, lost, or found, and an
@@ -41,6 +42,10 @@ const LineSchema = z.object({
   unitCost: nonNegativeAmount
     .optional()
     .describe("Stock added: cost per unit. Defaults to the item's current unit cost. Stock removed is costed by the company's costing method."),
+  lotNumber: lotNumberField.describe(
+    "Specific identification only (required then): the lot. Stock added may start a new lot; stock removed comes out of an existing one."
+  ),
+  lotExpiresOn: lotExpiresField,
 });
 
 export const CreateInventoryAdjustmentSchema = z.object({
@@ -114,6 +119,7 @@ export type AdjustmentDetail = InventoryAdjustment & {
     sku: string | null;
     quantity: string;
     unitCost: string | null;
+    lotNumber: string | null;
     /** What the change is worth: + stock added, − stock removed. */
     value: string;
   }>;
@@ -150,7 +156,7 @@ export async function getInventoryAdjustment(ctx: Ctx, input: { id: string }): P
       const q = money(l.quantity);
       // A voided line's movement costs nothing now; show what it was entered at.
       const v = q.gt(0) ? cents(q.times(money(l.unitCost ?? 0))) : money(cost ?? 0).neg();
-      return { id: l.id, lineNumber: l.lineNumber, itemId: l.itemId, itemName, sku, quantity: l.quantity, unitCost: l.unitCost, value: toDbMoney(v) };
+      return { id: l.id, lineNumber: l.lineNumber, itemId: l.itemId, itemName, sku, quantity: l.quantity, unitCost: l.unitCost, lotNumber: l.lotNumber, value: toDbMoney(v) };
     }),
     journalIds: [...new Set(journalIds)],
   };
@@ -186,6 +192,8 @@ export async function createInventoryAdjustment(
     throw new AppError("invalid_input", "The offset can't be an inventory asset account; pick shrinkage, cost of goods sold, or equity.");
   }
   const inv = await inventoryItems(ctx, d.lines.map((l) => l.itemId));
+  await checkLotNumbers(ctx, d.lines, inv, { mustExist: false });
+  const lots = (await costingMethod(ctx)) === "specific";
   const lines = [];
   for (const [i, l] of d.lines.entries()) {
     const item = inv.get(l.itemId);
@@ -193,10 +201,17 @@ export async function createInventoryAdjustment(
     if (!item.isActive) throw new AppError("invalid_input", `Line ${i + 1}: ${item.name} is inactive.`);
     if (!item.assetAccountId) throw new AppError("invalid_state", `${item.name} has no inventory asset account. Edit the item first.`);
     const q = money(l.quantity);
+    // Lots: stock added may start one; stock removed comes out of one that exists.
+    const lot = lots
+      ? await lotId(ctx, item, requireLotNumber(l.lotNumber, item, `Line ${i + 1}`), {
+          label: `Line ${i + 1}`,
+          ...(q.gt(0) ? { create: { expiresOn: l.lotExpiresOn } } : {}),
+        })
+      : null;
     // Stock removed is costed later by the engine; the current unit cost estimates it for limits.
     const current = l.unitCost === undefined || q.lt(0) ? (await stockOf(ctx, item.id, d.adjustmentDate)).unitCost : null;
     const unit = l.unitCost !== undefined ? money(l.unitCost) : (current ?? money(item.purchaseCost ?? 0));
-    lines.push({ item, q, unit, value: cents(q.abs().times(unit)) });
+    lines.push({ item, q, unit, value: cents(q.abs().times(unit)), lot, lotNumber: lots ? l.lotNumber! : null, lotExpiresOn: lots && q.gt(0) ? (l.lotExpiresOn ?? null) : null });
   }
   requirePostingWithinLimit(ctx.actor, sumMoney(lines.map((l) => l.value)), `${KIND_LABEL[kind]} of ${lines.length} item${lines.length === 1 ? "" : "s"}`);
 
@@ -224,6 +239,8 @@ export async function createInventoryAdjustment(
         itemId: l.item.id,
         quantity: toDbMoney(l.q),
         unitCost: l.q.gt(0) ? toDbMoney(l.unit) : null,
+        lotNumber: l.lotNumber,
+        lotExpiresOn: l.lotExpiresOn,
       }))
     )
     .returning();
@@ -258,6 +275,7 @@ export async function createInventoryAdjustment(
   }
 
   const movements: NewMovement[] = lines.map((l, i) => ({
+    lotId: l.lot,
     itemId: l.item.id,
     date: d.adjustmentDate,
     kind: kind === "opening" ? "opening" : "adjustment",

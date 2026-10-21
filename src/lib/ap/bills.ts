@@ -317,6 +317,8 @@ function billLineRows(org: string, billId: string, lines: Array<z.output<typeof 
     itemId: l.itemId,
     quantity: l.quantity,
     unitCost: l.unitCost,
+    lotNumber: l.lotNumber,
+    lotExpiresOn: l.lotExpiresOn,
     purchaseOrderLineId: l.purchaseOrderLineId ?? null,
   }));
 }
