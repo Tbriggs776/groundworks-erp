@@ -176,6 +176,16 @@ function ReceiptCard({
   const [txnDate, setTxnDate] = useState(f?.date ?? "");
   const [amount, setAmount] = useState(f?.total ?? "");
   const fmt = (v: string) => formatMoney(v, { currency });
+  // Fill the form from what was read when it opens (reading may finish after the card first shows).
+  const openForm = () => {
+    setBankAccountId(s?.bankAccount?.id ?? "");
+    setCategoryAccountId(s?.categoryAccount?.id ?? "");
+    setVendorId(s?.vendor?.id ?? "");
+    setPayeeName(f?.vendorName ?? "");
+    setTxnDate(f?.date ?? "");
+    setAmount(f?.total ?? "");
+    setRecording(true);
+  };
   const readable = r.contentType === "application/pdf" || r.contentType.startsWith("image/");
 
   const act = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>) =>
@@ -284,7 +294,7 @@ function ReceiptCard({
       {canEdit && r.readStatus !== "pending" && (
         <div className="mt-3">
           {!recording ? (
-            <Button size="sm" variant="outline" onClick={() => setRecording(true)}>
+            <Button size="sm" variant="outline" onClick={openForm}>
               Record as a new expense
             </Button>
           ) : (
