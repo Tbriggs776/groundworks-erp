@@ -15,6 +15,8 @@ import { journalEntriesStep } from "./import/journals";
 import { clearingStep } from "./import/clearing";
 import { finishStep } from "./import/finish";
 import { Kit, type Step } from "./import/kit";
+import { estimatesStep, purchaseOrdersStep } from "./import/orders";
+import { stockStep } from "./import/stock";
 import { auditStep, classesStep, companyStep, customersStep, departmentsStep, itemsStep, termsStep, vendorsStep } from "./import/lists";
 import { billPaymentsStep, customerPaymentsStep, depositsStep } from "./import/payments";
 import { billsStep, purchasesStep, transfersStep, vendorCreditsStep } from "./import/purchases";
@@ -45,6 +47,8 @@ export const STEPS: Step[] = [
   customersStep,
   vendorsStep,
   itemsStep,
+  estimatesStep,
+  purchaseOrdersStep,
   billsStep,
   vendorCreditsStep,
   purchasesStep,
@@ -58,6 +62,7 @@ export const STEPS: Step[] = [
   depositsStep,
   journalEntriesStep,
   clearingStep,
+  stockStep,
   finishStep,
 ];
 
@@ -135,18 +140,18 @@ export async function reconnect(ctx: Ctx, input: { code: string; realmId: string
   await audit(ctx, "qbo.reconnected", { realmId: conn.realmId });
 }
 
-function requireHuman(ctx: Ctx, action: string) {
+export function requireHuman(ctx: Ctx, action: string) {
   requirePermission(ctx.actor, "admin", "admin", action);
   if (ctx.actor.kind !== "user") throw new AppError("forbidden", `Only people can ${action}.`);
 }
 
-async function loadConnection(ctx: Ctx) {
+export async function loadConnection(ctx: Ctx) {
   const [conn] = await ctx.tx.select().from(qboConnections).where(eq(qboConnections.organizationId, ctx.actor.organizationId));
   if (!conn) throw new AppError("not_found", "This company isn't connected to QuickBooks.");
   return conn;
 }
 
-async function latestImport(ctx: Ctx, lock: boolean): Promise<QboImport | null> {
+export async function latestImport(ctx: Ctx, lock: boolean): Promise<QboImport | null> {
   const q = ctx.tx
     .select()
     .from(qboImports)

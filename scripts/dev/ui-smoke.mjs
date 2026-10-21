@@ -708,6 +708,10 @@ if (page.url().includes("qbo=not-configured")) {
   const reviewNotes = await page.getByText(/To review \(\d+\)/).count();
   console.log(reviewNotes ? "✓ flow: QuickBooks sign-in, new company, import ran to the end with notes to review" : "✗ flow: QuickBooks import has no notes");
   if (!reviewNotes) problems.push("quickbooks import notes");
+  // The finished import compares itself with QuickBooks' books by month.
+  await page.getByText(/months tie to QuickBooks/).waitFor({ timeout: 60000 });
+  await page.screenshot({ path: `${outDir}/quickbooks-tieout.png`, fullPage: true });
+  console.log("✓ flow: tie-out with QuickBooks compared month by month");
   await visit("/accounts", "quickbooks-accounts");
 } else {
   problems.push(`quickbooks import landed on ${page.url()}`);

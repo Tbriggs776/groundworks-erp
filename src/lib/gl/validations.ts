@@ -141,12 +141,15 @@ export async function v0TenantIntegrity(
 }
 
 /**
- * 2. All referenced accounts exist, are active, and not blocked.
+ * 2. All referenced accounts exist, are active, and not blocked. A
+ *    `conversion` journal restates history brought over from another system,
+ *    so it may post to an account that has since been made inactive.
  */
 export async function v2AccountsActive(
   tx: Tx,
   journalId: string
 ): Promise<ValidationResult> {
+  const [journal] = await tx.select({ source: glJournals.source }).from(glJournals).where(eq(glJournals.id, journalId));
   const lines = await tx
     .select({ id: glLines.id, accountId: glLines.accountId })
     .from(glLines)
@@ -192,7 +195,7 @@ export async function v2AccountsActive(
         meta: { accountCode: a.code },
       };
     }
-    if (!a.isActive) {
+    if (!a.isActive && journal?.source !== "conversion") {
       return {
         ok: false,
         code: "account_inactive",

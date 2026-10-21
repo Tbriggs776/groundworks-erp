@@ -9,6 +9,7 @@ import { nextNumber } from "@/lib/gl/number-series";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import type { QboRecord } from "../client";
 import { pagedStep, type Kit, type Ref } from "./kit";
+import { purchaseOrderOf } from "./orders";
 import {
   amountOf,
   auditVoided,
@@ -32,7 +33,7 @@ import {
  * and department; inventory items move stock as the app's own documents do.
  */
 
-const PRELOAD = ["Vendor", "Customer", "Item", "Account", "Class", "Department", "PaymentMethod"];
+const PRELOAD = ["Vendor", "Customer", "Item", "Account", "Class", "Department", "PaymentMethod", "PurchaseOrder", "PurchaseOrderLine"];
 const VOID_REASON = "Voided in QuickBooks";
 
 async function vendorOf(kit: Kit, r: QboRecord): Promise<string> {
@@ -62,6 +63,7 @@ export const billsStep = pagedStep({
         .insert(apBills)
         .values({
           organizationId: kit.org,
+          purchaseOrderId: await purchaseOrderOf(kit, r, lines),
           billNumber: await nextNumber(kit.ctx.tx, kit.org, "AP"),
           vendorInvoiceNumber: text(r.DocNumber, 100),
           vendorId,
@@ -79,6 +81,7 @@ export const billsStep = pagedStep({
           ...creatorFields(kit.ctx.actor),
         })
         .returning();
+      const poLines = await Promise.all(lines.map((l) => (l.poLine ? kit.local("PurchaseOrderLine", { value: l.poLine }) : null)));
       await kit.ctx.tx.insert(apBillLines).values(
         lines.map((l, i) => ({
           organizationId: kit.org,
@@ -91,6 +94,7 @@ export const billsStep = pagedStep({
           quantity: l.quantity,
           unitCost: l.unitCost,
           dimensions: l.dimensions,
+          purchaseOrderLineId: poLines[i],
         }))
       );
       if (total.isZero()) {

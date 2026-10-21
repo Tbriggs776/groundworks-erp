@@ -42,6 +42,7 @@ import * as lots from "@/lib/inventory/lots";
 import * as stock from "@/lib/inventory/stock";
 import * as pdf from "@/lib/pdf/documents";
 import * as qbo from "@/lib/qbo/service";
+import * as qboTieout from "@/lib/qbo/tieout";
 import { listReviewQueue } from "@/lib/review";
 import * as taxLiability from "@/lib/sales-tax/liability";
 import * as taxRates from "@/lib/sales-tax/rates";
@@ -134,6 +135,18 @@ export const OPERATIONS: Operation[] = [
     scope: "read",
     input: Empty,
     run: (ctx) => qbo.getImportStatus(ctx),
+  }),
+  op({
+    name: "get_quickbooks_tieout",
+    title: "QuickBooks tie-out",
+    description:
+      "For a company imported from QuickBooks Online: each month whose activity here differs from QuickBooks' own books (its balance sheet and P&L by month), with the accounts that differ and by how much (on each account's statement side: assets and expenses debit, the rest credit). Read only: a person compares and posts the conversion entries that close the differences. An empty list of months means the books tie.",
+    group: "Context",
+    method: "GET",
+    path: "/quickbooks/tieout",
+    scope: "read",
+    input: Empty,
+    run: (ctx) => qboTieout.getTieout(ctx),
   }),
   // ---------------------------------------------------------- Month-end close
   op({

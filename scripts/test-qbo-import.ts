@@ -25,6 +25,7 @@ import { toAppError } from "../src/lib/errors";
 import { getCompanyProfile } from "../src/lib/company/profile";
 import { checkState, startAuthorization, STATE_COOKIE } from "../src/lib/qbo/oauth";
 import * as qbo from "../src/lib/qbo/service";
+import * as tieout from "../src/lib/qbo/tieout";
 import { seal, sign, unseal, verifySigned } from "../src/lib/security/crypto";
 import * as ws from "../src/lib/workspace/service";
 import { FAKE_CLIENT_ID, FAKE_CLIENT_SECRET, GOOD_CODE, startFakeQbo } from "./lib/fake-qbo";
@@ -527,15 +528,47 @@ async function main() {
     assertEq(await balance(await qboAccount("1")), -1321.8, "Checking");
   });
 
-  await check("inventory moves with the history and costs FIFO", async () => {
+  await check("inventory moves with the history, costs FIFO, then matches QuickBooks' stock on hand", async () => {
     const rock = await localId("Item", "2");
+    const [sale] = await db.execute<{ cost: string }>(sql`
+      SELECT cost::text FROM inventory_movements WHERE item_id = ${rock} AND source_type = 'ar_invoice' AND voided_at IS NULL`);
+    assertEq(Number(sale.cost), 125, "the sale took the oldest unit (FIFO)");
     const [s] = await db.execute<{ q: string; v: string }>(sql`
       SELECT coalesce(sum(quantity), 0)::text AS q, coalesce(sum(CASE WHEN quantity > 0 THEN cost ELSE -cost END), 0)::text AS v
         FROM inventory_movements WHERE item_id = ${rock} AND voided_at IS NULL`);
-    assertEq(Number(s.q), 4, "3 + 2 bought, 1 sold");
-    assertEq(Number(s.v), 490, "375 + 240 − 125");
-    assertEq(await balance(await qboAccount("5")), 490, "Inventory Asset ties to the stock");
-    assertEq(await balance(await qboAccount("11")), 125, "COGS: the oldest unit");
+    assertEq(`${Number(s.q)} ${Number(s.v)}`, "5 610", "QuickBooks' 5 units worth 610 (history here gave 4 worth 490)");
+    const [adj] = await db.execute<{ memo: string; date: string }>(sql`
+      SELECT memo, adjustment_date::text AS date FROM inventory_adjustments WHERE organization_id = ${orgId}`);
+    assert(adj?.memo.includes("Matches stock on hand to QuickBooks"), "a labeled adjustment");
+    assertEq(adj.date, new Date().toISOString().slice(0, 10), "dated the import day");
+    assert((await notes()).some((x) => x.startsWith("Rock Fountain: 4 on hand worth 490.00 here, 5 worth 610.00 in QuickBooks")), "noted");
+    assertEq(await balance(await qboAccount("5")), 610, "Inventory Asset ties to the stock");
+    assertEq(await balance(await qboAccount("11")), 5, "COGS: 125 sold + 490 out − 610 back in");
+  });
+
+  section("Estimates and purchase orders");
+  await check("estimates keep their status and totals; the invoice that billed one points at it", async () => {
+    const rows = await db.execute<{ id: string; n: string; status: string; total: string; tax: string; expires: string | null }>(sql`
+      SELECT id, estimate_number AS n, status, total_amount::text AS total, tax_amount::text AS tax, expiration_date::text AS expires
+        FROM estimates WHERE organization_id = ${orgId} ORDER BY estimate_number`);
+    assertEq(rows.map((r) => `${r.n}:${r.status}:${Number(r.total)}`).join(", "), "3001:closed:150, 3002:pending:162", "estimates");
+    assertEq(`${Number(rows[1].tax)} ${rows[1].expires}`, "12 2026-05-10", "tax and expiry");
+    const [inv] = await db.execute<{ e: string | null }>(sql`SELECT estimate_id AS e FROM ar_invoices WHERE organization_id = ${orgId} AND invoice_number = '1001'`);
+    assertEq(inv.e, rows[0].id, "invoice 1001 billed estimate 3001");
+  });
+
+  await check("purchase orders come across approved; bill lines point at the lines they billed", async () => {
+    const pos = await db.execute<{ id: string; n: string; status: string; total: string; msg: string | null; lines: number }>(sql`
+      SELECT p.id, p.po_number AS n, p.status, p.total_amount::text AS total, p.vendor_message AS msg,
+             (SELECT count(*)::int FROM purchase_order_lines l WHERE l.purchase_order_id = p.id) AS lines
+        FROM purchase_orders p WHERE p.organization_id = ${orgId} ORDER BY p.po_number`);
+    assertEq(pos.map((p) => `${p.n}:${p.status}:${Number(p.total)}:${p.lines}`).join(", "), "4001:closed:1375:2, 4002:open:80:1", "purchase orders");
+    assertEq(pos[1].msg, "Deliver to the back door", "message to the vendor");
+    assert((await notes()).some((x) => x.startsWith("Purchase order 4002: lines of zero or less")), "zero line noted");
+    const [bill] = await db.execute<{ po: string | null; linked: number }>(sql`
+      SELECT b.purchase_order_id AS po, (SELECT count(*)::int FROM ap_bill_lines l WHERE l.bill_id = b.id AND l.purchase_order_line_id IS NOT NULL) AS linked
+        FROM ap_bills b WHERE b.organization_id = ${orgId} AND b.vendor_invoice_number = 'H-100'`);
+    assertEq(`${bill.po === pos[0].id} ${bill.linked}`, "true 2", "bill H-100 billed PO 4001, line by line");
   });
 
   await check("tax, income, AR, and the trial balance tie to the hand-worked figures", async () => {
@@ -572,7 +605,68 @@ async function main() {
     const [inv] = await db.execute<{ prefix: string; last: number; width: number }>(sql`
       SELECT prefix, last_used_number AS last, width FROM number_series WHERE organization_id = ${orgId} AND code = 'INV'`);
     assertEq(`${inv.prefix}|${inv.last}|${inv.width}`, "|1004|4", "next invoice is 1005");
+    const others = await db.execute<{ code: string; last: number }>(sql`
+      SELECT code, last_used_number AS last FROM number_series WHERE organization_id = ${orgId} AND code IN ('EST', 'PO') ORDER BY code`);
+    assertEq(others.map((o) => `${o.code}:${o.last}`).join(", "), "EST:3002, PO:4002", "estimates and purchase orders continue too");
     assert((await notes()).some((x) => x.startsWith("Credit memo numbers didn't all come across as plain numbers")), "credit memos keep CM-");
+  });
+
+  section("Tie-out with QuickBooks");
+  const SIDE_DEBIT = new Set(["cash", "receivables", "inventory", "other_current_asset", "fixed_assets", "other_asset", "cogs_materials", "cogs_labor", "cogs_equipment", "cogs_subcontractor", "cogs_other", "operating_expense", "sga", "interest", "tax", "other_expense"]);
+  await check("QuickBooks' books by month come across; only the real differences show", async () => {
+    await expectError(() => runAs(asAgent(), (ctx) => tieout.refreshTieout(ctx)), "forbidden");
+    assertEq((await runAs(as("viewer"), (ctx) => tieout.getTieout(ctx))).ready, false, "not compared yet");
+    // QuickBooks' books: everything that came across, plus what its API doesn't show.
+    const ours = await db.execute<{ qbo: string; month: string; net: string; sub: string; code: string }>(sql`
+      SELECT m.qbo_id AS qbo, to_char(date_trunc('month', j.journal_date), 'YYYY-MM') AS month, sum(l.debit_local - l.credit_local)::text AS net,
+             a.subcategory AS sub, a.code
+        FROM gl_lines l JOIN gl_journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
+        JOIN qbo_id_map m ON m.local_id = a.id AND m.entity = 'Account' AND m.organization_id = ${orgId}
+       WHERE j.organization_id = ${orgId} AND j.status IN ('posted', 'reversed')
+       GROUP BY 1, 2, 4, 5`);
+    fake.state.books = [
+      ...ours.map((r) => ({ account: r.qbo, month: r.month, amount: Number(r.net) * (SIDE_DEBIT.has(r.sub) ? 1 : -1) })),
+      // A sales tax payment (QuickBooks' API doesn't share them).
+      { account: "14", month: "2026-03", amount: -20 },
+      { account: "1", month: "2026-03", amount: -20 },
+      // A bank fee booked to supplies.
+      { account: "19", month: "2026-04", amount: 5 },
+      { account: "1", month: "2026-04", amount: -5 },
+      // An account that never came across.
+      { account: "77", name: "Ask My Accountant", kind: "pl" as const, month: "2026-05", amount: 12 },
+      { account: "1", month: "2026-05", amount: -12 },
+    ];
+    const t = await runAs(as(), (ctx) => tieout.refreshTieout(ctx));
+    assert(t.ready && t.monthsCompared >= 7, `compared ${t.monthsCompared} months`);
+    assertEq(t.months.map((m) => m.month).join(", "), "2026-03, 2026-04, 2026-05", "only the months that differ");
+    const march = t.months[0].lines.map((l) => `${l.code}:${Number(l.difference)}`).join(", ");
+    assertEq(march, "1010:-20, 2200:-20", "March: the tax payment, on each account's side");
+    const may = t.months[2];
+    assert(may.lines.some((l) => l.accountId === null && l.name === "Ask My Accountant"), "an account that didn't come across shows by its QuickBooks name");
+    assert(fake.state.queries.some((q) => q.startsWith("report BalanceSheet 2026-07-01")), "read a year at a time, balances carried across");
+    const agentView = await runAs(asAgent(), (ctx) => tieout.getTieout(ctx));
+    assertEq(agentView.months.length, 3, "agents can read it");
+  });
+
+  await check("an admin posts the entries that close the differences; agents and viewers can't", async () => {
+    await expectError(() => runAs(asAgent(), (ctx) => tieout.postTieoutEntries(ctx, { month: "2026-03" })), "forbidden");
+    await expectError(() => runAs(as("bookkeeper"), (ctx) => tieout.postTieoutEntries(ctx, { month: "2026-03" })), "forbidden");
+    let t = await runAs(as("admin"), (ctx) => tieout.postTieoutEntries(ctx, { month: "2026-03" }));
+    assertEq(t.months.map((m) => m.month).join(", "), "2026-04, 2026-05", "March ties now");
+    const lines = await db.execute<{ code: string; dr: string; cr: string; date: string; source: string }>(sql`
+      SELECT a.code, l.debit::text AS dr, l.credit::text AS cr, j.journal_date::text AS date, j.source FROM gl_lines l
+        JOIN gl_journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
+       WHERE j.organization_id = ${orgId} AND j.document_no = 'TIEOUT-2026-03' ORDER BY a.code`);
+    assertEq(lines.map((l) => `${l.code} ${Number(l.dr)}/${Number(l.cr)}`).join(", "), "1010 0/20, 2200 20/0", "Dr Sales Tax Payable / Cr Checking");
+    assertEq(`${lines[0].date} ${lines[0].source}`, "2026-03-31 conversion", "a conversion entry on the month's last day");
+    t = await runAs(as("admin"), (ctx) => tieout.postTieoutEntries(ctx, {}));
+    assertEq(t.months.map((m) => m.month).join(", "), "2026-05", "only the account that didn't come across is left");
+    assertEq(t.months[0].postable, false, "nothing left to post there");
+    assert(t.months[0].lines.some((l) => l.code === "3300" && Number(l.difference) === 12), "Opening Balance Equity holds it");
+    await expectError(() => runAs(as("admin"), (ctx) => tieout.postTieoutEntries(ctx, {})), "invalid_state");
+    assertEq(await balance(await qboAccount("1")), -1358.8, "Checking: −1321.80 − 20 − 5 − 12");
+    const [a] = await db.select().from(auditLog).where(and(eq(auditLog.organizationId, orgId), eq(auditLog.event, "qbo.tieout.posted")));
+    assert(a, "audited");
   });
 
   section("Reconnect and disconnect");
