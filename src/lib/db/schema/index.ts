@@ -25,3 +25,4 @@ export * from "./sales";
 export * from "./security";
 export * from "./banking";
 export * from "./email";
+export * from "./inventory";

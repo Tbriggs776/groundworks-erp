@@ -4,6 +4,8 @@ import type { BankTransaction, BankTransactionLine } from "@/lib/db/schema";
 import { AppError } from "@/lib/errors";
 import { createAndPostJournal, reverseJournal, type JournalLineInput } from "@/lib/gl/posting";
 import { sourceCodeId } from "@/lib/gl/lookups";
+import { recordPurchase } from "@/lib/inventory/documents";
+import { voidMovements } from "@/lib/inventory/engine";
 import { money, toDbMoney } from "@/lib/money";
 
 /**
@@ -95,6 +97,9 @@ export async function postBankTransactionToGl(
     tx
   );
   if (!result.ok) throw postingFailed(result);
+  if (!moneyIn && txn.type !== "transfer") {
+    await recordPurchase(ctx, { sourceType: "bank_transaction", sourceId: txn.id, label, date: txn.txnDate, exchangeRate: txn.exchangeRate, lines });
+  }
 
   await writeAudit(
     {
@@ -128,6 +133,7 @@ export async function voidBankTransactionFromGl(
     tx
   );
   if (!result.ok) throw postingFailed(result);
+  await voidMovements(ctx, "bank_transaction", txn.id);
   await writeAudit(
     {
       organizationId: actor.organizationId,

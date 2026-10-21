@@ -81,6 +81,7 @@ export const DEFAULT_COA: AccountSeed[] = [
 
   // --- COST OF GOODS SOLD ---
   { code: "5000", name: "Cost of Labor", category: "income_statement", subcategory: "cogs_labor", normalBalance: "debit" },
+  { code: "5050", name: "Cost of Goods Sold", category: "income_statement", subcategory: "cogs_materials", normalBalance: "debit", description: "What inventory items cost when sold" },
   { code: "5100", name: "Supplies & Materials", category: "income_statement", subcategory: "cogs_materials", normalBalance: "debit" },
   { code: "5200", name: "Equipment Rental", category: "income_statement", subcategory: "cogs_equipment", normalBalance: "debit", form1099Box: "misc_1" },
   { code: "5300", name: "Contract Labor", category: "income_statement", subcategory: "cogs_subcontractor", normalBalance: "debit", form1099Box: "nec_1" },

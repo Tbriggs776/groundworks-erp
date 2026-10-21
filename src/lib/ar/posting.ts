@@ -11,6 +11,7 @@ import {
 import { accountByCode, controlAccount, sourceCodeId } from "@/lib/gl/lookups";
 import { money, toDbMoney } from "@/lib/money";
 import { invoiceSettled } from "./balances";
+import { voidMovements } from "@/lib/inventory/engine";
 import { postSalesDocument } from "./documents";
 
 /**
@@ -83,6 +84,7 @@ export async function voidInvoiceFromGl(
     tx
   );
   if (!result.ok) throw postingFailed(result);
+  await voidMovements(ctx, "ar_invoice", invoice.id);
 
   await writeAudit(
     {

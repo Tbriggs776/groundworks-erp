@@ -232,6 +232,13 @@
       "when": 1792540467866,
       "tag": "0032_email",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792591385426,
+      "tag": "0033_inventory",
+      "breakpoints": true
     }
   ]
 }

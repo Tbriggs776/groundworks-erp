@@ -37,6 +37,8 @@ import * as messaging from "@/lib/messaging/service";
 import * as reportDetail from "@/lib/reports/detail";
 import * as reportExports from "@/lib/reports/exports";
 import * as finStatements from "@/lib/reports/statements";
+import * as inventoryAdjustments from "@/lib/inventory/adjustments";
+import * as stock from "@/lib/inventory/stock";
 import * as pdf from "@/lib/pdf/documents";
 import { listReviewQueue } from "@/lib/review";
 import * as taxLiability from "@/lib/sales-tax/liability";
@@ -64,7 +66,7 @@ export type Operation = {
   name: string;
   title: string;
   description: string;
-  group: "Context" | "Accounting" | "Sales" | "Sales tax" | "Expenses" | "Banking" | "Reports" | "Review";
+  group: "Context" | "Accounting" | "Sales" | "Sales tax" | "Expenses" | "Inventory" | "Banking" | "Reports" | "Review";
   method: HttpMethod;
   path: string;
   scope: Scope;
@@ -445,7 +447,7 @@ export const OPERATIONS: Operation[] = [
   op({
     name: "list_items",
     title: "List products & services",
-    description: "What the business sells, with default prices and income accounts. Search with q.",
+    description: "What the business sells, with default prices and income accounts. Inventory items also show onHand and stockValue. Search with q; filter by type.",
     group: "Sales",
     method: "GET",
     path: "/items",
@@ -468,7 +470,7 @@ export const OPERATIONS: Operation[] = [
     name: "create_item",
     title: "Create a product or service",
     description:
-      "Add something the business sells. Give it an income account (e.g. 4100 Services) and usually a sales price so invoice lines can be just { itemId, quantity }.",
+      "Add something the business sells. Give it an income account (e.g. 4100 Services) and usually a sales price so invoice lines can be just { itemId, quantity }. type inventory tracks stock: it needs an inventory asset account and a cost of goods sold account (both default), and openingStock records what's on hand when you start (an opening stock adjustment; needs the post scope).",
     group: "Sales",
     method: "POST",
     path: "/items",
@@ -479,13 +481,108 @@ export const OPERATIONS: Operation[] = [
   op({
     name: "update_item",
     title: "Update a product or service",
-    description: "Change fields on a product or service. Only the fields you send change.",
+    description: "Change fields on a product or service. Only the fields you send change. An inventory item with stock movements stays inventory and keeps its asset account; make it inactive instead.",
     group: "Sales",
     method: "PATCH",
     path: "/items/{id}",
     scope: "write",
     input: items.UpdateItemSchema,
     run: (ctx, input) => items.updateItem(ctx, input),
+  }),
+  // -------------------------------------------------------------- Inventory
+  op({
+    name: "get_inventory_settings",
+    title: "Get the inventory costing method",
+    description:
+      "The company's costing method (fifo or average) and whether it's locked. It's set once: after the first stock movement it can't change.",
+    group: "Inventory",
+    method: "GET",
+    path: "/inventory/settings",
+    scope: "read",
+    input: Empty,
+    run: (ctx) => stock.getInventorySettings(ctx),
+  }),
+  op({
+    name: "update_inventory_settings",
+    title: "Set the inventory costing method",
+    description:
+      "Choose how sales are costed: fifo (oldest units first) or average (running weighted average). Only before the company's first stock movement. Requires admin.",
+    group: "Inventory",
+    method: "PATCH",
+    path: "/inventory/settings",
+    scope: "admin",
+    input: stock.UpdateInventorySettingsSchema,
+    run: (ctx, input) => stock.updateInventorySettings(ctx, input),
+  }),
+  op({
+    name: "get_item_stock",
+    title: "Get an item's stock",
+    description:
+      "An inventory item's quantity on hand, value, average unit cost, whether it's at or below its reorder point, and its movements newest first (bought, sold, returned, adjusted), each with the cost the costing method gave it and the quantity on hand after it. Negative on hand means more was sold than was in stock.",
+    group: "Inventory",
+    method: "GET",
+    path: "/items/{id}/stock",
+    scope: "read",
+    input: stock.ItemStockSchema,
+    run: (ctx, input) => stock.getItemStock(ctx, input),
+  }),
+  op({
+    name: "list_inventory_adjustments",
+    title: "List inventory adjustments",
+    description: "Stock counts, shrinkage, found stock, and opening stock, newest first. Filter by status or search q.",
+    group: "Inventory",
+    method: "GET",
+    path: "/inventory/adjustments",
+    scope: "read",
+    input: inventoryAdjustments.ListInventoryAdjustmentsSchema,
+    run: (ctx, input) => inventoryAdjustments.listInventoryAdjustments(ctx, input),
+  }),
+  op({
+    name: "get_inventory_adjustment",
+    title: "Get an inventory adjustment",
+    description: "One adjustment: its lines (item, quantity change, value) and the journals behind it.",
+    group: "Inventory",
+    method: "GET",
+    path: "/inventory/adjustments/{id}",
+    scope: "read",
+    input: ById,
+    run: (ctx, input) => inventoryAdjustments.getInventoryAdjustment(ctx, input),
+  }),
+  op({
+    name: "create_inventory_adjustment",
+    title: "Adjust inventory",
+    description:
+      "Change quantities on hand after a count, damage, loss, or found stock. Each line is an inventory item and the change (+ adds, − removes). Stock added is valued at unitCost (default: the current unit cost); stock removed is costed by the costing method. The difference posts against offsetAccountId (an inventory shrinkage or cost of goods sold account). Posts immediately; dated earlier than later sales, those sales recost. Agents' posting limits apply to the value.",
+    group: "Inventory",
+    method: "POST",
+    path: "/inventory/adjustments",
+    scope: "post",
+    input: inventoryAdjustments.CreateInventoryAdjustmentSchema,
+    run: (ctx, input) => inventoryAdjustments.createInventoryAdjustment(ctx, input),
+  }),
+  op({
+    name: "void_inventory_adjustment",
+    title: "Void an inventory adjustment",
+    description: "Void an adjustment: reverses its journal and takes its quantities out; later sales of those items recost. Requires admin.",
+    group: "Inventory",
+    method: "POST",
+    path: "/inventory/adjustments/{id}/void",
+    scope: "post",
+    destructive: true,
+    input: Void,
+    run: (ctx, input) => inventoryAdjustments.voidInventoryAdjustment(ctx, input),
+  }),
+  op({
+    name: "report_inventory_valuation",
+    title: "Inventory valuation",
+    description:
+      "Quantity on hand, average cost, and asset value per inventory item as of a date (default today), with a note comparing the total to the inventory asset accounts in the ledger. Status flags items at or below their reorder point, and negative stock. Returns a report table.",
+    group: "Reports",
+    method: "GET",
+    path: "/reports/inventory-valuation",
+    scope: "read",
+    input: stock.InventoryValuationSchema,
+    run: (ctx, input) => stock.inventoryValuation(ctx, input),
   }),
   op({
     name: "list_invoices",

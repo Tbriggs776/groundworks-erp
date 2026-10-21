@@ -25,7 +25,7 @@ import {
 } from "./_shared";
 import { accounts } from "./accounts";
 import { agents } from "./agents";
-import { arPayments, type DimensionTag } from "./ar";
+import { arPayments, items, type DimensionTag } from "./ar";
 import { organizations, profiles } from "./identity";
 import { glJournals, glLines } from "./journals";
 import { customers, vendors } from "./parties";
@@ -144,6 +144,10 @@ export const bankTransactionLines = pgTable(
     /** Deposits only: a sales receipt moved out of Undeposited Funds. */
     salesReceiptId: uuid("sales_receipt_id").references(() => salesReceipts.id, { onDelete: "restrict" }),
     dimensions: jsonb("dimensions").$type<DimensionTag[]>().notNull().default([]),
+    /** Expenses and checks: a product bought on this line; inventory items add to stock. */
+    itemId: uuid("item_id").references(() => items.id, { onDelete: "restrict" }),
+    quantity: numeric("quantity", { precision: 20, scale: 4 }),
+    unitCost: numeric("unit_cost", { precision: 20, scale: 4 }),
     ...timestamps,
   },
   (t) => [

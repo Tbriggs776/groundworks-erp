@@ -111,6 +111,8 @@ const pages = [
   ["/reports/expenses-by-vendor", "expenses-by-vendor"], ["/reports/open-invoices", "open-invoices"],
   ["/reports/unpaid-bills", null], ["/reports/audit-trail", "audit-trail"],
   ["/periods", "close-books"], ["/reports/changes-after-close", null], ["/settings/email", "email-settings"],
+  ["/items/adjustments", null], ["/items/adjustments/new", null], ["/settings/inventory", "inventory-settings"],
+  ["/reports/inventory-valuation", null],
 ];
 for (const [p, n] of pages) await visit(p, n);
 
@@ -426,7 +428,7 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   await page.getByRole("option", { name: "1010 · Checking" }).click();
   await page.getByRole("combobox", { name: "Category" }).first().click();
   await page.getByRole("option", { name: "6200 · Dues & Subscriptions" }).click();
-  await page.locator('main tbody input[inputmode="decimal"]').first().fill("1234.56");
+  await page.locator('main tbody input[placeholder="0.00"]').first().fill("1234.56");
   await page.getByPlaceholder("Or type a name").fill(`Smoke Payee ${stamp}`);
   await page.getByText("Print later (adds it to Print checks)").click();
   await page.getByRole("button", { name: "Save and post" }).click();
@@ -445,6 +447,45 @@ await page.screenshot({ path: `${outDir}/invoice-detail.png`, fullPage: true });
   const checksOk = res.status() === 200 && (await res.body()).subarray(0, 5).toString() === "%PDF-";
   console.log(checksOk ? "✓ flow: queued check numbered and printed to PDF" : "✗ flow: print checks");
   if (!checksOk) problems.push("print checks PDF " + checksHref + " " + res.status());
+}
+
+// Flow I: an inventory item with opening stock, its stock page, an
+// adjustment, the valuation report, and the invoice form's stock warning.
+{
+  const name = `Smoke Widget ${Date.now()}`;
+  await page.goto(BASE + "/items", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "New item" }).click();
+  const dlg = page.getByRole("dialog");
+  await dlg.getByPlaceholder("Consulting").fill(name);
+  await dlg.locator("select").first().selectOption("inventory");
+  await dlg.getByPlaceholder("0.00").first().fill("25");
+  await dlg.getByPlaceholder("0.00").nth(1).fill("10");
+  await dlg.getByPlaceholder("0", { exact: true }).fill("5");
+  await page.screenshot({ path: `${outDir}/item-inventory-new.png`, fullPage: true });
+  await dlg.getByRole("button", { name: "Create item" }).click();
+  await dlg.waitFor({ state: "hidden", timeout: 15000 });
+  await page.getByRole("row", { name: new RegExp(name) }).getByRole("link", { name: "5" }).click();
+  await page.waitForURL(/\/items\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("$50.00").first().waitFor({ timeout: 10000 });
+  await page.screenshot({ path: `${outDir}/item-stock.png`, fullPage: true });
+  await page.getByRole("link", { name: "Adjust quantity" }).click();
+  await page.waitForURL(/\/items\/adjustments\/new/, { timeout: 15000 });
+  await page.getByPlaceholder("+/−").first().fill("-1");
+  await page.getByPlaceholder("Year-end count").fill("Smoke damage");
+  await page.screenshot({ path: `${outDir}/inventory-adjustment-new.png`, fullPage: true });
+  await page.getByRole("button", { name: "Post adjustment" }).click();
+  await page.waitForURL(/\/items\/adjustments\/[0-9a-f-]{36}$/, { timeout: 15000 });
+  await page.getByText("-$10.00").first().waitFor({ timeout: 10000 });
+  await page.goto(BASE + "/reports/inventory-valuation", { waitUntil: "networkidle" });
+  const val = await page.locator("main").innerText();
+  await page.screenshot({ path: `${outDir}/inventory-valuation.png`, fullPage: true });
+  await page.goto(BASE + "/ar/invoices/new", { waitUntil: "networkidle" });
+  await page.locator("tbody select").first().selectOption({ label: name });
+  await page.locator('tbody input[inputmode="decimal"]').first().fill("10");
+  const warned = await page.getByText("Only 4 on hand").isVisible();
+  const ok = val.includes(name) && val.includes("$40.00") && warned;
+  console.log(ok ? "✓ flow: inventory item, stock page, adjustment, valuation, and the stock warning" : "✗ flow: inventory");
+  if (!ok) problems.push(`inventory flow: valuation has item ${val.includes(name)}, $40 ${val.includes("$40.00")}, warned ${warned}`);
 }
 
 // Flow 2: create an agent and mint a key.
@@ -489,7 +530,7 @@ if (before > 0) {
   await page.goto(BASE + "/banking/transactions/new?type=expense", { waitUntil: "networkidle" });
   await pick("Bank account", "1010 · Checking");
   await pick("Category", "6200 · Dues & Subscriptions");
-  await page.locator('main tbody input[inputmode="decimal"]').first().fill(amt);
+  await page.locator('main tbody input[placeholder="0.00"]').first().fill(amt);
   await page.getByPlaceholder("Or type a name").fill(`Smoke Software ${stamp}`);
   await page.getByRole("button", { name: "Save and post" }).click();
   await page.waitForURL(/\/banking\/transactions\/[0-9a-f-]{36}$/, { timeout: 15000 });

@@ -123,7 +123,8 @@ export function SalesDocForm({
 }: {
   kind: SalesDocFormKind;
   customers: Customer[];
-  items: Item[];
+  /** Inventory items carry onHand. */
+  items: Array<Item & { onHand?: string | null }>;
   incomeAccounts: Account[];
   taxRates: TaxRateChoice[];
   depositAccounts?: Account[];
@@ -182,6 +183,21 @@ export function SalesDocForm({
   const unscheduled = recurring && recurringType === "unscheduled";
 
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+  // Selling more than is on hand is allowed; say so before it posts.
+  const selling = kind === "invoice" || kind === "sales_receipt";
+  const short = new Map<string, string>();
+  if (selling) {
+    const wanted = new Map<string, Decimal>();
+    for (const l of lines) {
+      const onHand = l.itemId ? itemById.get(l.itemId)?.onHand : null;
+      if (onHand === null || onHand === undefined) continue;
+      wanted.set(l.itemId, (wanted.get(l.itemId) ?? money(0)).plus(money(l.quantity || "0")));
+    }
+    for (const [itemId, q] of wanted) {
+      const onHand = money(itemById.get(itemId)!.onHand!);
+      if (q.gt(onHand)) short.set(itemId, onHand.toDecimalPlaces(4).toString());
+    }
+  }
   const customer = customers.find((c) => c.id === customerId);
   const currency = customer?.currency ?? "USD";
   const subtotal = sumMoney(lines.map(lineAmount));
@@ -470,6 +486,11 @@ export function SalesDocForm({
                 </td>
                 <td className="px-3 py-2">
                   <input inputMode="decimal" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} className={`${cell} text-right font-mono`} />
+                  {short.has(l.itemId) && (
+                    <div className="text-[10px] text-amber-600 mt-1 text-right" title="It can still post: those units are costed at the last known cost until stock comes in.">
+                      Only {short.get(l.itemId)} on hand
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <input inputMode="decimal" value={l.unitPrice} onChange={(e) => update(l.key, { unitPrice: e.target.value })} className={`${cell} text-right font-mono`} placeholder="0.00" />

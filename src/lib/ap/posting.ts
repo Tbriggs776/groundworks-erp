@@ -9,6 +9,8 @@ import {
   type JournalLineInput,
 } from "@/lib/gl/posting";
 import { controlAccount, sourceCodeId } from "@/lib/gl/lookups";
+import { recordPurchase } from "@/lib/inventory/documents";
+import { voidMovements } from "@/lib/inventory/engine";
 import { sumMoney, toDbMoney } from "@/lib/money";
 
 /**
@@ -79,6 +81,14 @@ export async function postBillToGl(
       ...result.meta,
     });
   }
+  await recordPurchase(ctx, {
+    sourceType: "ap_bill",
+    sourceId: bill.id,
+    label: `Bill ${bill.billNumber}`,
+    date: bill.postingDate ?? bill.billDate,
+    exchangeRate: bill.exchangeRate,
+    lines,
+  });
 
   await writeAudit(
     {
@@ -129,6 +139,7 @@ export async function voidBillFromGl(
       postingCode: result.code,
     });
   }
+  await voidMovements(ctx, "ap_bill", bill.id);
 
   await writeAudit(
     {

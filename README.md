@@ -41,6 +41,18 @@ do the bookkeeping, with humans approving what posts.
 **Expenses**: vendors (1099 flags), bills with amount-tiered approval routing,
 bill payments with discounts
 
+**Inventory**
+- Inventory items with quantity on hand, an asset account, a cost of goods
+  sold account, a reorder point, and opening stock
+- Costing method per company, set once: FIFO or weighted average
+- Bills, expenses, checks, and purchase orders buy into stock; invoices and
+  sales receipts post cost of goods sold; credit memos and refunds return
+  stock; adjustments for counts, damage, and found stock
+- Backdating and voids recost every later sale automatically; selling past
+  zero is allowed (with a warning) and the next stock in fills it
+- Inventory valuation report (as of any date, ties to the ledger) and a
+  stock history page per item
+
 **Banking**
 - Expenses, checks, deposits (group payments from Undeposited Funds), and
   transfers, including paying a credit card
@@ -123,7 +135,7 @@ curl https://YOUR-APP/api/v1/me -H "Authorization: Bearer gwk_…"
 | MCP | `POST /api/mcp`, Streamable HTTP, stateless JSON; protocol 2024-11-05 → 2025-11-25 |
 | REST | `/api/v1/…`; spec at `/api/v1/openapi.json` |
 | Auth | `Authorization: Bearer gwk_…` (or `x-api-key`) |
-| Tools | 217 operations: accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), month-end close (checklist, close and reopen, checklist items), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
+| Tools | 225 operations: accounts, journals, customers, items, estimates, invoices, recurring invoices, payments, sales receipts, credit memos and credits, refunds, sales tax, vendors, purchase orders, bills, recurring bills, bill payments, vendor credits and refunds, printed checks, banking (transactions, statement import, For review, rules, reconciliation), month-end close (checklist, close and reopen, checklist items), inventory (costing method, item stock, adjustments, valuation), email (documents and payment reminders with PDFs, send history, settings), reports (P&L by month, class, and budget; cash flow; sales by customer and item; expenses by vendor; open invoices and unpaid bills; 1099s; audit trail; changes after close; any report as CSV or PDF), review queue, activity |
 | Money / dates | decimal strings (`"1250.00"`), `YYYY-MM-DD` |
 | Dry run | `X-Dry-Run: true` / `dry_run: true`: the whole operation runs, GL posting included, then rolls back |
 | Retries | `Idempotency-Key` header / `idempotency_key` arg: a create runs once per key |
@@ -170,7 +182,9 @@ npm run test:db:reset                         # drop, recreate, migrate
 DATABASE_URL=$TEST_DATABASE_URL npm run test:e2e
 ```
 
-27 suites: posting engine, recurring/allocations/budgets, reports,
+28 suites: posting engine,
+inventory (FIFO and average, backdating, negative stock, voids, closed
+periods, adjustments, opening stock, purchase orders, valuation tie-out), recurring/allocations/budgets, reports,
 email (every document type, templates, who may send where, failed sends,
 scheduled reminders, signed delivery events),
 month-end close (checklist, soft and hard close, closing password,
@@ -236,7 +250,8 @@ Nobody at Groundworks can see inside a customer's workspace by default.
   email, online payments, automated sales tax rates
 - **Expenses**: vendor credits, receipt capture, purchase orders, recurring
   bills, 1099 reporting
-- **Inventory**: quantity on hand and COGS
+- **Inventory**: specific identification by lot, vendor credits of stock,
+  receiving purchase orders by quantity, stock status and reorder report
 - **Reports**: cash flow statement, P&L by class / location, sales by
   customer / item, expenses by vendor
 - **Migration**: QuickBooks Online importer (chart, customers, vendors, items,

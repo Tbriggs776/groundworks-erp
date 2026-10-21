@@ -545,7 +545,8 @@ export async function v9PeriodStatus(
   if (row.periodStatus === "open") return { ok: true };
 
   if (row.periodStatus === "soft_closed") {
-    if (row.source === "adjusting" || row.source === "reversing") {
+    // Inventory cost corrections are adjustments the costing engine makes.
+    if (row.source === "adjusting" || row.source === "reversing" || row.source === "inventory") {
       return { ok: true };
     }
     return {

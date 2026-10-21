@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import { and, asc, eq } from "drizzle-orm";
 import { AppShell } from "@/components/app-shell/shell";
 import { runAs } from "@/lib/actor";
@@ -33,7 +34,7 @@ export default async function ItemsPage() {
       crumb={`${organization.name} · Sales`}
       userEmail={user?.email}
     >
-      <ItemsClient items={page.data} accounts={acctRows} />
+      <ItemsClient items={page.data} accounts={acctRows} today={format(new Date(), "yyyy-MM-dd")} />
     </AppShell>
   );
 }
