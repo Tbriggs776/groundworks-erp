@@ -19,6 +19,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { accounts, auditLog, organizations, qboConnections, qboIdMap, qboImports } from "../src/lib/db/schema";
 import { runAs, runAsWorkspace, userActor, workspaceActor, type Actor, type Role } from "../src/lib/actor";
+import { customerBalanceSql } from "../src/lib/ar/balances";
+import * as reconcile from "../src/lib/banking/reconcile";
 import { toAppError } from "../src/lib/errors";
 import { getCompanyProfile } from "../src/lib/company/profile";
 import { checkState, startAuthorization, STATE_COOKIE } from "../src/lib/qbo/oauth";
@@ -350,7 +352,7 @@ async function main() {
     const rows = await db.execute<{ doc: string | null; date: string; source: string; code: string; status: string }>(sql`
       SELECT j.document_no AS doc, j.journal_date::text AS date, j.source, sc.code, j.status
         FROM gl_journals j JOIN source_codes sc ON sc.id = j.source_code_id
-       WHERE j.organization_id = ${orgId} ORDER BY j.journal_date`);
+       WHERE j.organization_id = ${orgId} AND j.source = 'conversion' ORDER BY j.journal_date`);
     assertEq(rows.length, 5, "five posted");
     assert(rows.every((r) => r.source === "conversion" && r.status === "posted"), "conversion, posted");
     assertEq(rows.find((r) => r.doc === "ADJ-1")?.code, "ADJ", "adjustment keeps its kind");
@@ -371,20 +373,206 @@ async function main() {
     assertEq(rows.map((r) => `${r.label} ${r.start}`).join(", "), "FY2026 2025-07-01, FY2027 2026-07-01", "July years");
   });
 
-  await check("balances tie to QuickBooks; the ones that couldn't post are noted", async () => {
-    const [bal] = await db.execute<{ checking: string; dr: string; cr: string }>(sql`
-      SELECT
-        sum(CASE WHEN l.account_id = ${await localId("Account", "1")} THEN l.debit - l.credit ELSE 0 END)::text AS checking,
-        sum(l.debit)::text AS dr, sum(l.credit)::text AS cr
-        FROM gl_lines l JOIN gl_journals j ON j.id = l.journal_id WHERE j.organization_id = ${orgId}`);
-    assertEq(Number(bal.checking), 400, "checking 1000 − 500 − 100");
-    assertEq(bal.dr, bal.cr, "debits equal credits");
+  await check("the ones that couldn't post are noted", async () => {
     const n = await notes();
     assert(n.some((x) => x.startsWith("Journal entry JE-5") && x.includes("isn't in the chart")), "unknown account noted");
     assert(n.some((x) => x.startsWith("Journal entry JE-6") && x.includes("didn't post")), "unbalanced noted");
     const je = (await view()).steps.find((s) => s.key === "journal_entries")!;
     assertEq(je.imported, 5, "imported");
     assertEq(je.skipped, 3, "skipped (unknown account, unbalanced, empty)");
+  });
+
+  // Σ debit − credit on an account, from every posted journal.
+  const balance = async (accountId: string | null) => {
+    const [r] = await db.execute<{ b: string }>(sql`
+      SELECT coalesce(sum(l.debit - l.credit), 0)::text AS b FROM gl_lines l JOIN gl_journals j ON j.id = l.journal_id
+       WHERE j.organization_id = ${orgId} AND l.account_id = ${accountId} AND j.status IN ('posted', 'reversed')`);
+    return Number(r.b);
+  };
+  const qboAccount = async (qboId: string) => (await localId("Account", qboId))!;
+
+  section("Sales tax");
+  await check("agencies, rates, and combined rates come across as QuickBooks had them", async () => {
+    const rates = await db.execute<{ name: string; pct: string; active: boolean; agency: string; liability: string }>(sql`
+      SELECT r.name, r.rate_percent::text AS pct, r.is_active AS active, a.name AS agency, acct.code AS liability
+        FROM tax_rates r JOIN tax_agencies a ON a.id = r.agency_id JOIN accounts acct ON acct.id = a.liability_account_id
+       WHERE r.organization_id = ${orgId}`);
+    const by = new Map(rates.map((r) => [r.name, r]));
+    assertEq(Number(by.get("California")?.pct), 8, "California 8%");
+    assertEq(by.get("California")?.agency, "Board of Equalization", "its agency");
+    assertEq(by.get("California")?.liability, "2200", "accrues in its payable account");
+    assertEq(by.get("Tucson City")?.agency, "City of Tucson", "second agency");
+    assertEq(by.get("Old Rate")?.active, false, "inactive rate");
+    const codes = await db.execute<{ name: string; n: number }>(sql`
+      SELECT c.name, count(cc.id)::int AS n FROM tax_codes c JOIN tax_code_components cc ON cc.tax_code_id = c.id
+       WHERE c.organization_id = ${orgId} GROUP BY c.name`);
+    assertEq(codes.find((c) => c.name === "CA + Tucson")?.n, 2, "combined rate has both components");
+    assertEq(codes.find((c) => c.name === "California")?.n, 1, "each rate is a single rate too");
+  });
+
+  section("Sales history");
+  await check("invoices keep QuickBooks' numbers, lines, discounts, tax, and tags", async () => {
+    const [inv] = await db.execute<{ id: string; status: string; subtotal: string; tax: string; total: string; code: string | null; memo: string | null }>(sql`
+      SELECT i.id, i.status, i.subtotal_amount::text AS subtotal, i.tax_amount::text AS tax, i.total_amount::text AS total, c.name AS code, i.memo
+        FROM ar_invoices i LEFT JOIN tax_codes c ON c.id = i.tax_code_id WHERE i.organization_id = ${orgId} AND i.invoice_number = '1001'`);
+    assertEq(Number(inv.subtotal), 415, "subtotal after the discount");
+    assertEq(Number(inv.tax), 22, "QuickBooks' tax");
+    assertEq(Number(inv.total), 437, "total");
+    assertEq(inv.code, "California", "tax rate picked");
+    assertEq(inv.status, "paid", "paid by its payment and credit memo");
+    assertEq(inv.memo, "Thank you for your business.", "customer message");
+    const lines = await db.execute<{ amount: string; code: string; dims: number }>(sql`
+      SELECT l.amount::text AS amount, a.code, jsonb_array_length(l.dimensions) AS dims FROM ar_invoice_lines l JOIN accounts a ON a.id = l.account_id
+       WHERE l.invoice_id = ${inv.id} ORDER BY l.line_number`);
+    assertEq(lines.map((l) => Number(l.amount)).join(","), "150,275,-10", "line amounts");
+    assertEq(lines[2].code, "4950", "discount on Discounts given");
+    assertEq(lines[0].dims, 2, "class and location on a line");
+    const tax = await db.execute<{ amt: string }>(sql`SELECT tax_amount::text AS amt FROM sales_tax_lines WHERE invoice_id = ${inv.id}`);
+    assertEq(tax.map((t) => Number(t.amt)).join(","), "22", "tax line");
+  });
+
+  await check("bundles expand, shipping and combined tax come across, voided invoices stay voided", async () => {
+    const [two] = await db.execute<{ id: string; total: string }>(sql`
+      SELECT id, total_amount::text AS total FROM ar_invoices WHERE organization_id = ${orgId} AND invoice_number = '1002'`);
+    assertEq(Number(two.total), 151, "total");
+    const lines = await db.execute<{ d: string | null; amount: string }>(sql`
+      SELECT description AS d, amount::text AS amount FROM ar_invoice_lines WHERE invoice_id = ${two.id} ORDER BY line_number`);
+    assertEq(lines.length, 3, "pump, the bundle's design line, shipping");
+    assertEq(lines[2].d, "Shipping", "shipping line");
+    const tax = await db.execute<{ amt: string }>(sql`SELECT tax_amount::text AS amt FROM sales_tax_lines WHERE invoice_id = ${two.id} ORDER BY tax_amount DESC`);
+    assertEq(tax.map((t) => Number(t.amt)).join(","), "4.8,1.2", "tax per rate");
+    const [voided] = await db.execute<{ status: string; total: string; reason: string }>(sql`
+      SELECT status, total_amount::text AS total, void_reason AS reason FROM ar_invoices WHERE organization_id = ${orgId} AND invoice_number = '1003'`);
+    assertEq(voided.status, "voided", "voided");
+    assertEq(Number(voided.total), 0, "zero");
+    assert((await notes()).some((x) => x.startsWith("Invoice 1006 didn't come across") && x.includes("Euro Customer")), "missing customer noted");
+  });
+
+  await check("credit memos, sales receipts, and refunds", async () => {
+    const memos = await db.execute<{ n: string; status: string }>(sql`SELECT memo_number AS n, status FROM credit_memos WHERE organization_id = ${orgId} ORDER BY memo_number`);
+    assertEq(memos.map((m) => `${m.n}:${m.status}`).join(", "), "5001:applied, 5001-2:open", "numbers kept, duplicate renumbered");
+    assert((await notes()).some((x) => x.includes("Credit memo 5001 is numbered 5001-2")), "duplicate noted");
+    const receipts = await db.execute<{ n: string; customer: string | null; method: string; acct: string }>(sql`
+      SELECT r.receipt_number AS n, r.customer_id AS customer, r.method, a.code AS acct FROM sales_receipts r JOIN accounts a ON a.id = r.deposit_account_id
+       WHERE r.organization_id = ${orgId} ORDER BY r.receipt_number`);
+    assertEq(receipts[0].customer, null, "walk-in sale");
+    assertEq(receipts[0].method, "cash", "payment method mapped");
+    assertEq(receipts[0].acct, "1250", "into Undeposited Funds");
+    assertEq(receipts[1].method, "credit_card", "card");
+    const [refund] = await db.execute<{ status: string; ref: string; total: string }>(sql`
+      SELECT status, reference AS ref, total_amount::text AS total FROM refund_receipts WHERE organization_id = ${orgId} AND refund_number = '8001'`);
+    assertEq(`${refund.status} ${refund.ref} ${Number(refund.total)}`, "posted 1049 16.2", "refund");
+  });
+
+  await check("payments apply as QuickBooks applied them; an overpayment stays as credit", async () => {
+    const bal = async (qboId: string) => {
+      const [r] = await db.execute<{ b: string }>(sql`SELECT ${customerBalanceSql(sql`${await localId("Customer", qboId)}::uuid`)}::text AS b`);
+      return Number(r.b);
+    };
+    assertEq(await bal("1"), 0, "Amy: paid by cash and a credit memo");
+    assertEq(await bal("2"), -74, "Bill's: 49 overpaid + 25 credit memo left");
+    assertEq(await bal("4"), 50, "Bad Email Co: 50 still open");
+    const [{ n }] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM ar_payments WHERE organization_id = ${orgId} AND status = 'voided'`);
+    assertEq(n, 1, "voided payment kept, voided");
+    const [app] = await db.execute<{ amount: string }>(sql`SELECT amount::text FROM ar_credit_applications WHERE organization_id = ${orgId}`);
+    assertEq(Number(app.amount), 50, "credit memo applied inside the payment");
+  });
+
+  await check("deposits move payments and receipts out of Undeposited Funds", async () => {
+    const lines = await db.execute<{ payment: string | null; receipt: string | null; amount: string }>(sql`
+      SELECT l.ar_payment_id AS payment, l.sales_receipt_id AS receipt, l.amount::text FROM bank_transaction_lines l
+        JOIN bank_transactions t ON t.id = l.transaction_id WHERE t.organization_id = ${orgId} AND t.type = 'deposit' AND t.vendor_id IS NULL
+       ORDER BY l.line_number`);
+    assert(lines.some((l) => l.payment), "a payment line");
+    assert(lines.some((l) => l.receipt), "a sales receipt line");
+    assert(lines.some((l) => Number(l.amount) === -20), "cash back");
+    assertEq(await balance(await qboAccount("4")), 200, "Undeposited Funds holds the one payment not deposited");
+  });
+
+  section("Purchase history");
+  await check("bills come in posted, with tags; negative lines credit their account", async () => {
+    const bills = await db.execute<{ ref: string; status: string; num: string }>(sql`
+      SELECT vendor_invoice_number AS ref, status, bill_number AS num FROM ap_bills WHERE organization_id = ${orgId} ORDER BY vendor_invoice_number`);
+    assertEq(bills.map((b) => `${b.ref}:${b.status}`).join(", "), "B-7:paid, H-100:paid, H-101:posted", "statuses after payments");
+    assert(bills.every((b) => b.num.startsWith("BILL-")), "Groundworks bill numbers; QuickBooks' kept as the vendor's");
+    const [tagged] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM ap_bill_lines l JOIN ap_bills b ON b.id = l.bill_id
+       WHERE b.organization_id = ${orgId} AND b.vendor_invoice_number = 'H-100' AND jsonb_array_length(l.dimensions) = 2`);
+    assertEq(tagged.n, 2, "class and department on both lines");
+    assertEq(await balance(await qboAccount("19")), 245, "Office Supplies: 300 − 50 − 40 + 20 − 30 + 45");
+    const old = await db.select().from(accounts).where(and(eq(accounts.organizationId, orgId), eq(accounts.name, "Old Expense")));
+    assertEq(await balance(old[0].id), 200, "history on an inactive account");
+    assertEq(old[0].isActive, false, "and it ends inactive");
+  });
+
+  await check("bill payments use vendor credits; a prepayment is a check against Accounts Payable", async () => {
+    const [vc] = await db.execute<{ status: string }>(sql`SELECT status FROM vendor_credits WHERE organization_id = ${orgId}`);
+    assertEq(vc.status, "applied", "vendor credit used up");
+    const pays = await db.execute<{ status: string; ref: string | null; method: string; net: string }>(sql`
+      SELECT status, reference AS ref, method, net_amount::text AS net FROM ap_payments WHERE organization_id = ${orgId} ORDER BY payment_date`);
+    assertEq(pays.map((p) => `${p.status}:${p.ref ?? ""}:${p.method}:${Number(p.net)}`).join(", "), "posted:1050:check:1335, posted::credit_card:200, voided:1051:check:0", "payments");
+    assert((await notes()).some((x) => x.includes("50.00 wasn't applied to a bill") && x.includes("card charge")), "prepayment noted");
+    assertEq(await balance(await qboAccount("3")), -100, "AP owes 100: bills 1825 − credits and payments 1625 − JE 100");
+  });
+
+  await check("expenses, checks, card charges and credits, and transfers", async () => {
+    const txns = await db.execute<{ type: string; ref: string | null; payee: string | null; status: string; total: string }>(sql`
+      SELECT type, reference AS ref, payee_name AS payee, status, total_amount::text AS total FROM bank_transactions WHERE organization_id = ${orgId}`);
+    assert(txns.some((t) => t.type === "check" && t.ref === "1052" && t.status === "posted"), "check with its number");
+    assert(txns.some((t) => t.type === "check" && t.ref === "1053" && t.status === "voided"), "voided check kept");
+    assert(txns.some((t) => t.type === "deposit" && Number(t.total) === 30), "card credit is money back on the card");
+    assert(txns.some((t) => t.payee === "Pat Smith"), "employee payee by name");
+    assertEq(await balance(await qboAccount("17")), 300, "Savings got the transfer");
+    assertEq(await balance(await qboAccount("15")), -300, "Visa owes 300: −240 + 30 − 200 − 50 + 200 − 40");
+    assertEq(await balance(await qboAccount("1")), -1321.8, "Checking");
+  });
+
+  await check("inventory moves with the history and costs FIFO", async () => {
+    const rock = await localId("Item", "2");
+    const [s] = await db.execute<{ q: string; v: string }>(sql`
+      SELECT coalesce(sum(quantity), 0)::text AS q, coalesce(sum(CASE WHEN quantity > 0 THEN cost ELSE -cost END), 0)::text AS v
+        FROM inventory_movements WHERE item_id = ${rock} AND voided_at IS NULL`);
+    assertEq(Number(s.q), 4, "3 + 2 bought, 1 sold");
+    assertEq(Number(s.v), 490, "375 + 240 − 125");
+    assertEq(await balance(await qboAccount("5")), 490, "Inventory Asset ties to the stock");
+    assertEq(await balance(await qboAccount("11")), 125, "COGS: the oldest unit");
+  });
+
+  await check("tax, income, AR, and the trial balance tie to the hand-worked figures", async () => {
+    assertEq(await balance(await qboAccount("14")), -29.2, "Sales tax payable: 22 + 4.80 + 1.20 + 2.40 − 1.20");
+    assertEq(await balance(await qboAccount("8")), -360, "Sales of Product Income (shipping falls back here)");
+    assertEq(await balance(await qboAccount("9")), -725, "Services: design lines, credits, the deposit line, JE");
+    assertEq(await balance(await qboAccount("2")), 226, "AR: 738 − 75 − 687 + JE 250");
+    const [tb] = await db.execute<{ dr: string; cr: string }>(sql`
+      SELECT sum(l.debit)::text AS dr, sum(l.credit)::text AS cr FROM gl_lines l JOIN gl_journals j ON j.id = l.journal_id WHERE j.organization_id = ${orgId}`);
+    assertEq(tb.dr, tb.cr, "debits equal credits");
+  });
+
+  section("Cleared and reconciled");
+  await check("QuickBooks' reconciled lines form a completed reconciliation; cleared ones stay cleared", async () => {
+    const checking = await qboAccount("1");
+    const recs = await db.execute<{ end: string; bal: string; n: number }>(sql`
+      SELECT statement_end_date::text AS end, statement_ending_balance::text AS bal, cleared_count AS n FROM reconciliations
+       WHERE account_id = ${checking} AND status = 'completed'`);
+    assertEq(recs.length, 1, "one reconciliation");
+    assertEq(`${recs[0].end} ${Number(recs[0].bal)} ${recs[0].n}`, "2026-03-23 699.4 4", "through the last reconciled date: 1000 − 500 + 499.40 − 300");
+    const [c] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM gl_line_clearings WHERE account_id = ${checking} AND status = 'cleared'`);
+    assertEq(c.n, 2, "two cleared, not reconciled");
+    const [visa] = await db.execute<{ bal: string }>(sql`
+      SELECT statement_ending_balance::text AS bal FROM reconciliations WHERE account_id = ${await qboAccount("15")} AND status = 'completed'`);
+    assertEq(Number(visa.bal), 240, "card: amount owed");
+    assert((await notes()).some((x) => x.startsWith("Checking: 1 cleared or reconciled")), "a transaction that isn't here is noted");
+    const sheet = await runAs(as(), (ctx) => reconcile.startReconciliation(ctx, { accountId: checking, statementEndDate: "2026-04-30", statementEndingBalance: "0" }));
+    assertEq(Number(sheet.beginningBalance), 699.4, "the next reconciliation starts where QuickBooks' ended");
+    await runAs(as(), (ctx) => reconcile.cancelReconciliation(ctx, { id: sheet.id }));
+  });
+
+  section("Finishing");
+  await check("invoice numbers continue QuickBooks' series; mixed ones keep Groundworks'", async () => {
+    const [inv] = await db.execute<{ prefix: string; last: number; width: number }>(sql`
+      SELECT prefix, last_used_number AS last, width FROM number_series WHERE organization_id = ${orgId} AND code = 'INV'`);
+    assertEq(`${inv.prefix}|${inv.last}|${inv.width}`, "|1004|4", "next invoice is 1005");
+    assert((await notes()).some((x) => x.startsWith("Credit memo numbers didn't all come across as plain numbers")), "credit memos keep CM-");
   });
 
   section("Reconnect and disconnect");
@@ -409,7 +597,7 @@ async function main() {
     assertEq(v.connection?.connected, false, "shows disconnected");
     assertEq(v.status, "done", "import still done");
     const [{ n }] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM gl_journals WHERE organization_id = ${orgId}`);
-    assertEq(n, 5, "books kept");
+    assert(n > 30, `books kept (${n} journals)`);
     const [a] = await db.select().from(auditLog).where(and(eq(auditLog.organizationId, orgId), eq(auditLog.event, "qbo.disconnected")));
     assert(a, "audited");
   });

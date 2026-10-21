@@ -11,7 +11,7 @@ import {
 import { controlAccount, sourceCodeId } from "@/lib/gl/lookups";
 import { recordPurchase } from "@/lib/inventory/documents";
 import { voidMovements } from "@/lib/inventory/engine";
-import { sumMoney, toDbMoney } from "@/lib/money";
+import { money, sumMoney, toDbMoney } from "@/lib/money";
 
 /**
  * AP → GL posting. For a given approved bill:
@@ -42,11 +42,13 @@ export async function postBillToGl(
     throw new AppError("invalid_state", "Bill has no lines to post.");
   }
 
+  // A negative line (a credit on the bill) flips to the credit side.
   const jeLines: JournalLineInput[] = lines.map((line) => ({
     accountId: line.accountId,
-    debit: toDbMoney(line.amount),
+    ...(money(line.amount).lt(0) ? { credit: toDbMoney(money(line.amount).abs()) } : { debit: toDbMoney(line.amount) }),
     memo: line.description ?? undefined,
     vendorId: bill.vendorId,
+    dimensions: line.dimensions.length > 0 ? line.dimensions : undefined,
   }));
 
   // Credit AP control for the total

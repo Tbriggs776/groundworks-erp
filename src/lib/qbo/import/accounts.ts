@@ -170,13 +170,14 @@ export const accountsStep: Step = {
           isCash: shape.isCash ?? false,
           isReconciliation: shape.isReconciliation ?? false,
           indentation: depth(r),
-          isActive: r.Active !== false,
+          // Inactive ones stay open until their history is in (the finishing step closes them).
+          isActive: true,
         })
         .returning();
       taken.add(code);
       byCode.set(code, row);
       existing.push(row);
-      await kit.remember("Account", r.Id, row.id);
+      await kit.remember("Account", r.Id, row.id, r.Active === false ? "inactive" : null);
       kit.count("accounts", "imported");
     }
 

@@ -15,4 +15,5 @@
 import { startFakeQbo } from "../lib/fake-qbo";
 
 const port = Number(process.argv[2] ?? 54330);
-void startFakeQbo({ realmId: "9130354", companyName: "Craig's Design and Landscaping", port }).then((fake) => console.log(`fake QuickBooks on ${fake.url}`));
+// Named to sort after the demo company: without a company cookie the app opens the first by name.
+void startFakeQbo({ realmId: "9130354", companyName: "QuickBooks Sandbox Co", port }).then((fake) => console.log(`fake QuickBooks on ${fake.url}`));

@@ -1,0 +1,2 @@
+ALTER TABLE "ap_bill_lines" ADD COLUMN "dimensions" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "vendor_credit_lines" ADD COLUMN "dimensions" jsonb DEFAULT '[]'::jsonb NOT NULL;

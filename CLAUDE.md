@@ -262,9 +262,17 @@ docs/compliance/      SOC 2 control map and checklist
   journals keep QuickBooks' amounts and post with source `conversion`
   (allowed on control accounts). Accounts the app finds by number (1200,
   1250, 2000, 2200, 3200, 3300, 4930, 4940, 4950, 7400) keep it and take
-  QuickBooks' name. Tokens are sealed (`src/lib/security/crypto.ts`,
-  `APP_ENCRYPTION_KEY`) and a refresh is saved outside the batch's
-  transaction. Only people run imports. Tests use `scripts/lib/fake-qbo.ts`.
+  QuickBooks' name. History (`import/sales.ts`, `purchases.ts`,
+  `payments.ts`) writes each document's rows with QuickBooks' amounts and
+  tax (`import/txn.ts`), then posts through the app's own posting helpers;
+  nothing is auto-applied (QuickBooks' payments say what paid what).
+  Voided transactions come in voided with zero amounts. A batch holds
+  inventory recosting (`holdRecosting` / `flushRecosting` in the engine) and
+  recosts each touched item once. Accounts QuickBooks had inactive stay open
+  until the finishing step, so their history can post. Tokens are sealed
+  (`src/lib/security/crypto.ts`, `APP_ENCRYPTION_KEY`) and a refresh is
+  saved outside the batch's transaction. Only people run imports. Tests use
+  `scripts/lib/fake-qbo.ts`.
 - Test fixtures that create companies need a workspace:
   `scripts/lib/workspace.ts` (`testWorkspace`, `deleteFixtures`).
 

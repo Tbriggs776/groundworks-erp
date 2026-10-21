@@ -4,10 +4,9 @@ import { auditFields } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
 import { createItem } from "@/lib/ar/items";
 import { updateCompanyProfile } from "@/lib/company/profile";
-import { toAppError } from "@/lib/errors";
 import { createCustomer, createVendor } from "@/lib/parties/service";
 import type { QboRecord } from "../client";
-import { pagedStep, type Kit, type Ref, type Step } from "./kit";
+import { attempt, pagedStep, type Kit, type Ref, type Step } from "./kit";
 
 /**
  * The company and its lists: company info and preferences, terms, classes
@@ -147,20 +146,6 @@ function addresses(r: QboRecord, kinds: Array<["BillAddr" | "ShipAddr", "billing
     const a = address(r[field] as QboAddress);
     return a && a.street1 ? [{ type, ...a }] : [];
   });
-}
-
-/** A record the services refuse comes across noted and skipped, never stopping the import. */
-async function attempt(kit: Kit, what: string, fn: () => Promise<void>): Promise<"imported" | "skipped"> {
-  try {
-    await kit.ctx.tx.execute(sql`SAVEPOINT qbo_record`);
-    await fn();
-    await kit.ctx.tx.execute(sql`RELEASE SAVEPOINT qbo_record`);
-    return "imported";
-  } catch (err) {
-    await kit.ctx.tx.execute(sql`ROLLBACK TO SAVEPOINT qbo_record`);
-    kit.note(`${what} didn't come across: ${toAppError(err).message}`);
-    return "skipped";
-  }
 }
 
 export const customersStep = pagedStep({

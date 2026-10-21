@@ -1,6 +1,8 @@
-import { and, eq } from "drizzle-orm";
-import { qboIdMap, type QboCounts } from "@/lib/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { organizations, qboIdMap, type QboCounts } from "@/lib/db/schema";
 import type { Ctx } from "@/lib/actor";
+import { toAppError } from "@/lib/errors";
+import { ensureFiscalYearFor } from "@/lib/gl/fiscal-calendar";
 import { PAGE_SIZE, type QboClient, type QboRecord } from "../client";
 
 /**
@@ -88,6 +90,35 @@ export class Kit {
   async remember(entity: string, qboId: string, localId: string | null, value: string | null = null) {
     await this.ctx.tx.insert(qboIdMap).values({ organizationId: this.org, entity, qboId, localId, value }).onConflictDoNothing();
     this.cache.set(this.key(entity, qboId), { localId, value });
+  }
+
+  private years = new Set<number>();
+
+  /** Make sure the fiscal year holding `date` exists, on the company's calendar. */
+  async year(date: string) {
+    const startMonth = await this.once("fy-start", async () => {
+      const [o] = await this.ctx.tx.select({ m: organizations.fiscalYearStartMonth }).from(organizations).where(eq(organizations.id, this.org));
+      return o.m;
+    });
+    const [y, m] = date.split("-").map(Number);
+    const startYear = m >= startMonth ? y : y - 1;
+    if (this.years.has(startYear)) return;
+    await ensureFiscalYearFor(this.ctx.tx, this.org, startMonth, date);
+    this.years.add(startYear);
+  }
+}
+
+/** A record the app refuses comes across noted and skipped, never stopping the import. */
+export async function attempt(kit: Kit, what: string, fn: () => Promise<"imported" | "skipped" | void>): Promise<"imported" | "skipped"> {
+  try {
+    await kit.ctx.tx.execute(sql`SAVEPOINT qbo_record`);
+    const r = await fn();
+    await kit.ctx.tx.execute(sql`RELEASE SAVEPOINT qbo_record`);
+    return r ?? "imported";
+  } catch (err) {
+    await kit.ctx.tx.execute(sql`ROLLBACK TO SAVEPOINT qbo_record`);
+    kit.note(`${what} didn't come across: ${toAppError(err).message}`);
+    return "skipped";
   }
 }
 
