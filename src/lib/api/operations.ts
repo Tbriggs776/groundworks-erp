@@ -22,6 +22,7 @@ import * as salesSettings from "@/lib/ar/settings";
 import * as statements from "@/lib/ar/statements";
 import * as companyProfile from "@/lib/company/profile";
 import { ListActivitySchema, listActivity } from "@/lib/audit-query";
+import * as attachmentsSvc from "@/lib/attachments/service";
 import * as bankFeeds from "@/lib/banking/feeds/service";
 import * as reconcile from "@/lib/banking/reconcile";
 import * as bankReview from "@/lib/banking/review";
@@ -2289,6 +2290,99 @@ export const OPERATIONS: Operation[] = [
     run: (ctx) => bankTxns.listUndepositedPayments(ctx),
   }),
   op({
+    name: "upload_attachment",
+    title: "Upload a receipt or file",
+    description:
+      "Keep a file (base64; PDF, JPEG, PNG, WebP, GIF, CSV, TXT, XLSX, DOCX; up to 4 MB, about 3 MB through the API's request size) on a document (entityType + entityId: bank_transaction, bill, invoice, journal, vendor, …), or with neither in the Receipts inbox. Inbox receipts (PDFs and images) are read by Claude in the same call when reading is set up: extracted gives vendorName, date, total, tax, paymentMethod, cardLast4. duplicateOf flags a file already uploaded. Then use get_attachment for where it probably belongs.",
+    group: "Banking",
+    method: "POST",
+    path: "/attachments",
+    scope: "write",
+    input: attachmentsSvc.UploadAttachmentSchema,
+    run: (ctx, input) => attachmentsSvc.uploadAttachment(ctx, input),
+  }),
+  op({
+    name: "list_attachments",
+    title: "Attachments",
+    description:
+      "Files on one document (entityType + entityId), or inbox=true for receipts not yet on anything (with what reading found). Newest first. Each has a url people open in the app; agents fetch the file itself with download_attachment.",
+    group: "Banking",
+    method: "GET",
+    path: "/attachments",
+    scope: "read",
+    input: attachmentsSvc.ListAttachmentsSchema,
+    run: (ctx, input) => attachmentsSvc.listAttachments(ctx, input),
+  }),
+  op({
+    name: "get_attachment",
+    title: "One attachment",
+    description:
+      "A file's details. For an inbox receipt that's been read, suggestions lists what it probably is: matches (bank lines waiting in For review, expenses, or bills with the same amount near its date), the vendor, the account it was paid from (by card's last 4), and the vendor's usual category. Link it with link_attachment, or record it with create_expense_from_receipt when it isn't in the books.",
+    group: "Banking",
+    method: "GET",
+    path: "/attachments/{id}",
+    scope: "read",
+    input: z.object({ id }),
+    run: (ctx, input) => attachmentsSvc.getAttachment(ctx, input),
+  }),
+  op({
+    name: "download_attachment",
+    title: "Download an attachment",
+    description: "The file itself, base64, with its name and content type. For reading a receipt or contract yourself.",
+    group: "Banking",
+    method: "GET",
+    path: "/attachments/{id}/content",
+    scope: "read",
+    input: z.object({ id }),
+    run: (ctx, input) => attachmentsSvc.downloadAttachment(ctx, input),
+  }),
+  op({
+    name: "read_attachment",
+    title: "Read a receipt",
+    description: "Read a PDF or image again with Claude (after a failed read, or for a file uploaded onto a document). Returns what it found in extracted, or readStatus failed with readError.",
+    group: "Banking",
+    method: "POST",
+    path: "/attachments/{id}/read",
+    scope: "write",
+    input: z.object({ id }),
+    run: (ctx, input) => attachmentsSvc.readAttachment(ctx, input),
+  }),
+  op({
+    name: "link_attachment",
+    title: "Attach a file to a document",
+    description:
+      "Put a file on a document: entityType + entityId (statement_line for a bank line still in For review: the receipt then follows the line to whatever it becomes). Both null moves it back to the Receipts inbox.",
+    group: "Banking",
+    method: "POST",
+    path: "/attachments/{id}/link",
+    scope: "write",
+    input: attachmentsSvc.LinkAttachmentSchema,
+    run: (ctx, input) => attachmentsSvc.linkAttachment(ctx, input),
+  }),
+  op({
+    name: "create_expense_from_receipt",
+    title: "Record an expense from a receipt",
+    description:
+      "For an inbox receipt that isn't in the books: records an expense (a check when the receipt says it was paid by check) on bankAccountId in categoryAccountId, dated and totaled as read unless you give txnDate or amount, and attaches the receipt. Check get_attachment's suggestions first: if a bank line in For review matches, link the receipt to it instead so it isn't recorded twice. post=true posts (agents over their limit leave a draft for review).",
+    group: "Banking",
+    method: "POST",
+    path: "/attachments/{id}/expense",
+    scope: "write",
+    input: attachmentsSvc.ExpenseFromReceiptSchema,
+    run: (ctx, input) => attachmentsSvc.createExpenseFromReceipt(ctx, input),
+  }),
+  op({
+    name: "delete_attachment",
+    title: "Delete an attachment",
+    description: "Delete a file for good (its name and fingerprint stay in the audit log). Agents can delete only files they uploaded.",
+    group: "Banking",
+    method: "DELETE",
+    path: "/attachments/{id}",
+    scope: "write",
+    input: z.object({ id }),
+    run: (ctx, input) => attachmentsSvc.deleteAttachment(ctx, input),
+  }),
+  op({
     name: "list_bank_feeds",
     title: "Bank feeds",
     description:
@@ -2363,7 +2457,7 @@ export const OPERATIONS: Operation[] = [
     name: "add_bank_line",
     title: "Add a bank line to the books",
     description:
-      "Record a statement line that isn't in the books yet: money out becomes an expense, money in a deposit, or pass transferAccountId for a transfer (e.g. a card payment). Give categoryAccountId, or omit both to use the line's matching rule. Posts and clears it; agents without the post scope, or over their limit, leave a draft for review. Check suggestedMatches first so you don't record something twice.",
+      "Record a statement line that isn't in the books yet: money out becomes an expense, money in a deposit, or pass transferAccountId for a transfer (e.g. a card payment). Give categoryAccountId, or splits (several categories whose amounts add up to the line), or omit them to use the line's matching rule. Receipts on the line move to the new transaction. Posts and clears it; agents without the post scope, or over their limit, leave a draft for review. Check suggestedMatches first so you don't record something twice.",
     group: "Banking",
     method: "POST",
     path: "/bank-lines/{id}/add",

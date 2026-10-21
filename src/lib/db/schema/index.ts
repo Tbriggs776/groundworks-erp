@@ -28,3 +28,4 @@ export * from "./email";
 export * from "./inventory";
 export * from "./qbo";
 export * from "./feeds";
+export * from "./attachments";
