@@ -59,7 +59,10 @@ construction-ERP direction. Use it for look-and-feel only.
    from `organization_id`) and `organization_id` for company events. Never
    update or delete audit rows.
 6. **The ledger is append-only.** Posted journals are immutable (DB
-   triggers); corrections are reversals; voids reverse. Balances count
+   triggers); corrections are reversals; voids reverse. The database also
+   refuses a posted journal whose debits and credits differ, in either
+   currency, and new lines on a posted one (migration 0040). An agent's
+   posting limit covers reversals and voids too (`reverseJournal`). Balances count
    journals in `LEDGER_STATUSES` (`posted` + `reversed`, see
    `src/lib/gl/ledger.ts`), never `status = 'posted'` alone, or reversals
    double-count.

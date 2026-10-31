@@ -9,7 +9,8 @@ import {
   allocationTargets,
 } from "@/lib/db/schema";
 import { writeAudit } from "@/lib/audit";
-import { getUser, requireRole } from "@/lib/auth";
+import { getUser, requireActor, requireRole } from "@/lib/auth";
+import { toAppError } from "@/lib/errors";
 import { runAllocation as runAllocationRunner } from "@/lib/gl/allocations";
 
 const TargetSchema = z.object({
@@ -202,18 +203,21 @@ export async function runAllocation(input: {
   | { ok: true; journalId: string; journalNumber: string }
   | { ok: false; error: string }
 > {
-  const { organizationId } = await requireRole("accountant");
-  const actor = await getUser();
+  const actor = await requireActor("accountant");
 
-  const r = await runAllocationRunner({
-    organizationId,
-    actorId: actor?.id ?? null,
-    groupId: input.groupId,
-    totalAmount: input.totalAmount,
-    sourceAccountId: input.sourceAccountId,
-    journalDate: input.journalDate,
-    description: input.description,
-  });
+  let r: Awaited<ReturnType<typeof runAllocationRunner>>;
+  try {
+    r = await runAllocationRunner({
+      actor,
+      groupId: input.groupId,
+      totalAmount: input.totalAmount,
+      sourceAccountId: input.sourceAccountId,
+      journalDate: input.journalDate,
+      description: input.description,
+    });
+  } catch (err) {
+    return { ok: false, error: toAppError(err).message };
+  }
   if (!r.ok) return { ok: false, error: r.error };
   revalidatePath("/gl");
   revalidatePath("/allocations");

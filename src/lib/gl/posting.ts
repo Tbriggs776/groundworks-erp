@@ -6,7 +6,7 @@ import {
   glLines,
   type NewGlJournal,
 } from "@/lib/db/schema";
-import { auditFields, type Actor, type Tx } from "@/lib/actor";
+import { auditFields, requirePostingWithinLimit, type Actor, type Tx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
 import { toDbMoney } from "@/lib/money";
 import { nextNumber } from "./number-series";
@@ -371,6 +371,16 @@ export async function reverseJournal(
         code: "original_not_posted",
         error: "Only posted journals can be reversed.",
       };
+    }
+
+    // A reversal posts the same amount back, so an agent's posting limit
+    // covers it too (manual reversals and document voids alike).
+    if (opts.actor) {
+      const [{ total }] = await tx
+        .select({ total: sql<string>`COALESCE(SUM(${glLines.debitLocal}), 0)::text` })
+        .from(glLines)
+        .where(eq(glLines.journalId, originalId));
+      requirePostingWithinLimit(opts.actor, total, `Reversal of ${orig.number}`);
     }
 
     // Pull lines with dimensions

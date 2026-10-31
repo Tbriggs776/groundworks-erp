@@ -29,6 +29,7 @@ import {
   sourceCodes,
 } from "../src/lib/db/schema";
 import { runAutoReversalsForOrg } from "../src/lib/gl/auto-reversal";
+import { systemActor } from "../src/lib/actor";
 import { runAllocation } from "../src/lib/gl/allocations";
 import {
   budgetedAmountFor,
@@ -271,13 +272,12 @@ async function main() {
 
   await check("runAllocation posts a balanced JE split 60/40", async () => {
     const r = await runAllocation({
-      organizationId: fixtures.org.id,
+      actor: systemActor(fixtures.org.id),
       groupId: allocGroupId!,
       totalAmount: "10000",
       sourceAccountId: fixtures.rent.id,
       journalDate: "2026-03-31",
       description: "Reallocate rent across departments",
-      actorId: fixtures.actor.id,
     });
     if (!r.ok) throw new Error(`${r.code}: ${r.error}`);
 
@@ -322,13 +322,12 @@ async function main() {
     ]);
 
     const r = await runAllocation({
-      organizationId: fixtures.org.id,
+      actor: systemActor(fixtures.org.id),
       groupId: bad.id,
       totalAmount: "1000",
       sourceAccountId: fixtures.rent.id,
       journalDate: "2026-03-31",
       description: "Should fail",
-      actorId: fixtures.actor.id,
     });
     if (r.ok) throw new Error("expected failure");
     if (r.code !== "percent_sum_invalid")

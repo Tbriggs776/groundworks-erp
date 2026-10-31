@@ -7,6 +7,7 @@ import {
   allocationTargets,
   sourceCodes,
 } from "@/lib/db/schema";
+import { requirePermission, requirePostingWithinLimit, type Actor } from "@/lib/actor";
 import { money, sumMoney, toDbMoney } from "@/lib/money";
 import { createAndPostJournal, type JournalLineInput } from "./posting";
 
@@ -18,6 +19,8 @@ import { createAndPostJournal, type JournalLineInput } from "./posting";
  * Validation:
  *   - Sum of target percentages must equal 100 (within 0.0001)
  *   - Group + source account must belong to the same org
+ *   - The actor needs the `post` scope and accountant role, and an agent's
+ *     posting limit covers the total
  *   - Allocation type MUST be `fixed` (statistical type rejected — not yet
  *     implemented; throw a clear error rather than silently misbehave)
  *
@@ -25,13 +28,13 @@ import { createAndPostJournal, type JournalLineInput } from "./posting";
  * residual so the JE balances to the penny.
  */
 export type AllocationRunOpts = {
-  organizationId: string;
+  /** Who is running it; the company is the actor's. */
+  actor: Actor;
   groupId: string;
   totalAmount: string | number;
   sourceAccountId: string;
   journalDate: string; // YYYY-MM-DD
   description: string;
-  actorId: string | null;
   currency?: string;
   reasonCodeId?: string;
 };
@@ -43,6 +46,11 @@ export type AllocationRunResult =
 export async function runAllocation(
   opts: AllocationRunOpts
 ): Promise<AllocationRunResult> {
+  const { actor } = opts;
+  const organizationId = actor.organizationId;
+  requirePermission(actor, "post", "accountant", "run allocations");
+  requirePostingWithinLimit(actor, opts.totalAmount, "Allocation");
+
   // Load the group
   const [group] = await db
     .select()
@@ -50,7 +58,7 @@ export async function runAllocation(
     .where(eq(allocationGroups.id, opts.groupId));
   if (!group)
     return { ok: false, code: "group_not_found", error: "Allocation group not found." };
-  if (group.organizationId !== opts.organizationId)
+  if (group.organizationId !== organizationId)
     return { ok: false, code: "cross_org_denied", error: "Allocation group belongs to a different organization." };
   if (!group.isActive)
     return { ok: false, code: "group_inactive", error: "Allocation group is inactive." };
@@ -100,7 +108,7 @@ export async function runAllocation(
     .select()
     .from(sourceCodes)
     .where(
-      sql`${sourceCodes.organizationId} = ${opts.organizationId} AND ${sourceCodes.code} = 'ALLOC'`
+      sql`${sourceCodes.organizationId} = ${organizationId} AND ${sourceCodes.code} = 'ALLOC'`
     );
   if (!allocSrc) {
     return {
@@ -142,8 +150,9 @@ export async function runAllocation(
   });
 
   return createAndPostJournal({
-    organizationId: opts.organizationId,
-    actorId: opts.actorId,
+    organizationId,
+    actorId: actor.userId,
+    actor,
     journalDate: opts.journalDate,
     sourceCodeId: allocSrc.id,
     source: "adjusting", // allocations live in the adjusting bucket

@@ -8,6 +8,7 @@ import {
   organizations,
   type Account,
 } from "@/lib/db/schema";
+import { requirePermission, requirePostingWithinLimit, type Actor } from "@/lib/actor";
 import { money, sumMoney } from "@/lib/money";
 import { createAndPostJournal, type PostResult } from "./posting";
 import { inLedger } from "./ledger";
@@ -177,8 +178,8 @@ export async function computeFxAdjustments(
 }
 
 export type RunFxRevaluationInput = {
-  organizationId: string;
-  actorId: string | null;
+  /** Who is posting it; the company is the actor's. */
+  actor: Actor;
   asOfDate: string;
   fxGainAccountId: string;
   fxLossAccountId: string;
@@ -211,12 +212,16 @@ export type RevaluationResult =
  *   - All required spot rates are on file
  *   - At least one non-zero adjustment
  *   - Gain/loss accounts are active posting accounts
+ *   - The actor needs the `post` scope and accountant role, and an agent's
+ *     posting limit covers the entry's total
  */
 export async function runFxRevaluation(
   input: RunFxRevaluationInput
 ): Promise<RevaluationResult> {
+  const { actor } = input;
+  requirePermission(actor, "post", "accountant", "post FX revaluations");
   const summary = await computeFxAdjustments(
-    input.organizationId,
+    actor.organizationId,
     input.asOfDate
   );
 
@@ -281,9 +286,16 @@ export async function runFxRevaluation(
     }
   }
 
+  requirePostingWithinLimit(
+    actor,
+    sumMoney(lines.map((l) => l.debit ?? "0")),
+    `FX revaluation as of ${input.asOfDate}`
+  );
+
   const result: PostResult = await createAndPostJournal({
-    organizationId: input.organizationId,
-    actorId: input.actorId,
+    organizationId: actor.organizationId,
+    actorId: actor.userId,
+    actor,
     journalDate: input.asOfDate,
     sourceCodeId: input.sourceCodeId,
     source: "adjusting",

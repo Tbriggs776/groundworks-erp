@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { sourceCodes } from "@/lib/db/schema";
-import { getUser, requireRole } from "@/lib/auth";
+import { requireActor, requireRole } from "@/lib/auth";
+import { toAppError } from "@/lib/errors";
 import {
   computeFxAdjustments,
   runFxRevaluation,
@@ -25,8 +26,8 @@ export async function postRevaluation(input: {
   fxLossAccountId: string;
   autoReverseDate?: string;
 }): Promise<RevaluationResult> {
-  const { organizationId } = await requireRole("accountant");
-  const actor = await getUser();
+  const actor = await requireActor("accountant");
+  const { organizationId } = actor;
 
   // Look up ADJ source code
   const [adjSrc] = await db
@@ -45,15 +46,19 @@ export async function postRevaluation(input: {
     };
   }
 
-  const r = await runFxRevaluation({
-    organizationId,
-    actorId: actor?.id ?? null,
-    asOfDate: input.asOfDate,
-    fxGainAccountId: input.fxGainAccountId,
-    fxLossAccountId: input.fxLossAccountId,
-    sourceCodeId: adjSrc.id,
-    autoReverseDate: input.autoReverseDate,
-  });
+  let r: RevaluationResult;
+  try {
+    r = await runFxRevaluation({
+      actor,
+      asOfDate: input.asOfDate,
+      fxGainAccountId: input.fxGainAccountId,
+      fxLossAccountId: input.fxLossAccountId,
+      sourceCodeId: adjSrc.id,
+      autoReverseDate: input.autoReverseDate,
+    });
+  } catch (err) {
+    return { ok: false, error: toAppError(err).message };
+  }
   if (r.ok) {
     revalidatePath("/gl");
     revalidatePath("/rates/revaluation");

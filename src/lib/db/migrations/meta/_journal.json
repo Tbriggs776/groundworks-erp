@@ -281,6 +281,13 @@
       "when": 1792619609259,
       "tag": "0039_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792619709259,
+      "tag": "0040_balanced_journals",
+      "breakpoints": true
     }
   ]
 }

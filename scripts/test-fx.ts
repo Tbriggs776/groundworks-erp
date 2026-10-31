@@ -29,6 +29,7 @@ import {
   sourceCodes,
 } from "../src/lib/db/schema";
 import { generateFiscalYear } from "../src/lib/gl/fiscal-calendar";
+import { systemActor } from "../src/lib/actor";
 import { createAndPostJournal } from "../src/lib/gl/posting";
 import {
   computeFxAdjustments,
@@ -172,8 +173,7 @@ async function main() {
   let revalJournalId: string | null = null;
   await check("post reval JE with auto-reverse on 2026-04-01", async () => {
     const r = await runFxRevaluation({
-      organizationId: fixtures.org.id,
-      actorId: null,
+      actor: systemActor(fixtures.org.id),
       asOfDate: "2026-03-31",
       fxGainAccountId: fixtures.fxGain.id,
       fxLossAccountId: fixtures.fxLoss.id,
@@ -234,8 +234,7 @@ async function main() {
 
   await check("run with missing rate rejects", async () => {
     const r = await runFxRevaluation({
-      organizationId: fixtures.org.id,
-      actorId: null,
+      actor: systemActor(fixtures.org.id),
       asOfDate: "2026-04-15",
       fxGainAccountId: fixtures.fxGain.id,
       fxLossAccountId: fixtures.fxLoss.id,
