@@ -79,7 +79,14 @@ export class QboClient {
       const json = (await res.json().catch(() => null)) as (T & { Fault?: { Error?: Array<{ Message?: string; Detail?: string }> } }) | null;
       if (!res.ok || !json || json.Fault) {
         const e = json?.Fault?.Error?.[0];
-        throw new AppError("upstream_error", `QuickBooks: ${e?.Detail ?? e?.Message ?? `request failed (${res.status})`}`, { status: res.status, path });
+        // intuit_tid identifies this request in Intuit's own logs; keeping it on the
+        // error record lets support correlate a Groundworks failure with Intuit's trace.
+        const intuitTid = res.headers.get("intuit_tid") ?? res.headers.get("intuit-tid") ?? undefined;
+        throw new AppError(
+          "upstream_error",
+          `QuickBooks: ${e?.Detail ?? e?.Message ?? `request failed (${res.status})`}`,
+          { status: res.status, path, intuitTid }
+        );
       }
       return json;
     }
