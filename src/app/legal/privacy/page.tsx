@@ -128,7 +128,7 @@ export default function PrivacyPage() {
         <li>We store the data we import so that your Groundworks books remain usable even if you later disconnect QuickBooks Online.</li>
         <li>We do not write to your QuickBooks Online company, except as expressly described in the Service.</li>
         <li>You may disconnect the integration at any time from the QuickBooks settings page inside Groundworks, or from the Apps screen inside QuickBooks Online. On disconnection we revoke the Intuit tokens and stop calling the Intuit API for that company. The books already imported remain in your workspace.</li>
-        <li>You may request deletion of imported QuickBooks data by contacting us at <a href="mailto:privacy@floordaddy.com">privacy@floordaddy.com</a>.</li>
+        <li>You may request deletion of imported QuickBooks data by contacting us at <a href="mailto:tyler@tylermbriggs.com">tyler@tylermbriggs.com</a>.</li>
       </ul>
 
       <h2>6. Security</h2>
@@ -167,7 +167,7 @@ export default function PrivacyPage() {
         <li>Opt out of marketing communications at any time.</li>
       </ul>
       <p>
-        To exercise these rights, email <a href="mailto:privacy@floordaddy.com">privacy@floordaddy.com</a>.
+        To exercise these rights, email <a href="mailto:tyler@tylermbriggs.com">tyler@tylermbriggs.com</a>.
         We will respond consistent with applicable law. If we deny your request, we will explain
         why and tell you how to appeal.
       </p>
@@ -204,11 +204,11 @@ export default function PrivacyPage() {
         <br />
         Attn: Privacy
         <br />
-        [Street Address]
+        22495 E Russet Rd
         <br />
-        [City], Arizona [ZIP]
+        Queen Creek, Arizona 85142
         <br />
-        Email: <a href="mailto:privacy@floordaddy.com">privacy@floordaddy.com</a>
+        Email: <a href="mailto:tyler@tylermbriggs.com">tyler@tylermbriggs.com</a>
       </p>
     </LegalFrame>
   );

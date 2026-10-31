@@ -50,7 +50,7 @@ export default function TermsPage() {
       <p>
         You are responsible for safeguarding account credentials, API keys, and the devices used
         to access the Service, and for enabling two-step verification where appropriate. You must
-        notify us promptly at <a href="mailto:security@floordaddy.com">security@floordaddy.com</a>
+        notify us promptly at <a href="mailto:tyler@tylermbriggs.com">tyler@tylermbriggs.com</a>
         if you suspect unauthorized access.
       </p>
 
@@ -239,7 +239,7 @@ export default function TermsPage() {
         is not a waiver. You may not assign these Terms without our prior written consent; we may
         assign them to an affiliate or in connection with a merger, acquisition, financing, or
         sale of our business. Notices to you may be sent to the email address on your account.
-        Notices to us must be sent to <a href="mailto:legal@floordaddy.com">legal@floordaddy.com</a>
+        Notices to us must be sent to <a href="mailto:tyler@tylermbriggs.com">tyler@tylermbriggs.com</a>
         with a copy to the address below.
       </p>
 
@@ -249,11 +249,11 @@ export default function TermsPage() {
         <br />
         Attn: Legal
         <br />
-        [Street Address]
+        22495 E Russet Rd
         <br />
-        [City], Arizona [ZIP]
+        Queen Creek, Arizona 85142
         <br />
-        Email: <a href="mailto:legal@floordaddy.com">legal@floordaddy.com</a>
+        Email: <a href="mailto:tyler@tylermbriggs.com">tyler@tylermbriggs.com</a>
       </p>
     </LegalFrame>
   );
