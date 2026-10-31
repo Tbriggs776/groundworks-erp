@@ -71,12 +71,25 @@ function SignupForm() {
     <AuthFrame
       tagline={joining ? "Join your team" : "Start your books"}
       footer={
-        <>
-          Already have an account?{" "}
-          <Link href={loginHref} className="text-foreground underline underline-offset-2">
-            Sign in
-          </Link>
-        </>
+        <div className="space-y-2">
+          <div>
+            Already have an account?{" "}
+            <Link href={loginHref} className="text-foreground underline underline-offset-2">
+              Sign in
+            </Link>
+          </div>
+          <div>
+            By creating an account you agree to the{" "}
+            <Link href="/legal/eula" className="underline underline-offset-2">
+              EULA
+            </Link>{" "}
+            and{" "}
+            <Link href="/legal/privacy" className="underline underline-offset-2">
+              Privacy Policy
+            </Link>
+            .
+          </div>
+        </div>
       }
     >
       {confirmSent ? (

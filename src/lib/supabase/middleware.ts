@@ -15,7 +15,7 @@ import { contentSecurityPolicy } from "@/lib/security/headers";
 
 /** Reachable without a session. */
 const PUBLIC_PATHS = ["/", "/signup"];
-const PUBLIC_PREFIXES = ["/auth/"];
+const PUBLIC_PREFIXES = ["/auth/", "/legal/"];
 /** Signed-in users skip these. */
 const SIGNED_OUT_ONLY = ["/auth/login", "/auth/forgot", "/signup"];
 
