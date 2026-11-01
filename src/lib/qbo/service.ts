@@ -170,29 +170,43 @@ const audit = (ctx: Ctx, event: string, metadata: Record<string, unknown>) =>
 
 /** Run the import until its time is up; returns where it stands. */
 export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSchema> = {}): Promise<ImportView> {
+  const t0 = Date.now();
+  const log = (msg: string) => console.log(`[qbo.import] +${Date.now() - t0}ms ${msg}`);
+  log("batch start");
   requireHuman(ctx, "run the QuickBooks import");
   const { budgetMs } = RunBatchSchema.parse(input);
+  log("latestImport");
   const imp = await latestImport(ctx, true);
-  // Locked by a batch already running (another tab): report and let that one work.
-  if (!imp) return (await getImportView(ctx)) ?? notImported();
+  if (!imp) {
+    log("row locked (SKIP LOCKED returned nothing); yielding to the other batch");
+    return (await getImportView(ctx)) ?? notImported();
+  }
   if (imp.status === "done") return (await getImportView(ctx))!;
-  const kit = new Kit(ctx, new QboClient(await loadConnection(ctx)), imp.counts, Date.now() + budgetMs);
+  log(`loadConnection (realm=${imp.cursor.step})`);
+  const conn = await loadConnection(ctx);
+  log(`starting at step=${imp.cursor.step} position=${imp.cursor.position}`);
+  const kit = new Kit(ctx, new QboClient(conn), imp.counts, Date.now() + budgetMs);
   // Each inventory item is recosted once, at the end of the batch.
   holdRecosting(ctx);
   let index = Math.max(0, STEPS.findIndex((s) => s.key === imp.cursor.step));
   let position = imp.cursor.position;
   while (index < STEPS.length) {
+    log(`run step=${STEPS[index].key} position=${position}`);
     const r = await STEPS[index].run(kit, position);
     if (!r.done) {
       position = r.position;
+      log(`step=${STEPS[index].key} paused at position=${position}`);
       break;
     }
+    log(`step=${STEPS[index].key} done`);
     await auditStep(kit, STEPS[index].key);
     index += 1;
     position = 1;
     if (kit.timeUp()) break;
   }
+  log("flushRecosting");
   await flushRecosting(ctx);
+  log("writing status");
   const done = index >= STEPS.length;
   await ctx.tx
     .update(qboImports)
