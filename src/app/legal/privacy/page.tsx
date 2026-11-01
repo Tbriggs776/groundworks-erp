@@ -154,7 +154,10 @@ export default function PrivacyPage() {
         agreements. Audit log entries are retained for the longer of (i) seven years and
         (ii) the period required by applicable law. On your written request, we will delete or
         return your account data within sixty (60) days, subject to legal holds and to the
-        continued retention of records we are required to keep.
+        continued retention of records we are required to keep. For the authoritative retention
+        periods by category of information, and the methods we use to dispose of information at
+        the end of its retention period, see our{" "}
+        <a href="/legal/retention">Data Retention and Disposal Policy</a>.
       </p>
 
       <h2>8. Your rights and choices</h2>
