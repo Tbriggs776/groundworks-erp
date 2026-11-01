@@ -290,9 +290,12 @@ html[data-font-scale="large"] .text-base {
   line-height: 1.55;
 }
 
-/* The sidebar nav items, which are hand-sized with text-[13px] */
+/* The sidebar's module buttons and sub-item links, which are hand-sized
+   with text-[13px] / text-[13.5px]. */
 html[data-font-scale="comfortable"] .gw-nav-item,
-html[data-font-scale="large"] .gw-nav-item {
+html[data-font-scale="large"] .gw-nav-item,
+html[data-font-scale="comfortable"] .gw-nav-subitem,
+html[data-font-scale="large"] .gw-nav-subitem {
   font-size: var(--gw-text-md);
   padding-top: var(--gw-nav-pad-y);
   padding-bottom: var(--gw-nav-pad-y);
@@ -339,36 +342,9 @@ html[data-font-scale="large"] .gw-table-wrap td {
     );
 }
 
-.gw-nav-group + .gw-nav-group {
-  margin-top: 0.5rem;
-  border-top: 1px solid rgb(255 255 255 / 0.05);
-  padding-top: 0.35rem;
-}
-
-.gw-nav-item {
+.gw-nav-item,
+.gw-nav-subitem {
   position: relative;
-}
-
-.gw-nav-item[data-active="true"] {
-  background: linear-gradient(
-    90deg,
-    rgb(201 169 97 / 0.14) 0%,
-    rgb(255 255 255 / 0.08) 100%
-  );
-  color: #ffffff;
-}
-
-.gw-nav-item[data-active="true"]::before {
-  content: "";
-  position: absolute;
-  inset: 0.2rem auto 0.2rem 0;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(
-    180deg,
-    var(--gw-gold-bright),
-    var(--gw-gold)
-  );
 }
 
 /*
