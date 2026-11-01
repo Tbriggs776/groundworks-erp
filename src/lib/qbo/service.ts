@@ -68,7 +68,10 @@ export const STEPS: Step[] = [
 
 const MAX_NOTES = 500;
 
-export const RunBatchSchema = z.object({ budgetMs: z.number().int().min(1).max(60_000).default(20_000) });
+// Default batch budget. Page sets maxDuration=60; we leave a 10s cushion for
+// transaction commit, flushRecosting, and the status write so the function
+// returns cleanly before Vercel kills it.
+export const RunBatchSchema = z.object({ budgetMs: z.number().int().min(1).max(60_000).default(50_000) });
 
 /** QuickBooks' company name, read with a fresh token before the company exists here. */
 async function companyName(realmId: string, accessToken: string): Promise<string> {
