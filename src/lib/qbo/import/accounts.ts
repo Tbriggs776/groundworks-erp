@@ -94,15 +94,21 @@ const depth = (r: QboRecord) => String(r.FullyQualifiedName ?? r.Name ?? "").spl
 export const accountsStep: Step = {
   key: "accounts",
   label: "Chart of accounts",
-  async run(kit: Kit) {
+  async run(kit: Kit, startIndex) {
+    const t0 = Date.now();
+    const log = (msg: string) => console.log(`[qbo.accounts] +${Date.now() - t0}ms ${msg}`);
+    log(`start (resume from index ${startIndex ?? 1})`);
     await kit.preload("Account");
+    log("preload done");
     const all: QboRecord[] = [];
     for (let pos = 1; ; pos += PAGE_SIZE) {
       const rows = await kit.client.page("Account", pos, "Active in (true, false)");
       all.push(...rows);
       if (rows.length < PAGE_SIZE) break;
     }
+    log(`fetched ${all.length} accounts from QBO`);
     const existing = await kit.ctx.tx.select().from(accounts).where(eq(accounts.organizationId, kit.org));
+    log(`loaded ${existing.length} existing accounts`);
     const byCode = new Map(existing.map((a) => [a.code, a]));
     const taken = new Set(existing.map((a) => a.code));
     const claimed = new Set<string>();
@@ -119,7 +125,17 @@ export const accountsStep: Step = {
       for (let n = 1; ; n++) if (!taken.has(`${range[0]}-${n}`)) return `${range[0]}-${n}`;
     };
 
-    for (const r of [...all].sort((a, b) => depth(a) - depth(b))) {
+    const sorted = [...all].sort((a, b) => depth(a) - depth(b));
+    const resume = Math.max(1, startIndex ?? 1) - 1;
+    for (let i = resume; i < sorted.length; i++) {
+      // Pause mid-step when the batch budget is up. Next batch starts here;
+      // kit.mapped() still skips what's already imported as a safety net.
+      if (i > resume && kit.timeUp()) {
+        log(`pausing at index ${i + 1} of ${sorted.length}`);
+        return { done: false, position: i + 1 };
+      }
+      if (i > resume && i % 25 === 0) log(`processed ${i - resume} accounts (${i}/${sorted.length})`);
+      const r = sorted[i];
       if (await kit.mapped("Account", r.Id)) continue;
       const name = String(r.Name ?? r.FullyQualifiedName ?? "Account").slice(0, 200);
       const sys = systemCode(r);
@@ -181,6 +197,7 @@ export const accountsStep: Step = {
       kit.count("accounts", "imported");
     }
 
+    log("main loop done, deactivating unused defaults");
     // Groundworks' defaults that nothing maps to step aside.
     const mappedIds = new Set(
       (await kit.ctx.tx.execute<{ local_id: string }>(sql`SELECT local_id FROM qbo_id_map WHERE organization_id = ${kit.org} AND entity = 'Account'`)).map(
@@ -191,6 +208,7 @@ export const accountsStep: Step = {
     for (const a of unused) {
       await kit.ctx.tx.update(accounts).set({ isActive: false, updatedAt: sql`now()` }).where(and(eq(accounts.id, a.id), eq(accounts.organizationId, kit.org)));
     }
+    log(`deactivated ${unused.length} defaults`);
     await writeAudit(
       {
         organizationId: kit.org,
