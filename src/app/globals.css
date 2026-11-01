@@ -251,6 +251,127 @@
 }
 
 /*
+ * Font scale preference. The viewer picks one of three stops in the topbar;
+ * the choice is a cookie, so every server render stamps it on `<html>` and
+ * nothing flashes. Each stop bumps body copy, nav items, inputs, buttons,
+ * and tables together, so rhythm holds. Headings and the small group
+ * labels stay as drawn, so the look stays steady.
+ */
+html[data-font-scale="comfortable"] {
+  --gw-text-sm: 0.95rem;        /* 15.2px */
+  --gw-text-base: 1.05rem;      /* 16.8px */
+  --gw-text-md: 0.95rem;        /* nav items, buttons */
+  --gw-table-cell: 0.95rem;
+  --gw-nav-pad-y: 0.5rem;
+}
+
+html[data-font-scale="large"] {
+  --gw-text-sm: 1.0625rem;      /* 17px */
+  --gw-text-base: 1.15rem;      /* 18.4px */
+  --gw-text-md: 1.0625rem;
+  --gw-table-cell: 1.0625rem;
+  --gw-nav-pad-y: 0.625rem;
+}
+
+html[data-font-scale="comfortable"] body,
+html[data-font-scale="large"] body {
+  font-size: var(--gw-text-base);
+}
+
+/* Body prose and the common small sizes */
+html[data-font-scale="comfortable"] .text-sm,
+html[data-font-scale="large"] .text-sm {
+  font-size: var(--gw-text-sm);
+  line-height: 1.5;
+}
+html[data-font-scale="comfortable"] .text-base,
+html[data-font-scale="large"] .text-base {
+  font-size: var(--gw-text-base);
+  line-height: 1.55;
+}
+
+/* The sidebar nav items, which are hand-sized with text-[13px] */
+html[data-font-scale="comfortable"] .gw-nav-item,
+html[data-font-scale="large"] .gw-nav-item {
+  font-size: var(--gw-text-md);
+  padding-top: var(--gw-nav-pad-y);
+  padding-bottom: var(--gw-nav-pad-y);
+}
+
+/* Inputs, selects, textareas, and buttons: bump together so forms don't
+   look wedged after scaling the labels around them. */
+html[data-font-scale="comfortable"] input,
+html[data-font-scale="comfortable"] select,
+html[data-font-scale="comfortable"] textarea,
+html[data-font-scale="comfortable"] [data-slot="button"],
+html[data-font-scale="large"] input,
+html[data-font-scale="large"] select,
+html[data-font-scale="large"] textarea,
+html[data-font-scale="large"] [data-slot="button"] {
+  font-size: var(--gw-text-md);
+}
+
+/* Table cells. The headers keep their 11px uppercase look so the shape of
+   the table stays legible, but numbers and prose in the body grow. */
+html[data-font-scale="comfortable"] .gw-table-wrap td,
+html[data-font-scale="large"] .gw-table-wrap td {
+  font-size: var(--gw-table-cell);
+}
+
+/*
+ * Sidebar polish. A quietly textured navy panel, a thin gold hairline at
+ * the top (set in markup), and nav items with real breathing room so an
+ * older eye can scan the groups without squinting. The active item wears
+ * a gold edge and a soft fill; group dividers add rhythm between sections.
+ */
+.gw-sidebar {
+  background:
+    radial-gradient(
+      1200px 400px at 100% 0%,
+      rgb(255 255 255 / 0.04),
+      transparent 60%
+    ),
+    linear-gradient(
+      180deg,
+      var(--gw-navy-deep) 0%,
+      var(--gw-navy) 55%,
+      var(--gw-navy-deep) 100%
+    );
+}
+
+.gw-nav-group + .gw-nav-group {
+  margin-top: 0.5rem;
+  border-top: 1px solid rgb(255 255 255 / 0.05);
+  padding-top: 0.35rem;
+}
+
+.gw-nav-item {
+  position: relative;
+}
+
+.gw-nav-item[data-active="true"] {
+  background: linear-gradient(
+    90deg,
+    rgb(201 169 97 / 0.14) 0%,
+    rgb(255 255 255 / 0.08) 100%
+  );
+  color: #ffffff;
+}
+
+.gw-nav-item[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 0.2rem auto 0.2rem 0;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    var(--gw-gold-bright),
+    var(--gw-gold)
+  );
+}
+
+/*
  * Page form action rows (Save / Cancel). On phones they pin to the bottom
  * of the screen so the primary action is always in thumb reach, with
  * full-height buttons and the primary one stretched.

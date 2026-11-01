@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Cinzel, Geist, Geist_Mono } from "next/font/google";
+import { getFontScale } from "@/lib/ui/font-scale.server";
 import "./globals.css";
 
 /**
@@ -45,9 +46,11 @@ export default async function RootLayout({
   // Reading the request makes every page dynamic, which the per-request
   // CSP nonce (set by src/proxy.ts) requires: Next stamps it on its scripts.
   await headers();
+  const fontScale = await getFontScale();
   return (
     <html
       lang="en"
+      data-font-scale={fontScale}
       className={`${geist.variable} ${cinzel.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

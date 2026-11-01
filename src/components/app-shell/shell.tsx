@@ -1,5 +1,6 @@
 import { hasWorkspaceRole } from "@/lib/actor";
 import { getCurrentOrg, getCurrentWorkspace, getUserMemberships, getUserWorkspaces } from "@/lib/auth";
+import { getFontScale } from "@/lib/ui/font-scale.server";
 import { KeepAlive } from "./keep-alive";
 import type { SwitcherWorkspace } from "./org-switcher";
 import { Sidebar } from "./sidebar";
@@ -19,11 +20,12 @@ type Props = {
  */
 export async function AppShell({ title, crumb, userEmail, children }: Props) {
   // Request-cached, so this costs nothing beyond what the page already did.
-  const [workspaces, memberships, currentOrg, currentWs] = await Promise.all([
+  const [workspaces, memberships, currentOrg, currentWs, fontScale] = await Promise.all([
     getUserWorkspaces(),
     getUserMemberships(),
     getCurrentOrg(),
     getCurrentWorkspace(),
+    getFontScale(),
   ]);
   const switcher = {
     workspaces: workspaces.map(
@@ -47,7 +49,14 @@ export async function AppShell({ title, crumb, userEmail, children }: Props) {
       <KeepAlive />
       <Sidebar workspaceAdmin={workspaceAdmin} />
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <Topbar title={title} crumb={crumb} userEmail={userEmail} switcher={workspaces.length ? switcher : undefined} workspaceAdmin={workspaceAdmin} />
+        <Topbar
+          title={title}
+          crumb={crumb}
+          userEmail={userEmail}
+          switcher={workspaces.length ? switcher : undefined}
+          workspaceAdmin={workspaceAdmin}
+          fontScale={fontScale}
+        />
         {currentWs?.support && (
           <div role="status" className="border-b border-[var(--gw-amber-bright)]/25 bg-[var(--gw-amber)] px-4 py-2 text-xs text-[var(--gw-amber-bright)]">
             Support view of {currentWs.workspace.name}: read-only, by the owner&apos;s permission, until{" "}
@@ -55,8 +64,8 @@ export async function AppShell({ title, crumb, userEmail, children }: Props) {
             Each visit is in their audit log.
           </div>
         )}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          <div className="mx-auto w-full max-w-[1600px]">{children}</div>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 sm:px-8 sm:py-8 lg:px-10 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+          <div className="mx-auto w-full max-w-[1440px]">{children}</div>
         </main>
       </div>
     </div>
