@@ -191,12 +191,12 @@ export function SidebarNav({
   const pathname = usePathname();
 
   return (
-    <nav className="flex-1 overflow-y-auto py-2 overscroll-contain">
+    <nav className="flex-1 overflow-y-auto py-3 overscroll-contain">
       {NAV.map((group) => (
-        <div key={group.label} className="mb-1">
-          <div className="px-4 pt-3 pb-1.5 flex items-center gap-2">
+        <div key={group.label} className="gw-nav-group mb-1 pb-1">
+          <div className="px-4 pt-3 pb-2 flex items-center gap-2">
             <group.icon className="h-3.5 w-3.5 text-[var(--gw-gold)]" />
-            <span className="text-[10px] font-semibold tracking-[0.2em] uppercase text-sidebar-foreground/60">
+            <span className="text-[11px] font-semibold tracking-[0.22em] uppercase text-sidebar-foreground/70">
               {group.label}
             </span>
           </div>
@@ -210,12 +210,13 @@ export function SidebarNav({
                 href={item.soon ? "#" : item.href}
                 aria-disabled={item.soon}
                 aria-current={active ? "page" : undefined}
+                data-active={active ? "true" : undefined}
                 onClick={item.soon ? undefined : onNavigate}
                 className={cn(
-                  "mx-2 flex items-center gap-2 rounded-md px-3 py-2.5 md:py-1.5 text-sm md:text-[13px] transition-colors",
+                  "gw-nav-item mx-2 flex items-center gap-2 rounded-md pl-4 pr-3 py-2.5 md:py-2 text-sm md:text-[13.5px] transition-colors",
                   active
-                    ? "bg-sidebar-accent text-white font-medium shadow-[inset_2px_0_0_var(--gw-gold)]"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
+                    ? "font-medium"
+                    : "text-sidebar-foreground hover:bg-white/5 hover:text-white",
                   item.soon && "opacity-50 cursor-not-allowed hover:bg-transparent"
                 )}
               >
@@ -237,12 +238,13 @@ export function SidebarNav({
 /** Desktop sidebar. Hidden below `md`; phones use the drawer in the topbar. */
 export function Sidebar({ workspaceAdmin }: { workspaceAdmin: boolean }) {
   return (
-    <aside className="hidden md:flex w-60 shrink-0 bg-sidebar flex-col relative">
+    <aside className="gw-sidebar hidden md:flex w-64 lg:w-[17rem] shrink-0 flex-col relative">
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[var(--gw-gold)] via-[var(--gw-gold-bright)] to-[var(--gw-gold)]" />
-      <div className="px-4 py-4 border-b border-sidebar-border">
+      <div className="px-5 py-5 border-b border-sidebar-border">
         <Brand />
       </div>
       <SidebarNav workspaceAdmin={workspaceAdmin} />
+      <div className="h-[env(safe-area-inset-bottom)]" />
     </aside>
   );
 }

@@ -9,6 +9,8 @@ import {
 } from "@/components/ui/sheet";
 import { LifeBuoy, LogOut, Menu } from "lucide-react";
 import { useState } from "react";
+import type { FontScale } from "@/lib/ui/font-scale";
+import { FontScaleToggle } from "./font-scale-toggle";
 import { OrgSwitcher, type SwitcherWorkspace } from "./org-switcher";
 import { Brand, SidebarNav } from "./sidebar";
 
@@ -18,13 +20,14 @@ type Props = {
   userEmail?: string | null;
   switcher?: { workspaces: SwitcherWorkspace[]; currentOrgId: string | null; currentWorkspaceId: string | null };
   workspaceAdmin: boolean;
+  fontScale: FontScale;
 };
 
-export function Topbar({ title, crumb, userEmail, switcher, workspaceAdmin }: Props) {
+export function Topbar({ title, crumb, userEmail, switcher, workspaceAdmin, fontScale }: Props) {
   const [navOpen, setNavOpen] = useState(false);
 
   return (
-    <header className="h-14 border-b border-border bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/80 px-3 sm:px-6 flex items-center justify-between gap-3 shrink-0 pt-[env(safe-area-inset-top)] box-content">
+    <header className="h-16 border-b border-border bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/80 px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-3 shrink-0 pt-[env(safe-area-inset-top)] box-content">
       <div className="flex items-center gap-2 min-w-0">
         <Sheet open={navOpen} onOpenChange={setNavOpen}>
           <SheetTrigger
@@ -50,29 +53,30 @@ export function Topbar({ title, crumb, userEmail, switcher, workspaceAdmin }: Pr
             </div>
             <SidebarNav onNavigate={() => setNavOpen(false)} workspaceAdmin={workspaceAdmin} />
             {/* Account strip on paper so the switcher reads like everywhere else. */}
-            {(switcher || userEmail) && (
-              <div className="bg-card text-foreground pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-                {switcher && (
-                  <div className="px-4 py-3 sm:hidden">
-                    <OrgSwitcher {...switcher} />
-                  </div>
-                )}
-                {userEmail && (
-                  <div className="border-t border-border px-4 pt-3 text-xs text-muted-foreground truncate">
-                    {userEmail}
-                  </div>
-                )}
+            <div className="bg-card text-foreground pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <div className="border-t border-border px-4 py-3">
+                <FontScaleToggle current={fontScale} variant="labelled" />
               </div>
-            )}
+              {switcher && (
+                <div className="border-t border-border px-4 py-3 sm:hidden">
+                  <OrgSwitcher {...switcher} />
+                </div>
+              )}
+              {userEmail && (
+                <div className="border-t border-border px-4 pt-3 text-xs text-muted-foreground truncate">
+                  {userEmail}
+                </div>
+              )}
+            </div>
           </SheetContent>
         </Sheet>
 
         <div className="min-w-0">
-          <div className="font-heading text-[16px] sm:text-[15px] tracking-[0.1em] text-foreground truncate leading-tight">
+          <div className="font-heading text-[17px] sm:text-[16px] tracking-[0.12em] text-foreground truncate leading-tight">
             {title}
           </div>
           {crumb && (
-            <div className="text-[10px] tracking-[0.18em] uppercase text-muted-foreground mt-0.5 truncate">
+            <div className="text-[10px] tracking-[0.18em] uppercase text-muted-foreground mt-1 truncate">
               {crumb}
             </div>
           )}
@@ -85,8 +89,11 @@ export function Topbar({ title, crumb, userEmail, switcher, workspaceAdmin }: Pr
             <OrgSwitcher {...switcher} />
           </div>
         )}
+        <div className="hidden md:block">
+          <FontScaleToggle current={fontScale} />
+        </div>
         {userEmail && (
-          <span className="hidden lg:inline text-xs text-muted-foreground">
+          <span className="hidden xl:inline text-xs text-muted-foreground">
             {userEmail}
           </span>
         )}
