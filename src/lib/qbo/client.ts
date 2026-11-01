@@ -18,8 +18,11 @@ export const PAGE_SIZE = 1000;
 const RETRIES = 4;
 // Per-request timeout. Intuit's API can hang; without this, a stuck call ties
 // up the whole batch until Vercel kills the function at its own timeout and
-// orphans the Postgres transaction holding the import row's lock.
-const REQUEST_TIMEOUT_MS = 15_000;
+// orphans the Postgres transaction holding the import row's lock. Kept tight
+// so even four back-to-back timeouts plus backoff stay well under Vercel's
+// 60-second function budget.
+const REQUEST_TIMEOUT_MS = 8_000;
+const MAX_TIMEOUT_RETRIES = 2;
 
 export type QboRecord = Record<string, unknown> & { Id: string };
 
@@ -79,7 +82,7 @@ export class QboClient {
         });
       } catch (err) {
         clearTimeout(timer);
-        if ((err as { name?: string }).name === "AbortError" && attempt < RETRIES) {
+        if ((err as { name?: string }).name === "AbortError" && attempt < MAX_TIMEOUT_RETRIES) {
           await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
           continue;
         }
