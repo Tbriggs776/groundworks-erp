@@ -159,15 +159,26 @@ async function main() {
   const cursor = async () => (await db.select().from(qboImports).where(eq(qboImports.organizationId, orgId)))[0].cursor;
 
   await check("tiny batches move forward a record at a time and keep their place", async () => {
+    // Budget = 1ms: each batch processes exactly one record of whatever step
+    // it's on, because the accounts step pauses mid-list as soon as timeUp
+    // (introduced in #42 so large charts don't blow the 60s function budget).
+    // 1 batch for company + 19 for the fake chart = 20 to reach terms. Loop
+    // until the cursor lands on terms with a safety cap so a regression that
+    // breaks forward progress fails loudly instead of hanging.
     let before = 0;
-    for (let i = 0; i < 8; i++) {
+    let iterations = 0;
+    const MAX = 50;
+    while (iterations < MAX) {
       const v = await batch(1);
+      iterations++;
       const done = v.steps.filter((s) => s.state === "done").length;
       assert(done >= before, "never moves backwards");
       before = done;
+      if ((await cursor()).step === "terms") break;
     }
+    assert(iterations < MAX, `reached the terms step within ${MAX} batches (took ${iterations})`);
     const v = await view();
-    assertEq(v.batches, 8, "batches counted");
+    assertEq(v.batches, iterations, "batches counted");
     const c = await cursor();
     assertEq(c.step, "terms", "on terms after the company and the chart");
     assertEq(c.position, (v.steps.find((s) => s.key === "terms")?.imported ?? 0) + 1, "resumes right after the last term");
