@@ -7,7 +7,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { LogOut, Menu } from "lucide-react";
+import { LifeBuoy, LogOut, Menu } from "lucide-react";
 import { useState } from "react";
 import { OrgSwitcher, type SwitcherWorkspace } from "./org-switcher";
 import { Brand, SidebarNav } from "./sidebar";
@@ -90,6 +90,14 @@ export function Topbar({ title, crumb, userEmail, switcher, workspaceAdmin }: Pr
             {userEmail}
           </span>
         )}
+        <a
+          href="mailto:tyler@tylermbriggs.com?subject=Groundworks%20support"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+          aria-label="Contact support"
+        >
+          <LifeBuoy className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Support</span>
+        </a>
         {/* A real POST so the server records the sign-out and ends the session. */}
         <form action="/auth/signout" method="post">
           <Button type="submit" variant="ghost" size="sm" className="gap-1.5" aria-label="Sign out">

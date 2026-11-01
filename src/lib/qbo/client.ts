@@ -16,6 +16,10 @@ import { refreshTokens, type Tokens } from "./oauth";
 
 export const PAGE_SIZE = 1000;
 const RETRIES = 4;
+// Per-request timeout. Intuit's API can hang; without this, a stuck call ties
+// up the whole batch until Vercel kills the function at its own timeout and
+// orphans the Postgres transaction holding the import row's lock.
+const REQUEST_TIMEOUT_MS = 15_000;
 
 export type QboRecord = Record<string, unknown> & { Id: string };
 
@@ -65,7 +69,24 @@ export class QboClient {
     url.searchParams.set("minorversion", QBO_MINOR_VERSION);
     let refreshed = false;
     for (let attempt = 0; ; attempt++) {
-      const res = await fetch(url, { headers: { authorization: `Bearer ${await this.token(false)}`, accept: "application/json" } });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          headers: { authorization: `Bearer ${await this.token(false)}`, accept: "application/json" },
+          signal: ctrl.signal,
+        });
+      } catch (err) {
+        clearTimeout(timer);
+        if ((err as { name?: string }).name === "AbortError" && attempt < RETRIES) {
+          await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+          continue;
+        }
+        throw new AppError("upstream_error", `QuickBooks didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s on ${path}. Try the import again.`, { path });
+      } finally {
+        clearTimeout(timer);
+      }
       if (res.status === 401 && !refreshed) {
         refreshed = true;
         await this.token(true);
@@ -79,7 +100,14 @@ export class QboClient {
       const json = (await res.json().catch(() => null)) as (T & { Fault?: { Error?: Array<{ Message?: string; Detail?: string }> } }) | null;
       if (!res.ok || !json || json.Fault) {
         const e = json?.Fault?.Error?.[0];
-        throw new AppError("upstream_error", `QuickBooks: ${e?.Detail ?? e?.Message ?? `request failed (${res.status})`}`, { status: res.status, path });
+        // intuit_tid identifies this request in Intuit's own logs; keeping it on the
+        // error record lets support correlate a Groundworks failure with Intuit's trace.
+        const intuitTid = res.headers.get("intuit_tid") ?? res.headers.get("intuit-tid") ?? undefined;
+        throw new AppError(
+          "upstream_error",
+          `QuickBooks: ${e?.Detail ?? e?.Message ?? `request failed (${res.status})`}`,
+          { status: res.status, path, intuitTid }
+        );
       }
       return json;
     }
