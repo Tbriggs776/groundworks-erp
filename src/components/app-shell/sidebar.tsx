@@ -2,15 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
-import { BrandLockup } from "@/components/brand-mark";
+import { BrandLockup, BrandMark } from "@/components/brand-mark";
 import {
   BookOpen,
   Bot,
   Building2,
+  ChevronDown,
+  ChevronRight,
   FileBarChart,
   Landmark,
   LayoutDashboard,
+  PanelLeftClose,
+  PanelLeftOpen,
   Receipt,
   Settings,
   Wallet,
@@ -168,82 +173,294 @@ const NAV: NavGroup[] = [
   },
 ];
 
+const RAIL_KEY = "gw.sidebar.rail";
+const EXPANDED_KEY = "gw.sidebar.expanded";
+const STORAGE_EVENT = "gw:sidebar-storage";
+
+/**
+ * useSyncExternalStore subscription for same-tab localStorage writes. The
+ * native "storage" event only fires in other tabs, so we dispatch a custom
+ * event when we write.
+ */
+function subscribe(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(STORAGE_EVENT, callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    window.removeEventListener(STORAGE_EVENT, callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+function emitChange() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(STORAGE_EVENT));
+}
+
+/** Boolean preference remembered across reloads (and across tabs). */
+function usePersistentBool(key: string, defaultValue: boolean) {
+  const read = () => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw === null ? defaultValue : raw === "1";
+    } catch {
+      return defaultValue;
+    }
+  };
+  const value = useSyncExternalStore(subscribe, read, () => defaultValue);
+  const set = (next: boolean | ((prev: boolean) => boolean)) => {
+    const resolved = typeof next === "function" ? next(value) : next;
+    try {
+      window.localStorage.setItem(key, resolved ? "1" : "0");
+      emitChange();
+    } catch {
+      /* private mode */
+    }
+  };
+  return [value, set] as const;
+}
+
+/**
+ * Expanded-group map remembered across reloads. useSyncExternalStore
+ * requires a stable snapshot reference per underlying value, so we cache
+ * the parsed object keyed by the raw string from localStorage.
+ */
+let expandedRaw: string | null | undefined = undefined;
+let expandedCache: Record<string, boolean> = {};
+const emptyExpanded: Record<string, boolean> = {};
+
+function readExpanded(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(EXPANDED_KEY);
+    if (raw === expandedRaw) return expandedCache;
+    expandedRaw = raw;
+    if (!raw) {
+      expandedCache = {};
+      return expandedCache;
+    }
+    const parsed = JSON.parse(raw);
+    expandedCache =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    return expandedCache;
+  } catch {
+    return expandedCache;
+  }
+}
+
+function usePersistentExpanded() {
+  const value = useSyncExternalStore(subscribe, readExpanded, () => emptyExpanded);
+  const set = (
+    updater:
+      | Record<string, boolean>
+      | ((prev: Record<string, boolean>) => Record<string, boolean>)
+  ) => {
+    const next = typeof updater === "function" ? updater(value) : updater;
+    try {
+      window.localStorage.setItem(EXPANDED_KEY, JSON.stringify(next));
+      emitChange();
+    } catch {
+      /* private mode */
+    }
+  };
+  return [value, set] as const;
+}
+
 /** Brand lockup shared by the desktop sidebar and the mobile drawer. */
-export function Brand() {
+export function Brand({ rail }: { rail?: boolean }) {
   return (
-    <Link href="/dashboard" className="block">
-      <BrandLockup tone="navy" tagline="Accounting · API" />
+    <Link href="/dashboard" aria-label="Groundworks home" className="block">
+      {rail ? (
+        <BrandMark size={34} tone="navy" />
+      ) : (
+        <BrandLockup tone="navy" tagline="Accounting · API" />
+      )}
     </Link>
   );
 }
 
 /**
  * The nav list itself. Rendered inside the desktop sidebar and the mobile
- * drawer; `onNavigate` lets the drawer close itself after a tap.
+ * drawer; `onNavigate` lets the drawer close itself after a tap. Groups
+ * are collapsible: opening one closes any other opened by hand, and the
+ * group holding the current page is always open regardless. State is kept
+ * in localStorage so a bookkeeper's two favorite groups stay open across
+ * reloads.
  */
 export function SidebarNav({
   onNavigate,
   workspaceAdmin,
+  rail = false,
+  onExpandFromRail,
 }: {
   onNavigate?: () => void;
   workspaceAdmin: boolean;
+  rail?: boolean;
+  onExpandFromRail?: () => void;
 }) {
   const pathname = usePathname();
+  const [expanded, setExpanded] = usePersistentExpanded();
+
+  const matches = (i: NavItem) =>
+    pathname === i.href || (!i.exact && pathname.startsWith(`${i.href}/`));
+
+  const activeRef = useRef<HTMLAnchorElement | null>(null);
+  useEffect(() => {
+    activeRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [pathname]);
+
+  const toggleGroup = (name: string, hasActive: boolean) => {
+    if (rail && onExpandFromRail) {
+      onExpandFromRail();
+      setExpanded((prev) => ({ ...prev, [name]: true }));
+      return;
+    }
+    setExpanded((prev) => {
+      const isOpen = prev[name] ?? hasActive;
+      return isOpen ? { ...prev, [name]: false } : { [name]: true };
+    });
+  };
 
   return (
-    <nav className="flex-1 overflow-y-auto py-3 overscroll-contain">
-      {NAV.map((group) => (
-        <div key={group.label} className="gw-nav-group mb-1 pb-1">
-          <div className="px-4 pt-3 pb-2 flex items-center gap-2">
-            <group.icon className="h-3.5 w-3.5 text-[var(--gw-gold)]" />
-            <span className="text-[11px] font-semibold tracking-[0.22em] uppercase text-sidebar-foreground/70">
-              {group.label}
-            </span>
-          </div>
-          {group.items.filter((item) => workspaceAdmin || !item.adminOnly).map((item, _, shown) => {
-            const matches = (i: NavItem) => pathname === i.href || (!i.exact && pathname.startsWith(`${i.href}/`));
-            // A longer match in the group wins (Inventory Adjustments over Products & Services).
-            const active = matches(item) && !shown.some((o) => o.href.length > item.href.length && matches(o));
-            return (
-              <Link
-                key={`${group.label}-${item.href}`}
-                href={item.soon ? "#" : item.href}
-                aria-disabled={item.soon}
-                aria-current={active ? "page" : undefined}
-                data-active={active ? "true" : undefined}
-                onClick={item.soon ? undefined : onNavigate}
-                className={cn(
-                  "gw-nav-item mx-2 flex items-center gap-2 rounded-md pl-4 pr-3 py-2.5 md:py-2 text-sm md:text-[13.5px] transition-colors",
-                  active
-                    ? "font-medium"
-                    : "text-sidebar-foreground hover:bg-white/5 hover:text-white",
-                  item.soon && "opacity-50 cursor-not-allowed hover:bg-transparent"
-                )}
-              >
-                <span className="truncate">{item.label}</span>
-                {item.soon && (
-                  <span className="ml-auto text-[9px] tracking-widest px-1.5 py-[1px] rounded-full bg-white/10 text-sidebar-foreground">
-                    SOON
+    <nav
+      aria-label="Main navigation"
+      className={cn(
+        "flex-1 overflow-y-auto overscroll-contain py-3",
+        rail ? "px-2 space-y-1" : "px-2 space-y-0.5"
+      )}
+    >
+      {NAV.map((group) => {
+        const items = group.items.filter((it) => workspaceAdmin || !it.adminOnly);
+        if (items.length === 0) return null;
+        const hasActive = items.some(matches);
+        const isExpanded = expanded[group.label] ?? hasActive;
+        const Icon = group.icon;
+
+        return (
+          <div key={group.label}>
+            <button
+              type="button"
+              onClick={() => toggleGroup(group.label, hasActive)}
+              title={rail ? group.label : undefined}
+              aria-label={rail ? group.label : undefined}
+              aria-expanded={rail ? undefined : isExpanded}
+              className={cn(
+                "gw-nav-item w-full flex items-center rounded-md transition-colors",
+                rail
+                  ? "relative justify-center px-0 py-2.5"
+                  : "gap-2.5 px-3 py-2 md:py-2",
+                hasActive
+                  ? cn(
+                      "text-white font-semibold bg-white/[0.06]",
+                      rail &&
+                        "before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-r-full before:bg-[var(--gw-gold)]"
+                    )
+                  : "text-sidebar-foreground hover:bg-white/5 hover:text-white"
+              )}
+            >
+              <Icon className="h-[18px] w-[18px] shrink-0 text-[var(--gw-gold)]" />
+              {!rail && (
+                <>
+                  <span className="flex-1 text-left text-[13.5px] font-medium tracking-wide">
+                    {group.label}
                   </span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-      ))}
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4 opacity-70" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 opacity-60" />
+                  )}
+                </>
+              )}
+            </button>
+
+            {isExpanded && !rail && (
+              <div className="mb-1 ml-[22px] mt-0.5 space-y-0.5 border-l border-white/10 pl-2.5">
+                {items.map((item, _, shown) => {
+                  // A longer match in the group wins (Inventory Adjustments over Products & Services).
+                  const subActive =
+                    matches(item) &&
+                    !shown.some((o) => o.href.length > item.href.length && matches(o));
+                  return (
+                    <Link
+                      key={`${group.label}-${item.href}`}
+                      ref={subActive ? activeRef : undefined}
+                      href={item.soon ? "#" : item.href}
+                      aria-disabled={item.soon}
+                      aria-current={subActive ? "page" : undefined}
+                      data-active={subActive ? "true" : undefined}
+                      onClick={item.soon ? undefined : onNavigate}
+                      className={cn(
+                        "gw-nav-subitem relative flex items-center gap-2 rounded-md px-3 py-1.5 text-[13px] transition-colors",
+                        subActive
+                          ? "bg-white/[0.08] text-white font-medium before:absolute before:-left-[11px] before:top-1.5 before:bottom-1.5 before:w-[2px] before:rounded-r-full before:bg-[var(--gw-gold)]"
+                          : "text-sidebar-foreground/80 hover:bg-white/5 hover:text-white",
+                        item.soon && "opacity-50 cursor-not-allowed hover:bg-transparent"
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {item.soon && (
+                        <span className="ml-auto text-[9px] tracking-widest px-1.5 py-[1px] rounded-full bg-white/10">
+                          SOON
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </nav>
   );
 }
 
 /** Desktop sidebar. Hidden below `md`; phones use the drawer in the topbar. */
 export function Sidebar({ workspaceAdmin }: { workspaceAdmin: boolean }) {
+  const [rail, setRail] = usePersistentBool(RAIL_KEY, false);
+
   return (
-    <aside className="gw-sidebar hidden md:flex w-64 lg:w-[17rem] shrink-0 flex-col relative">
+    <aside
+      className={cn(
+        "gw-sidebar hidden md:flex shrink-0 flex-col relative transition-[width] duration-200",
+        rail ? "w-[72px]" : "w-64 lg:w-[17rem]"
+      )}
+    >
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[var(--gw-gold)] via-[var(--gw-gold-bright)] to-[var(--gw-gold)]" />
-      <div className="px-5 py-5 border-b border-sidebar-border">
-        <Brand />
+      <div
+        className={cn(
+          "flex items-center border-b border-sidebar-border",
+          rail ? "justify-center py-4" : "justify-between pl-5 pr-3 py-4"
+        )}
+      >
+        <Brand rail={rail} />
+        {!rail && (
+          <button
+            type="button"
+            onClick={() => setRail(true)}
+            aria-label="Collapse navigation"
+            title="Collapse menu"
+            className="grid h-8 w-8 place-items-center rounded-md text-sidebar-foreground/70 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            <PanelLeftClose className="h-[18px] w-[18px]" />
+          </button>
+        )}
       </div>
-      <SidebarNav workspaceAdmin={workspaceAdmin} />
+      {rail && (
+        <div className="flex justify-center border-b border-sidebar-border py-2">
+          <button
+            type="button"
+            onClick={() => setRail(false)}
+            aria-label="Expand navigation"
+            title="Expand menu"
+            className="grid h-9 w-9 place-items-center rounded-md text-sidebar-foreground/70 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            <PanelLeftOpen className="h-[18px] w-[18px]" />
+          </button>
+        </div>
+      )}
+      <SidebarNav
+        workspaceAdmin={workspaceAdmin}
+        rail={rail}
+        onExpandFromRail={() => setRail(false)}
+      />
       <div className="h-[env(safe-area-inset-bottom)]" />
     </aside>
   );
