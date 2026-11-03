@@ -642,11 +642,18 @@ async function main() {
     assertEq(recs.length, 1, "one reconciliation");
     assertEq(`${recs[0].end} ${Number(recs[0].bal)} ${recs[0].n}`, "2026-03-23 699.4 4", "through the last reconciled date: 1000 − 500 + 499.40 − 300");
     const [c] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM gl_line_clearings WHERE account_id = ${checking} AND status = 'cleared'`);
-    assertEq(c.n, 2, "two cleared, not reconciled");
+    // Transfer 1102 is cleared on the Visa, and QuickBooks' list gives a
+    // transaction one status, so its Checking side is cleared too (noted).
+    assertEq(c.n, 3, "three cleared, not reconciled: two of Checking's own, and the Visa transfer's Checking side");
     const [visa] = await db.execute<{ bal: string }>(sql`
       SELECT statement_ending_balance::text AS bal FROM reconciliations WHERE account_id = ${await qboAccount("15")} AND status = 'completed'`);
     assertEq(Number(visa.bal), 240, "card: amount owed");
-    assert((await notes()).some((x) => x.startsWith("Checking: 1 cleared or reconciled")), "a transaction that isn't here is noted");
+    const n = await notes();
+    assert(n.includes("1 cleared or reconciled QuickBooks transaction isn't here, so it stays unmarked."), "a transaction that isn't here is noted");
+    assert(n.some((x) => /^Checking and .+: 1 transaction touches both accounts/.test(x) || /^.+ and Checking: 1 transaction touches both accounts/.test(x)), `two-sided transactions are noted (${n.filter((x) => x.includes("both accounts")).join(" | ")})`);
+    const v = await view();
+    assert(v.skipped.some((s) => s.entity === "Purchase" && s.qboIds.includes("900004")), "every skipped record is listed, by QuickBooks id");
+    assertEq(v.notesDropped, false, "no notes dropped");
     const sheet = await runAs(as(), (ctx) => reconcile.startReconciliation(ctx, { accountId: checking, statementEndDate: "2026-04-30", statementEndingBalance: "0" }));
     assertEq(Number(sheet.beginningBalance), 699.4, "the next reconciliation starts where QuickBooks' ended");
     await runAs(as(), (ctx) => reconcile.cancelReconciliation(ctx, { id: sheet.id }));

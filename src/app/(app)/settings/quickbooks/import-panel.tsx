@@ -13,9 +13,29 @@ import { disconnectQbo, runQuickBooksBatch } from "./actions";
  * stopped.
  */
 
+/** QuickBooks entity names, as people read them. */
+const ENTITY_LABELS: Record<string, string> = {
+  Bill: "Bills",
+  BillPayment: "Bill payments",
+  VendorCredit: "Vendor credits",
+  Purchase: "Expenses, checks, and card charges",
+  Transfer: "Transfers",
+  Invoice: "Invoices",
+  SalesReceipt: "Sales receipts",
+  CreditMemo: "Credit memos",
+  RefundReceipt: "Refunds",
+  Payment: "Customer payments",
+  Deposit: "Deposits",
+  JournalEntry: "Journal entries",
+  Estimate: "Estimates",
+  PurchaseOrder: "Purchase orders",
+};
+
 /** A batch the platform stops gets retried this many times in a row before the page gives up. */
 const RETRIES = 4;
 const RETRY_DELAY_MS = 3000;
+/** When another tab (or a batch still finishing) holds the import, wait this long before asking again. */
+const BUSY_DELAY_MS = 5000;
 export function ImportPanel({ initial, canRun }: { initial: ImportView; canRun: boolean }) {
   const router = useRouter();
   const [view, setView] = useState(initial);
@@ -29,6 +49,7 @@ export function ImportPanel({ initial, canRun }: { initial: ImportView; canRun: 
     setErr(null);
     stop.current = false;
     let stopped = 0;
+    let lastBatches = view.batches;
     for (;;) {
       let r: Awaited<ReturnType<typeof runQuickBooksBatch>>;
       try {
@@ -55,6 +76,9 @@ export function ImportPanel({ initial, canRun }: { initial: ImportView; canRun: 
       setErr(null);
       setView(r.view);
       if (r.view.status !== "running" || stop.current) break;
+      // No batch ran: another tab holds the import. Don't hammer the server.
+      if (r.view.batches === lastBatches) await new Promise((ok) => setTimeout(ok, BUSY_DELAY_MS));
+      lastBatches = r.view.batches;
     }
     setRunning(false);
     router.refresh();
@@ -173,6 +197,32 @@ export function ImportPanel({ initial, canRun }: { initial: ImportView; canRun: 
             </Button>
           )}
         </div>
+      )}
+
+      {view.skipped.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Didn&apos;t come across ({view.skipped.reduce((n, s) => n + s.qboIds.length, 0)})
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Every QuickBooks record that was skipped, by its QuickBooks id. Enter these by hand; the notes below say why, where they were kept.
+          </p>
+          <ul className="rounded-md border border-border divide-y divide-border text-sm">
+            {view.skipped.map((s) => (
+              <li key={s.entity} className="px-3 py-2">
+                <span className="font-medium">{ENTITY_LABELS[s.entity] ?? s.entity}</span>{" "}
+                <span className="text-muted-foreground">({s.qboIds.length})</span>
+                <div className="font-mono text-xs text-muted-foreground break-words">{s.qboIds.join(", ")}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {view.notesDropped && (
+        <p className="text-xs text-muted-foreground">
+          This import wrote more notes than are kept, so some reasons are missing below. The list above still names every record that didn&apos;t come across.
+        </p>
       )}
 
       {view.notes.length > 0 && (

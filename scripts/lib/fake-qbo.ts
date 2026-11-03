@@ -484,8 +484,12 @@ export const CLEARED: Record<string, Record<"Reconciled" | "Cleared", Array<[str
   },
 };
 
-function transactionList(account: string, cleared: string) {
-  const rows = CLEARED[account]?.[cleared as "Reconciled" | "Cleared"] ?? [];
+/** The whole company's list for a status: QuickBooks documents no account filter on this report. */
+function transactionList(cleared: string) {
+  const seen = new Set<string>();
+  const rows = Object.values(CLEARED)
+    .flatMap((a) => a[cleared as "Reconciled" | "Cleared"] ?? [])
+    .filter(([type, id]) => !seen.has(`${type}:${id}`) && Boolean(seen.add(`${type}:${id}`)));
   return {
     Header: { ReportName: "TransactionList" },
     Columns: {
@@ -679,7 +683,7 @@ export async function startFakeQbo(opts: { realmId: string; companyName: string;
     }
     if (path === "reports/TransactionList") {
       state.queries.push(`report TransactionList ${url.searchParams.get("account")} ${url.searchParams.get("cleared")}`);
-      return send(res, 200, transactionList(url.searchParams.get("account") ?? "", url.searchParams.get("cleared") ?? ""));
+      return send(res, 200, transactionList(url.searchParams.get("cleared") ?? ""));
     }
     if (path !== "query") return send(res, 404, fault("Not found", path));
 
