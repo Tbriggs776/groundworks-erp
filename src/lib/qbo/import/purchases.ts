@@ -311,9 +311,10 @@ export const creditCardPaymentsStep = pagedStep({
   preload: ["Account"],
   async importOne(kit, r) {
     const label = `Credit card payment ${r.Id} (${String(r.TxnDate)})`;
+    await kit.once("card-payment-fields-logged", async () => console.log(`[qbo.card_payments] fields: ${Object.keys(r).join(", ")}`));
     return importTxn(kit, "CreditCardPayment", r, label, async () => {
-      const from = await kit.local("Account", r.BankAccountRef as Ref);
-      const to = await kit.local("Account", r.CreditCardAccountRef as Ref);
+      const from = await kit.local("Account", (r.BankAccountRef ?? r.FromAccountRef) as Ref);
+      const to = await kit.local("Account", (r.CreditCardAccountRef ?? r.CCAccountRef ?? r.ToAccountRef) as Ref);
       if (!from || !to) throw new AppError("invalid_input", "its bank account or card isn't here.");
       const amount = amountOf(r.Amount);
       if (amount.lte(0)) throw new AppError("invalid_input", "its amount isn't more than zero.");

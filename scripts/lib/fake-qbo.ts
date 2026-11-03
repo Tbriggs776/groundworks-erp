@@ -709,7 +709,9 @@ export async function startFakeQbo(opts: { realmId: string; companyName: string;
     }
     const from = Math.max(1, Number(start ?? 1));
     const page = rows.slice(from - 1, from - 1 + Math.min(1000, Number(max ?? 100)));
-    return send(res, 200, { QueryResponse: { [entity]: page, startPosition: from, maxResults: page.length } });
+    // QuickBooks answers a CreditCardPayment query under another name.
+    const key = entity === "CreditCardPayment" ? "CreditCardPaymentTxn" : entity;
+    return send(res, 200, { QueryResponse: { [key]: page, startPosition: from, maxResults: page.length } });
   });
 
   await new Promise<void>((resolve) => server.listen(opts.port ?? 0, "127.0.0.1", resolve));
