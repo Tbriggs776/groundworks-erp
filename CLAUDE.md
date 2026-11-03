@@ -303,6 +303,11 @@ docs/compliance/      SOC 2 control map and checklist
   `payments.ts`) writes each document's rows with QuickBooks' amounts and
   tax (`import/txn.ts`), then posts through the app's own posting helpers;
   nothing is auto-applied (QuickBooks' payments say what paid what).
+  A deposit line from a customer against AR becomes a customer payment
+  held in Undeposited Funds that the deposit takes to the bank, and the
+  step after deposits applies it as QuickBooks' (often $0) payments did.
+  Card payments are QuickBooks' own CreditCardPayment records (a transfer
+  bank to card here).
   Voided transactions come in voided with zero amounts. A batch holds
   inventory recosting (`holdRecosting` / `flushRecosting` in the engine) and
   recosts each touched item once. Accounts QuickBooks had inactive stay open

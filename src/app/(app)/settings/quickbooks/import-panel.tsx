@@ -26,6 +26,7 @@ const ENTITY_LABELS: Record<string, string> = {
   RefundReceipt: "Refunds",
   Payment: "Customer payments",
   Deposit: "Deposits",
+  PaymentFromDeposit: "Payments applying deposits",
   JournalEntry: "Journal entries",
   Estimate: "Estimates",
   PurchaseOrder: "Purchase orders",

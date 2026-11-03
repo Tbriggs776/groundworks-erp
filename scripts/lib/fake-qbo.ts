@@ -78,6 +78,8 @@ function fixtures(): Record<string, Rec[]> {
       acct("17", "Savings", "Bank", { AcctNum: "1020", AccountSubType: "Savings" }),
       acct("18", "Discounts given", "Income", { AccountSubType: "DiscountsRefundsGiven" }),
       acct("19", "Office Supplies", "Expense", { AccountSubType: "SuppliesMaterials" }),
+      // A second of a kind that takes a system account: it must get its own.
+      acct("20", "Refunds to Customers", "Income", { AccountSubType: "DiscountsRefundsGiven" }),
     ],
     Term: [
       { Id: "1", Name: "Net 30", DueDays: 30, Active: true },
@@ -310,6 +312,15 @@ function history(): Record<string, Rec[]> {
       { Id: "502", TxnDate: "2026-03-22", CustomerRef: ref("2"), TotalAmt: 200, DepositToAccountRef: ref("4"), Line: [linked("Invoice", "102", 151)] },
       { Id: "503", TxnDate: "2026-04-05", CustomerRef: ref("4"), TotalAmt: 100, DepositToAccountRef: ref("1"), Line: [linked("Invoice", "104", 100)] },
       { Id: "504", TxnDate: "2026-04-06", CustomerRef: ref("4"), Line: [], ...voided },
+      // How many companies record a customer's money: a deposit against AR
+      // (602), then a $0 payment that applies it to the invoice.
+      {
+        Id: "505",
+        TxnDate: "2026-04-08",
+        CustomerRef: ref("4"),
+        TotalAmt: 0,
+        Line: [linked("Invoice", "104", 50), { Amount: 50, LinkedTxn: [{ TxnId: "602", TxnType: "Deposit", TxnLineId: "1" }] }],
+      },
     ],
     Deposit: [
       {
@@ -327,6 +338,13 @@ function history(): Record<string, Rec[]> {
         ],
         CashBack: { AccountRef: ref("19"), Amount: 20, Memo: "Petty cash" },
         TotalAmt: 499.4,
+      },
+      {
+        Id: "602",
+        TxnDate: "2026-04-07",
+        DepositToAccountRef: ref("1"),
+        Line: [{ Id: "1", Amount: 50, DetailType: "DepositLineDetail", DepositLineDetail: { AccountRef: ref("2"), Entity: { value: "4", type: "Customer" }, CheckNum: "7788" } }],
+        TotalAmt: 50,
       },
     ],
     Bill: [

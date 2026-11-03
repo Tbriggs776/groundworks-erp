@@ -38,23 +38,46 @@ const OPENING_BALANCE = "3300";
 const CENT = money("0.005");
 
 type Cell = { value?: string; id?: string };
-type Row = { ColData?: Cell[]; Rows?: { Row?: Row[] }; Header?: { ColData?: Cell[] } };
+type Row = { ColData?: Cell[]; Rows?: { Row?: Row[] }; Header?: { ColData?: Cell[] }; Summary?: { ColData?: Cell[] } };
 type Report = { Columns?: { Column?: Array<{ ColTitle?: string; MetaData?: Array<{ Name?: string; Value?: string }> }> }; Rows?: { Row?: Row[] } };
 
-/** Account rows of a by-month report: QuickBooks account id → name and amount per month ("2026-03"). */
-function byMonth(report: Report): Map<string, { name: string; months: Map<string, Decimal> }> {
+/**
+ * Account rows of a by-month report: QuickBooks account id → name and amount
+ * per month ("2026-03"). An account with sub-accounts comes as a section:
+ * its name and id in the header, its sub-accounts as rows, and the total
+ * with them in the summary. Its own amount is then its own row when
+ * QuickBooks sends one, else the summary less its sub-accounts.
+ */
+export function accountsByMonth(report: Report): Map<string, { name: string; months: Map<string, Decimal> }> {
   const cols = (report.Columns?.Column ?? []).map((c) => c.MetaData?.find((m) => m.Name === "StartDate")?.Value?.slice(0, 7) ?? null);
   const out = new Map<string, { name: string; months: Map<string, Decimal> }>();
+  const amounts = (cells: Cell[] | undefined) => {
+    const months = new Map<string, Decimal>();
+    cols.forEach((m, i) => {
+      if (m) months.set(m, money((cells?.[i]?.value ?? "").replace(/,/g, "") || "0"));
+    });
+    return months;
+  };
+  /** A row's whole amount: a section's summary, else its own cells. */
+  const total = (r: Row) => amounts(r.Summary?.ColData ?? r.ColData);
   const walk = (rows: Row[] | undefined) => {
     for (const r of rows ?? []) {
-      const id = r.ColData?.[0]?.id;
-      if (id) {
-        const months = new Map<string, Decimal>();
-        cols.forEach((m, i) => {
-          if (m) months.set(m, money((r.ColData?.[i]?.value ?? "").replace(/,/g, "") || "0"));
-        });
-        out.set(id, { name: r.ColData?.[0]?.value ?? id, months });
+      const head = r.Header?.ColData?.[0];
+      if (head?.id) {
+        const children = r.Rows?.Row ?? [];
+        const ownRow = children.find((c) => c.ColData?.[0]?.id === head.id);
+        let own: Map<string, Decimal>;
+        if (ownRow) own = amounts(ownRow.ColData);
+        else {
+          own = total(r);
+          for (const c of children) for (const [m, v] of total(c)) own.set(m, (own.get(m) ?? money(0)).minus(v));
+        }
+        out.set(head.id, { name: head.value ?? head.id, months: own });
+        walk(children.filter((c) => c !== ownRow));
+        continue;
       }
+      const id = r.ColData?.[0]?.id;
+      if (id) out.set(id, { name: r.ColData?.[0]?.value ?? id, months: amounts(r.ColData) });
       walk(r.Rows?.Row);
     }
   };
@@ -101,8 +124,8 @@ export async function refreshTieout(ctx: Ctx): Promise<Tieout> {
   for (let from = first; from <= last; from = addMonths(from, 12)) {
     const to = endOfMonth(addMonths(from, 11) < last ? addMonths(from, 11) : last);
     const params = { start_date: format(from, "yyyy-MM-dd"), end_date: format(to, "yyyy-MM-dd"), summarize_column_by: "Month", accounting_method: "Accrual" };
-    const bs = byMonth(await client.report<Report>("BalanceSheet", params));
-    const pl = byMonth(await client.report<Report>("ProfitAndLoss", params));
+    const bs = accountsByMonth(await client.report<Report>("BalanceSheet", params));
+    const pl = accountsByMonth(await client.report<Report>("ProfitAndLoss", params));
     for (const [id, a] of bs) {
       let prev = carried.get(id) ?? money(0);
       for (const [m, balance] of [...a.months].sort(([x], [y]) => x.localeCompare(y))) {

@@ -147,8 +147,18 @@ export function pagedStep(opts: {
   entity: string;
   where?: string;
   preload?: string[];
-  importOne: (kit: Kit, r: QboRecord) => Promise<"imported" | "skipped">;
+  /**
+   * The id map entity that says a record was done (default: `entity`). A
+   * step that reads records another step already brought in (to apply them
+   * further) keeps its own.
+   */
+  mapAs?: string;
+  /** Check QuickBooks' count at the end (off for a step that acts on only some records). */
+  countCheck?: boolean;
+  /** "none": nothing for this step to do with the record (not counted). */
+  importOne: (kit: Kit, r: QboRecord) => Promise<"imported" | "skipped" | "none">;
 }): Step {
+  const mapAs = opts.mapAs ?? opts.entity;
   const seen = (kit: Kit) => (kit.counts[opts.key]?.imported ?? 0) + (kit.counts[opts.key]?.skipped ?? 0);
   async function scan(kit: Kit, position: number): Promise<{ done: boolean; position: number }> {
     let pos = position;
@@ -156,8 +166,9 @@ export function pagedStep(opts: {
       const rows = await kit.client.page(opts.entity, pos, opts.where);
       for (const [i, r] of rows.entries()) {
         if (kit.timeUp()) return { done: false, position: pos + i };
-        if (await kit.mapped(opts.entity, r.Id)) continue;
-        kit.count(opts.key, await opts.importOne(kit, r));
+        if (await kit.mapped(mapAs, r.Id)) continue;
+        const result = await opts.importOne(kit, r);
+        if (result !== "none") kit.count(opts.key, result);
       }
       if (rows.length < PAGE_SIZE) return { done: true, position: 1 };
       pos += rows.length;
@@ -167,9 +178,10 @@ export function pagedStep(opts: {
     key: opts.key,
     label: opts.label,
     async run(kit, position) {
-      for (const e of [opts.entity, ...(opts.preload ?? [])]) await kit.preload(e);
+      for (const e of new Set([opts.entity, mapAs, ...(opts.preload ?? [])])) await kit.preload(e);
       const first = await scan(kit, position);
       if (!first.done) return first;
+      if (opts.countCheck === false) return { done: true, position: 1 };
       // Everything QuickBooks has should now be mapped; if not, scan once more.
       const total = await kit.client.count(opts.entity, opts.where);
       if (seen(kit) < total) {
