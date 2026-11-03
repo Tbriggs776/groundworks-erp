@@ -22,6 +22,7 @@ import { billPaymentsStep, customerPaymentsStep, depositsStep } from "./import/p
 import { billsStep, purchasesStep, transfersStep, vendorCreditsStep } from "./import/purchases";
 import { creditMemosStep, invoicesStep, refundReceiptsStep, salesReceiptsStep } from "./import/sales";
 import { paymentMethodsStep, taxAgenciesStep, taxCodesStep, taxRatesStep } from "./import/tax";
+import { clearWatch, clearWatchIn, readInterrupted, startWatch, STOPS_TO_SKIP } from "./import/watch";
 import { exchangeCode, revokeToken } from "./oauth";
 
 /**
@@ -71,6 +72,10 @@ const MAX_NOTES = 500;
 // Default batch budget: no new record starts after this. The page sets
 // maxDuration=300, so the record in flight, flushRecosting, and the status
 // write have minutes to finish and commit before Vercel kills the function.
+// The page's action asks for less (BATCH_MS), so progress is saved often.
+/** How long a batch can run before the platform kills it (the page's maxDuration). */
+const BATCH_LIMIT_SECONDS = 300;
+
 export const RunBatchSchema = z.object({ budgetMs: z.number().int().min(1).max(60_000).default(50_000) });
 
 /** QuickBooks' company name, read with a fresh token before the company exists here. */
@@ -185,6 +190,10 @@ export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSch
     return (await getImportView(ctx)) ?? notImported();
   }
   if (imp.status === "done") return (await getImportView(ctx))!;
+  // The last batch's black box (./import/watch.ts): if it's still here, the
+  // platform killed that batch before it could commit.
+  const watch = await startWatch(ctx.actor.organizationId, imp.cursor.step);
+  if (watch.stopped) log(`the last batch was stopped before it saved (${watch.suspect ? `${watch.suspect.label}, ${watch.suspect.stops} in a row` : "between records"})`);
   // Any single statement that runs longer than 25s aborts: a pathological
   // record (slow trigger, legacy data) can't eat the whole batch budget. The
   // savepoint around each record rolls it back and marks it skipped, so the
@@ -197,9 +206,19 @@ export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSch
   const kit = new Kit(ctx, new QboClient(conn), imp.counts, Date.now() + budgetMs);
   // Each inventory item is recosted once, at the end of the batch.
   holdRecosting(ctx);
+  // A record that keeps getting the batch killed is skipped, so it can't
+  // hold up the import forever; the person enters it by hand.
+  const suspect = watch.suspect;
+  if (suspect && suspect.stops >= STOPS_TO_SKIP && !(await kit.mapped(suspect.entity, suspect.qboId))) {
+    log(`skipping ${suspect.entity} id=${suspect.qboId}: stopped ${suspect.stops} batches`);
+    await kit.remember(suspect.entity, suspect.qboId, null, "skipped");
+    kit.count(suspect.step, "skipped");
+    kit.note(`${suspect.label} stopped the import ${suspect.stops} times before it could be saved, so it was skipped. Enter it by hand.`);
+  }
   let index = Math.max(0, STEPS.findIndex((s) => s.key === imp.cursor.step));
   let position = imp.cursor.position;
   while (index < STEPS.length) {
+    kit.step = STEPS[index].key;
     log(`run step=${STEPS[index].key} position=${position}`);
     const r = await STEPS[index].run(kit, position);
     if (!r.done) {
@@ -216,6 +235,7 @@ export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSch
   log("flushRecosting");
   await flushRecosting(ctx);
   log("writing status");
+  await clearWatchIn(ctx);
   const done = index >= STEPS.length;
   await ctx.tx
     .update(qboImports)
@@ -240,6 +260,8 @@ export async function recordImportFailure(organizationId: string, message: strin
     .update(qboImports)
     .set({ status: "failed", lastError: message.slice(0, 2000), updatedAt: sql`now()` })
     .where(and(eq(qboImports.organizationId, organizationId), sql`${qboImports.status} <> 'done'`));
+  // It failed with an error, not a kill: nothing to blame on a record.
+  await clearWatch(organizationId);
 }
 
 export type ImportView = {
@@ -247,6 +269,8 @@ export type ImportView = {
   steps: Array<{ key: string; label: string; state: "done" | "current" | "waiting"; imported: number; skipped: number }>;
   notes: string[];
   lastError: string | null;
+  /** The last batch was stopped (by the platform) before it could save, and nothing has run since. */
+  interrupted: { label: string | null; at: Date } | null;
   batches: number;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -258,6 +282,7 @@ const notImported = (): ImportView => ({
   steps: [],
   notes: [],
   lastError: null,
+  interrupted: null,
   batches: 0,
   startedAt: null,
   finishedAt: null,
@@ -281,6 +306,7 @@ export async function getImportView(ctx: Ctx): Promise<ImportView | null> {
     })),
     notes: imp?.notes ?? [],
     lastError: imp?.lastError ?? null,
+    interrupted: imp && imp.status !== "done" ? await readInterrupted(ctx, BATCH_LIMIT_SECONDS + 60) : null,
     batches: imp?.batches ?? 0,
     startedAt: imp?.startedAt ?? null,
     finishedAt: imp?.finishedAt ?? null,

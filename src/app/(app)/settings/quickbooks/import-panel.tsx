@@ -12,6 +12,10 @@ import { disconnectQbo, runQuickBooksBatch } from "./actions";
  * it stands. Closing the page pauses it; coming back picks up where it
  * stopped.
  */
+
+/** A batch the platform stops gets retried this many times in a row before the page gives up. */
+const RETRIES = 4;
+const RETRY_DELAY_MS = 3000;
 export function ImportPanel({ initial, canRun }: { initial: ImportView; canRun: boolean }) {
   const router = useRouter();
   const [view, setView] = useState(initial);
@@ -24,12 +28,31 @@ export function ImportPanel({ initial, canRun }: { initial: ImportView; canRun: 
     setRunning(true);
     setErr(null);
     stop.current = false;
+    let stopped = 0;
     for (;;) {
-      const r = await runQuickBooksBatch();
+      let r: Awaited<ReturnType<typeof runQuickBooksBatch>>;
+      try {
+        r = await runQuickBooksBatch();
+      } catch {
+        // The request died without an answer: the platform stopped the
+        // batch before it saved. The next batch knows which record it was
+        // on and skips one that keeps doing it, so try again.
+        stopped += 1;
+        if (stopped > RETRIES) {
+          setErr("The import keeps stopping before it can save. Wait a few minutes, then continue; your progress so far is kept.");
+          break;
+        }
+        setErr(`A batch was stopped before it could save. Trying again (${stopped} of ${RETRIES})…`);
+        await new Promise((ok) => setTimeout(ok, RETRY_DELAY_MS));
+        if (stop.current) break;
+        continue;
+      }
       if (!r.ok) {
         setErr(r.error);
         break;
       }
+      stopped = 0;
+      setErr(null);
       setView(r.view);
       if (r.view.status !== "running" || stop.current) break;
     }
@@ -68,6 +91,13 @@ export function ImportPanel({ initial, canRun }: { initial: ImportView; canRun: 
                 ? "Importing. Keep this page open; closing it pauses the import, and coming back resumes it."
                 : "The import is paused."}
         </p>
+        {view.interrupted && !running && view.status === "running" && (
+          <p className="text-sm">
+            The last batch was stopped before it could save
+            {view.interrupted.label ? `, while importing ${view.interrupted.label}` : ""}. Continue to pick up where it left off. A record
+            that stops the import twice is skipped and listed under To review, for you to enter by hand.
+          </p>
+        )}
         {conn && !conn.connected && (
           <p className="text-sm">
             QuickBooks is disconnected.{" "}

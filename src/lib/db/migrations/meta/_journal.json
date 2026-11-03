@@ -281,6 +281,13 @@
       "when": 1792619609259,
       "tag": "0039_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793725581711,
+      "tag": "0040_qbo_import_watch",
+      "breakpoints": true
     }
   ]
 }

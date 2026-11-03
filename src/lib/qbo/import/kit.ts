@@ -4,6 +4,7 @@ import type { Ctx } from "@/lib/actor";
 import { toAppError } from "@/lib/errors";
 import { ensureFiscalYearFor } from "@/lib/gl/fiscal-calendar";
 import { PAGE_SIZE, type QboClient, type QboRecord } from "../client";
+import { watchRecord } from "./watch";
 
 /**
  * What every import step works with: the company's context, the QuickBooks
@@ -16,6 +17,8 @@ export type Ref = { value?: string; name?: string } | undefined;
 export class Kit {
   readonly notes: string[] = [];
   readonly counts: QboCounts;
+  /** The step running now (set by the batch). */
+  step = "";
   private cache = new Map<string, { localId: string | null; value: string | null } | null>();
 
   constructor(
@@ -44,6 +47,11 @@ export class Kit {
   /** Past the deadline, once the batch has done something (so every batch moves forward). */
   timeUp() {
     return this.progressed && Date.now() > this.deadline;
+  }
+
+  /** Say which record is in flight (null: none), outside the batch's transaction (see ./watch.ts). */
+  async watch(rec: { entity: string; qboId: string; label: string } | null) {
+    await watchRecord(this.org, this.step, rec);
   }
 
   note(message: string) {

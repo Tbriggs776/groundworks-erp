@@ -290,7 +290,12 @@ docs/compliance/      SOC 2 control map and checklist
   which makes every step safe to rerun), counts, and notes for the person
   to review. Lists use `pagedStep` (pages of 1000, then a count check and
   one rescan). Records go through the app's own services inside a
-  savepoint (`attempt`), so a refused one is noted and skipped. Imported
+  savepoint (`attempt`), so a refused one is noted and skipped. Each batch
+  writes what it's working on to `qbo_import_watch` outside its transaction
+  (`import/watch.ts`); committing clears it, so a batch that finds it knows
+  the last one was killed mid-record, and a record that kills two batches
+  in a row is skipped and noted. The page's batches run 20s (function
+  limit 300s), so a kill loses little. Imported
   journals keep QuickBooks' amounts and post with source `conversion`
   (allowed on control accounts). Accounts the app finds by number (1200,
   1250, 2000, 2200, 3200, 3300, 4930, 4940, 4950, 7400) keep it and take

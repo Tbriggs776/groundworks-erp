@@ -10,10 +10,16 @@ import { postTieoutEntries, refreshTieout, type Tieout } from "@/lib/qbo/tieout"
 
 /** QuickBooks import actions: wrappers over src/lib/qbo/service.ts. */
 
+/**
+ * Short batches: each commits its records and its place, so if the platform
+ * ever kills one, only its few seconds of work are redone.
+ */
+const BATCH_MS = 20_000;
+
 export async function runQuickBooksBatch(): Promise<ActionResult<{ view: ImportView }>> {
   const actor = await requireActor("admin");
   try {
-    const view = await runAs(actor, (ctx) => runImportBatch(ctx, {}));
+    const view = await runAs(actor, (ctx) => runImportBatch(ctx, { budgetMs: BATCH_MS }));
     return { ok: true, view };
   } catch (err) {
     const e = toAppError(err);

@@ -17,7 +17,7 @@ dotenv.config({ path: ".env" });
 import { randomBytes } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
-import { accounts, auditLog, organizations, qboConnections, qboIdMap, qboImports } from "../src/lib/db/schema";
+import { accounts, auditLog, organizations, qboConnections, qboIdMap, qboImports, qboImportWatch } from "../src/lib/db/schema";
 import { runAs, runAsWorkspace, userActor, workspaceActor, type Actor, type Role } from "../src/lib/actor";
 import { customerBalanceSql } from "../src/lib/ar/balances";
 import * as reconcile from "../src/lib/banking/reconcile";
@@ -25,6 +25,7 @@ import { toAppError } from "../src/lib/errors";
 import { getCompanyProfile } from "../src/lib/company/profile";
 import { checkState, startAuthorization, STATE_COOKIE } from "../src/lib/qbo/oauth";
 import * as qbo from "../src/lib/qbo/service";
+import { startWatch, watchRecord } from "../src/lib/qbo/import/watch";
 import * as tieout from "../src/lib/qbo/tieout";
 import { seal, sign, unseal, verifySigned } from "../src/lib/security/crypto";
 import * as ws from "../src/lib/workspace/service";
@@ -171,6 +172,57 @@ async function main() {
     const c = await cursor();
     assertEq(c.step, "terms", "on terms after the company and the chart");
     assertEq(c.position, (v.steps.find((s) => s.key === "terms")?.imported ?? 0) + 1, "resumes right after the last term");
+  });
+
+  await check("a batch the platform kills is noticed, and a record that keeps getting batches killed is skipped", async () => {
+    const box = async () => (await db.select().from(qboImportWatch).where(eq(qboImportWatch.organizationId, orgId)))[0];
+    const map = async (qboId: string) =>
+      (await db.select().from(qboIdMap).where(and(eq(qboIdMap.organizationId, orgId), eq(qboIdMap.entity, "Purchase"), eq(qboIdMap.qboId, qboId))))[0];
+    // What a batch leaves behind when its function is killed: the black box
+    // it writes outside its transaction, naming the record in flight.
+    const killedOn = async (qboId: string | null) => {
+      await startWatch(orgId, "expenses");
+      await watchRecord(orgId, "expenses", qboId ? { entity: "Purchase", qboId, label: `Expense ${qboId}` } : null);
+    };
+    const skippedBefore = (await view()).steps.find((s) => s.key === "expenses")!.skipped;
+
+    await batch(1);
+    assert(!(await box()), "a batch that commits leaves no black box");
+
+    await killedOn("900001");
+    assertEq((await view()).interrupted, null, "a batch that may still be running isn't reported");
+    await db.update(qboImportWatch).set({ touchedAt: sql`now() - interval '1 hour'` }).where(eq(qboImportWatch.organizationId, orgId));
+    assertEq((await view()).interrupted?.label, "Expense 900001", "a batch stopped long ago is shown, with its record");
+
+    // Killed on a different record: the count starts again, nothing skipped.
+    await killedOn("900002");
+    await batch(1);
+    assert(!(await map("900001")) && !(await map("900002")), "one stop skips nothing");
+    assert(!(await box()), "cleared when the next batch commits");
+    assertEq((await view()).interrupted, null, "nothing to report after a batch saves");
+
+    // Killed between records (QuickBooks down, say): no record is blamed.
+    await killedOn("900003");
+    await killedOn(null);
+    await batch(1);
+    assert(!(await map("900003")), "a stop between records blames no record");
+
+    // Killed twice in a row on the same record: the next batch skips it.
+    await killedOn("900004");
+    await killedOn("900004");
+    const v = await batch(1);
+    const m = await map("900004");
+    assert(m, "the record is remembered");
+    assertEq(m.localId, null, "as nothing here");
+    assertEq(m.value, "skipped", "as skipped");
+    assertEq(v.steps.find((s) => s.key === "expenses")!.skipped, skippedBefore + 1, "counted as a skipped expense");
+    assert(v.notes.some((n) => n === "Expense 900004 stopped the import 2 times before it could be saved, so it was skipped. Enter it by hand."), "noted for the person");
+    assert(!(await box()), "cleared");
+
+    // A batch that fails with an error was reported, not killed.
+    await killedOn("900005");
+    await qbo.recordImportFailure(orgId, "test");
+    assert(!(await box()), "a reported failure clears the black box");
   });
 
   await check("a failed batch saves nothing of its own and says what happened", async () => {

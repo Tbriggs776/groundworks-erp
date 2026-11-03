@@ -84,6 +84,38 @@ export const qboIdMap = pgTable(
 );
 
 /**
+ * What an import batch is working on, written OUTSIDE the batch's
+ * transaction so it survives the batch. A batch that commits (or throws)
+ * clears it; one the platform kills mid-flight can't, so the next batch
+ * finds it and knows which record was in flight. A record that stops the
+ * import twice (`stops`) is skipped and noted, so one record can never
+ * wedge an import.
+ */
+export const qboImportWatch = pgTable(
+  "qbo_import_watch",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** The record in flight (null between records). */
+    step: text("step").notNull(),
+    entity: text("entity"),
+    qboId: text("qbo_id"),
+    label: text("label"),
+    /** The record that stopped earlier batches, and how many times in a row. */
+    suspectStep: text("suspect_step"),
+    suspectEntity: text("suspect_entity"),
+    suspectQboId: text("suspect_qbo_id"),
+    suspectLabel: text("suspect_label"),
+    stops: integer("stops").notNull().default(0),
+    touchedAt: timestamp("touched_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("qbo_import_watch_org_key").on(t.organizationId)]
+);
+
+/**
  * QuickBooks' own books for the tie-out: each account's activity in a month
  * (balance sheet accounts: the change in balance), on its statement
  * section's side (assets and expenses debit, the rest credit). Groundworks'
@@ -111,3 +143,4 @@ export const qboTieoutAmounts = pgTable(
 
 export type QboConnection = typeof qboConnections.$inferSelect;
 export type QboImport = typeof qboImports.$inferSelect;
+export type QboImportWatch = typeof qboImportWatch.$inferSelect;
