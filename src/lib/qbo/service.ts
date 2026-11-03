@@ -185,6 +185,12 @@ export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSch
     return (await getImportView(ctx)) ?? notImported();
   }
   if (imp.status === "done") return (await getImportView(ctx))!;
+  // Any single statement that runs longer than 25s aborts: a pathological
+  // record (slow trigger, legacy data) can't eat the whole batch budget. The
+  // savepoint around each record rolls it back and marks it skipped, so the
+  // import moves on instead of looping on the same record forever.
+  await ctx.tx.execute(sql`SET LOCAL statement_timeout = '25000'`);
+  log("statement_timeout set to 25s");
   log(`loadConnection (realm=${imp.cursor.step})`);
   const conn = await loadConnection(ctx);
   log(`starting at step=${imp.cursor.step} position=${imp.cursor.position}`);

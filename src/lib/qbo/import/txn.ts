@@ -38,7 +38,13 @@ export const voidedAt = (r: QboRecord) => {
 
 /** Import one transaction; a refused one is noted and remembered as skipped, so reruns don't retry it. */
 export async function importTxn(kit: Kit, entity: string, r: QboRecord, label: string, fn: () => Promise<void>): Promise<"imported" | "skipped"> {
+  const started = Date.now();
+  // Log the record Id and start time so a hang during this record is visible
+  // in Vercel logs, and the slow ones are easy to spot after the fact.
+  console.log(`[qbo.txn] ${entity} id=${r.Id} start (${label})`);
   const result = await attempt(kit, label, fn);
+  const elapsed = Date.now() - started;
+  if (elapsed > 5000) console.log(`[qbo.txn] ${entity} id=${r.Id} ${result} in ${elapsed}ms (${label})`);
   if (result === "skipped") await kit.remember(entity, r.Id, null, "skipped");
   return result;
 }
