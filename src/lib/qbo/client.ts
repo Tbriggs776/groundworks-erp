@@ -86,6 +86,10 @@ export class QboClient {
           await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
           continue;
         }
+        // An AppError here came from the pre-fetch work (e.g. `.token()`
+        // throwing `invalid_state` after a disconnect). Pass it through
+        // instead of mis-labeling it as a QuickBooks timeout.
+        if (err instanceof AppError) throw err;
         throw new AppError("upstream_error", `QuickBooks didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s on ${path}. Try the import again.`, { path });
       } finally {
         clearTimeout(timer);
