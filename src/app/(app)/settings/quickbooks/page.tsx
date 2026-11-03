@@ -7,8 +7,14 @@ import { getTieout } from "@/lib/qbo/tieout";
 import { ImportPanel } from "./import-panel";
 import { TieoutPanel } from "./tieout-panel";
 
-/** An import batch runs for up to 20 seconds, then recosts inventory: give its action room. */
-export const maxDuration = 60;
+/**
+ * An import batch stops starting new records after 50 seconds, then recosts
+ * inventory and saves its place. One record can take far longer than the
+ * rest (many lines, slow round trips), and if the function is killed before
+ * the batch commits, the whole batch rolls back and the next one repeats it
+ * forever. 300 seconds leaves room for the slowest record to finish.
+ */
+export const maxDuration = 300;
 
 export default async function QuickBooksPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
