@@ -18,7 +18,7 @@ import { Kit, type Step } from "./import/kit";
 import { estimatesStep, purchaseOrdersStep } from "./import/orders";
 import { stockStep } from "./import/stock";
 import { auditStep, classesStep, companyStep, customersStep, departmentsStep, itemsStep, termsStep, vendorsStep } from "./import/lists";
-import { billPaymentsStep, customerPaymentsStep, depositsStep } from "./import/payments";
+import { billPaymentsStep, customerPaymentsStep, depositsStep, paymentsFromDepositsStep } from "./import/payments";
 import { billsStep, creditCardPaymentsStep, purchasesStep, transfersStep, vendorCreditsStep } from "./import/purchases";
 import { creditMemosStep, invoicesStep, refundReceiptsStep, salesReceiptsStep } from "./import/sales";
 import { paymentMethodsStep, taxAgenciesStep, taxCodesStep, taxRatesStep } from "./import/tax";
@@ -62,6 +62,7 @@ export const STEPS: Step[] = [
   customerPaymentsStep,
   billPaymentsStep,
   depositsStep,
+  paymentsFromDepositsStep,
   journalEntriesStep,
   clearingStep,
   stockStep,
@@ -208,6 +209,7 @@ export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSch
   log("statement_timeout set to 25s");
   log(`loadConnection (realm=${imp.cursor.step})`);
   const conn = await loadConnection(ctx);
+  if (!conn.refreshToken) throw new AppError("invalid_state", "QuickBooks is disconnected. Reconnect it to continue the import.");
   log(`starting at step=${imp.cursor.step} position=${imp.cursor.position}`);
   const kit = new Kit(ctx, new QboClient(conn), imp.counts, Date.now() + budgetMs);
   // Each inventory item is recosted once, at the end of the batch.

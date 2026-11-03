@@ -139,7 +139,11 @@ export const accountsStep: Step = {
       if (await kit.mapped("Account", r.Id)) continue;
       const name = String(r.Name ?? r.FullyQualifiedName ?? "Account").slice(0, 200);
       const sys = systemCode(r);
-      const own = sys && !claimed.has(sys) ? byCode.get(sys) : undefined;
+      // The first QuickBooks account of its kind takes the system account; one
+      // an earlier batch already gave it to doesn't count as free again.
+      const sysAccount = sys && !claimed.has(sys) ? byCode.get(sys) : undefined;
+      const own = sysAccount && !(await isMappedLocal(kit, sysAccount.id)) ? sysAccount : undefined;
+      if (sys && sysAccount && !own) claimed.add(sys);
       if (own) {
         claimed.add(sys!);
         await kit.ctx.tx

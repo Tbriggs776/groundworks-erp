@@ -160,15 +160,20 @@ async function main() {
   const cursor = async () => (await db.select().from(qboImports).where(eq(qboImports.organizationId, orgId)))[0].cursor;
 
   await check("tiny batches move forward a record at a time and keep their place", async () => {
+    // One record a batch: the chart of accounts pauses after every account,
+    // so whatever a batch remembers only in memory is forgotten in between.
     let before = 0;
-    for (let i = 0; i < 8; i++) {
+    let batches = 0;
+    const atTerms = async () => (await cursor()).step === "terms" && (await cursor()).position > 1;
+    while (!(await atTerms()) && batches < 80) {
       const v = await batch(1);
+      batches += 1;
       const done = v.steps.filter((s) => s.state === "done").length;
       assert(done >= before, "never moves backwards");
       before = done;
     }
     const v = await view();
-    assertEq(v.batches, 8, "batches counted");
+    assertEq(v.batches, batches, "batches counted");
     const c = await cursor();
     assertEq(c.step, "terms", "on terms after the company and the chart");
     assertEq(c.position, (v.steps.find((s) => s.key === "terms")?.imported ?? 0) + 1, "resumes right after the last term");
@@ -310,6 +315,13 @@ async function main() {
     assertEq((await acct("1300")).name, "Inventory Asset", "inventory asset");
     assertEq((await acct("2200")).name, "Board of Equalization Payable", "sales tax payable");
     assertEq((await acct("3300")).isActive, true, "opening balance equity");
+    // The chart came in a few accounts a batch: the first of a kind still keeps the system account alone.
+    assertEq((await acct("4950")).name, "Discounts given", "discounts: the first of its kind");
+    const refunds = await localId("Account", "20");
+    assert(refunds && refunds !== (await acct("4950")).id, "a second discounts account gets its own account");
+    const [{ n }] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM (SELECT local_id FROM qbo_id_map WHERE organization_id = ${orgId} AND entity = 'Account' GROUP BY local_id HAVING count(*) > 1) d`);
+    assertEq(n, 0, "no account here holds two QuickBooks accounts");
   });
 
   await check("QuickBooks numbers win over unused defaults; taken ones get the next free number", async () => {
@@ -524,7 +536,13 @@ async function main() {
     };
     assertEq(await bal("1"), 0, "Amy: paid by cash and a credit memo");
     assertEq(await bal("2"), -74, "Bill's: 49 overpaid + 25 credit memo left");
-    assertEq(await bal("4"), 50, "Bad Email Co: 50 still open");
+    assertEq(await bal("4"), 0, "Bad Email Co: the last 50 paid from a deposit against AR, applied by a $0 payment");
+    const [dep] = await db.execute<{ status: string; amount: string; ref: string; applied: string; invoice: string }>(sql`
+      SELECT p.status, p.amount::text, p.reference AS ref, a.amount::text AS applied, i.status AS invoice
+        FROM qbo_id_map m JOIN ar_payments p ON p.id = m.local_id
+        JOIN ar_payment_applications a ON a.payment_id = p.id JOIN ar_invoices i ON i.id = a.invoice_id
+       WHERE m.organization_id = ${orgId} AND m.entity = 'DepositLine' AND m.qbo_id = '602:1'`);
+    assertEq(`${dep?.status} ${Number(dep?.amount)} ${dep?.ref} ${Number(dep?.applied)} ${dep?.invoice}`, "posted 50 7788 50 paid", "the deposit line is a payment, applied to the invoice it paid");
     const [{ n }] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM ar_payments WHERE organization_id = ${orgId} AND status = 'voided'`);
     assertEq(n, 1, "voided payment kept, voided");
     const [app] = await db.execute<{ amount: string }>(sql`SELECT amount::text FROM ar_credit_applications WHERE organization_id = ${orgId}`);
@@ -577,7 +595,7 @@ async function main() {
     assert(txns.some((t) => t.payee === "Pat Smith"), "employee payee by name");
     assertEq(await balance(await qboAccount("17")), 300, "Savings got the transfer");
     assertEq(await balance(await qboAccount("15")), -200, "Visa owes 200: −240 + 30 − 200 − 50 + 200 − 40, and the 100 card payment");
-    assertEq(await balance(await qboAccount("1")), -1421.8, "Checking, less the 100 card payment");
+    assertEq(await balance(await qboAccount("1")), -1371.8, "Checking, less the 100 card payment, plus the 50 customer deposit");
     const [pay] = await db.execute<{ type: string; memo: string; status: string }>(sql`
       SELECT b.type, b.memo, b.status FROM bank_transactions b JOIN qbo_id_map m ON m.local_id = b.id
        WHERE m.organization_id = ${orgId} AND m.entity = 'CreditCardPayment' AND m.qbo_id = '1201'`);
@@ -631,7 +649,7 @@ async function main() {
     assertEq(await balance(await qboAccount("14")), -29.2, "Sales tax payable: 22 + 4.80 + 1.20 + 2.40 − 1.20");
     assertEq(await balance(await qboAccount("8")), -360, "Sales of Product Income (shipping falls back here)");
     assertEq(await balance(await qboAccount("9")), -725, "Services: design lines, credits, the deposit line, JE");
-    assertEq(await balance(await qboAccount("2")), 226, "AR: 738 − 75 − 687 + JE 250");
+    assertEq(await balance(await qboAccount("2")), 176, "AR: 738 − 75 − 687 + JE 250 − the 50 deposit");
     const [tb] = await db.execute<{ dr: string; cr: string }>(sql`
       SELECT sum(l.debit)::text AS dr, sum(l.credit)::text AS cr FROM gl_lines l JOIN gl_journals j ON j.id = l.journal_id WHERE j.organization_id = ${orgId}`);
     assertEq(tb.dr, tb.cr, "debits equal credits");
@@ -697,6 +715,45 @@ async function main() {
   });
 
   section("Tie-out with QuickBooks");
+  await check("a parent account's own amounts are read from QuickBooks' sections, beside its sub-accounts", async () => {
+    const col = (m: string) => ({ ColTitle: m, MetaData: [{ Name: "StartDate", Value: `${m}-01` }] });
+    const cells = (name: string, id: string | undefined, a: string, b: string) => [{ value: name, ...(id ? { id } : {}) }, { value: a }, { value: b }];
+    const report = {
+      Columns: { Column: [{ ColTitle: "" }, col("2026-01"), col("2026-02")] },
+      Rows: {
+        Row: [
+          {
+            Header: { ColData: [{ value: "Expenses" }] },
+            Rows: {
+              Row: [
+                // Labor: its own 1,000 / 2,000 aren't on a row of their own; only the summary has them.
+                {
+                  Header: { ColData: cells("Labor", "50", "", "") },
+                  Rows: { Row: [{ ColData: cells("z01 Spend", "51", "-100.00", "50.00") }] },
+                  Summary: { ColData: cells("Total Labor", undefined, "900.00", "2,050.00") },
+                },
+                // Ads: QuickBooks sends its own row.
+                {
+                  Header: { ColData: cells("Ads", "60", "", "") },
+                  Rows: { Row: [{ ColData: cells("Ads", "60", "300.00", "0") }, { ColData: cells("Google", "61", "25.00", "75.00") }] },
+                  Summary: { ColData: cells("Total Ads", undefined, "325.00", "75.00") },
+                },
+                { ColData: cells("Rent", "70", "500.00", "500.00") },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const got = tieout.accountsByMonth(report);
+    const show = (id: string) => [...(got.get(id)?.months.values() ?? [])].map((v) => v.toFixed(2)).join(" ");
+    assertEq(show("50"), "1000.00 2000.00", "Labor's own: the summary less its sub-account");
+    assertEq(show("51"), "-100.00 50.00", "its sub-account");
+    assertEq(show("60"), "300.00 0.00", "Ads' own row");
+    assertEq(show("61"), "25.00 75.00", "Ads' sub-account");
+    assertEq(show("70"), "500.00 500.00", "an account without sub-accounts");
+  });
+
   const SIDE_DEBIT = new Set(["cash", "receivables", "inventory", "other_current_asset", "fixed_assets", "other_asset", "cogs_materials", "cogs_labor", "cogs_equipment", "cogs_subcontractor", "cogs_other", "operating_expense", "sga", "interest", "tax", "other_expense"]);
   await check("QuickBooks' books by month come across; only the real differences show", async () => {
     await expectError(() => runAs(asAgent(), (ctx) => tieout.refreshTieout(ctx)), "forbidden");
@@ -749,7 +806,7 @@ async function main() {
     assertEq(t.months[0].postable, false, "nothing left to post there");
     assert(t.months[0].lines.some((l) => l.code === "3300" && Number(l.difference) === 12), "Opening Balance Equity holds it");
     await expectError(() => runAs(as("admin"), (ctx) => tieout.postTieoutEntries(ctx, {})), "invalid_state");
-    assertEq(await balance(await qboAccount("1")), -1458.8, "Checking: −1421.80 − 20 − 5 − 12");
+    assertEq(await balance(await qboAccount("1")), -1408.8, "Checking: −1371.80 − 20 − 5 − 12");
     const [a] = await db.select().from(auditLog).where(and(eq(auditLog.organizationId, orgId), eq(auditLog.event, "qbo.tieout.posted")));
     assert(a, "audited");
   });

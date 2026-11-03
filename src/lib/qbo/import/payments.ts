@@ -9,13 +9,14 @@ import {
   arInvoices,
   arPaymentApplications,
   arPayments,
+  qboIdMap,
   salesReceipts,
 } from "@/lib/db/schema";
 import { creatorFields } from "@/lib/actor";
 import { billSettled } from "@/lib/ap/balances";
 import { recomputeVendorCreditStatus } from "@/lib/ap/credits";
 import { postPaymentToGl, recomputeBillPaymentStatus } from "@/lib/ap/payments";
-import { invoiceSettled } from "@/lib/ar/balances";
+import { invoiceSettled, paymentUnappliedSql } from "@/lib/ar/balances";
 import { recomputeCreditMemoStatus } from "@/lib/ar/credits";
 import { postCustomerPaymentToGl, recomputeInvoiceStatus } from "@/lib/ar/posting";
 import { undepositedFunds } from "@/lib/ar/sales-receipts";
@@ -36,14 +37,14 @@ import { amountOf, auditVoided, currencyOf, dateOf, importTxn, isVoided, methodO
  */
 
 const VOID_REASON = "Voided in QuickBooks";
-type Link = { type: string; qboId: string; amount: Decimal };
+type Link = { type: string; qboId: string; lineId: string | null; amount: Decimal };
 
-/** Each line's linked transaction and the amount on it. */
+/** Each line's linked transaction (and its line, when QuickBooks says) and the amount on it. */
 function links(r: QboRecord): Link[] {
   const out: Link[] = [];
-  for (const l of (r.Line as Array<{ Amount?: number; LinkedTxn?: Array<{ TxnId?: string; TxnType?: string }> }> | undefined) ?? []) {
+  for (const l of (r.Line as Array<{ Amount?: number; LinkedTxn?: Array<{ TxnId?: string; TxnType?: string; TxnLineId?: string }> }> | undefined) ?? []) {
     const t = l.LinkedTxn?.[0];
-    if (t?.TxnId && t.TxnType) out.push({ type: t.TxnType, qboId: t.TxnId, amount: amountOf(l.Amount) });
+    if (t?.TxnId && t.TxnType) out.push({ type: t.TxnType, qboId: t.TxnId, lineId: t.TxnLineId ?? null, amount: amountOf(l.Amount) });
   }
   return out;
 }
@@ -128,6 +129,8 @@ export const customerPaymentsStep = pagedStep({
         const local = await kit.local(l.type, { value: l.qboId });
         if (l.type === "Invoice" && local) docs.push({ id: local, amount: l.amount, open: await invoiceOpen(kit, local) });
         else if (l.type === "CreditMemo" && local) credits.push({ id: local, amount: l.amount });
+        // A deposit's money applied here: the step after deposits applies it.
+        else if (l.type === "Deposit") continue;
         else kit.note(`${label}: its ${l.type} ${l.qboId} line (${l.amount.toFixed(2)}) isn't here, so that part stays unapplied.`);
       }
       const plan = allocate(docs, credits);
@@ -325,6 +328,7 @@ export const billPaymentsStep = pagedStep({
 // ---------------------------------------------------------------------------
 
 type DepositLine = {
+  Id?: string;
   Amount?: number;
   Description?: string;
   LinkedTxn?: Array<{ TxnId?: string; TxnType?: string }>;
@@ -342,9 +346,10 @@ export const depositsStep = pagedStep({
       const bankAccountId = await kit.local("Account", r.DepositToAccountRef as Ref);
       if (!bankAccountId) throw new AppError("invalid_input", "the account it went into isn't here.");
       const uf = await undepositedFunds(kit.ctx);
+      const ar = await kit.once("ar-control", () => controlAccount(kit.ctx.tx, kit.org, "receivables"));
       const dept = r.DepartmentRef as Ref;
       const lines: Parameters<typeof insertBankTxn>[3] = [];
-      for (const l of (r.Line as DepositLine[] | undefined) ?? []) {
+      for (const [i, l] of ((r.Line as DepositLine[] | undefined) ?? []).entries()) {
         const amount = amountOf(l.Amount);
         if (amount.isZero()) continue;
         const t = l.LinkedTxn?.[0];
@@ -370,11 +375,20 @@ export const depositsStep = pagedStep({
         const d = l.DepositLineDetail;
         const accountId = await kit.local("Account", d?.AccountRef);
         if (!accountId) throw new AppError("invalid_input", `account ${d?.AccountRef?.name ?? ""} isn't in the chart.`);
+        const customerId = d?.Entity?.type === "Customer" ? await kit.local("Customer", d.Entity) : null;
+        if (accountId === ar.id && customerId && amount.gt(0)) {
+          // A customer's money against what they owe: a payment received
+          // (into Undeposited Funds) that this deposit takes to the bank, so
+          // the invoices it pays can be marked paid with it.
+          const p = await paymentFromDepositLine(kit, r, l, l.Id ?? String(i + 1), customerId, amount, uf);
+          lines.push({ accountId: uf, amount: toDbMoney(amount), description: `Payment ${p.paymentNumber}${p.reference ? ` · ${p.reference}` : ""}`, customerId, arPaymentId: p.id });
+          continue;
+        }
         lines.push({
           accountId,
           amount: toDbMoney(amount),
           description: text(l.Description, 1000) ?? (d?.CheckNum ? `Check ${d.CheckNum}` : null),
-          customerId: d?.Entity?.type === "Customer" ? await kit.local("Customer", d.Entity) : null,
+          customerId,
           dimensions: await tags(kit, d?.ClassRef, dept),
         });
       }
@@ -393,6 +407,107 @@ export const depositsStep = pagedStep({
         "DEP"
       );
       await kit.remember("Deposit", r.Id, txn.id);
+    });
+  },
+});
+
+/** A customer payment made from one deposit line, remembered as `DepositLine` `<deposit>:<line>`. */
+async function paymentFromDepositLine(kit: Kit, r: QboRecord, l: DepositLine, lineId: string, customerId: string, amount: Decimal, uf: string) {
+  const date = dateOf(r);
+  await kit.year(date);
+  const [p] = await kit.ctx.tx
+    .insert(arPayments)
+    .values({
+      organizationId: kit.org,
+      customerId,
+      paymentDate: date,
+      method: "check",
+      reference: text(l.DepositLineDetail?.CheckNum, 100),
+      depositAccountId: uf,
+      ...(await currencyOf(kit, r)),
+      amount: toDbMoney(amount),
+      memo: text(l.Description, 2000) ?? `From QuickBooks deposit ${r.Id}`,
+      status: "draft",
+      ...creatorFields(kit.ctx.actor),
+      paymentNumber: await nextNumber(kit.ctx.tx, kit.org, "ARPAY"),
+    })
+    .returning();
+  const { journalId } = await postCustomerPaymentToGl(kit.ctx, p);
+  const [posted] = await kit.ctx.tx
+    .update(arPayments)
+    .set({ status: "posted", postedAt: sql`now()`, postedBy: kit.ctx.actor.userId, glJournalId: journalId, updatedAt: sql`now()` })
+    .where(eq(arPayments.id, p.id))
+    .returning();
+  await kit.remember("DepositLine", `${r.Id}:${lineId}`, p.id);
+  return posted;
+}
+
+/** What's left of a customer payment to apply. */
+async function paymentLeft(kit: Kit, paymentId: string): Promise<{ customerId: string; left: Decimal } | null> {
+  const [p] = await kit.ctx.tx
+    .select({ customerId: arPayments.customerId, left: paymentUnappliedSql(sql`${arPayments.id}`, sql`${arPayments.amount}`) })
+    .from(arPayments)
+    .where(and(eq(arPayments.id, paymentId), eq(arPayments.status, "posted")));
+  return p ? { customerId: p.customerId, left: money(p.left) } : null;
+}
+
+/**
+ * Payments that apply a deposit's money to invoices. QuickBooks records
+ * a customer's money as a deposit, then a payment (often of $0) that
+ * links the deposit to the invoices it paid. The deposits step made each
+ * of those deposit lines a payment; this applies them as QuickBooks did.
+ */
+export const paymentsFromDepositsStep = pagedStep({
+  key: "deposit_payments",
+  label: "Payments from deposits",
+  entity: "Payment",
+  mapAs: "PaymentFromDeposit",
+  countCheck: false,
+  preload: ["Customer", "Invoice", "DepositLine"],
+  async importOne(kit, r) {
+    const fromDeposits = links(r).filter((l) => l.type === "Deposit");
+    if (fromDeposits.length === 0) return "none";
+    const label = `Payment ${String(r.PaymentRefNum ?? r.Id)} (${String(r.TxnDate)})`;
+    return importTxn(kit, "PaymentFromDeposit", r, label, async () => {
+      const customerId = await kit.local("Customer", r.CustomerRef as Ref);
+      if (!customerId) throw new AppError("invalid_input", `its customer ${(r.CustomerRef as Ref)?.name ?? ""} isn't here.`);
+      const docs: Array<{ id: string; amount: Decimal; open: Decimal }> = [];
+      for (const l of links(r)) {
+        if (l.type !== "Invoice") continue;
+        const local = await kit.local("Invoice", { value: l.qboId });
+        if (local) docs.push({ id: local, amount: l.amount, open: await invoiceOpen(kit, local) });
+      }
+      // The deposit lines' payments, as much as each link uses and each has left.
+      const credits: Array<{ id: string; amount: Decimal }> = [];
+      for (const l of fromDeposits) {
+        const candidates = l.lineId
+          ? [await kit.local("DepositLine", { value: `${l.qboId}:${l.lineId}` })]
+          : (
+              await kit.ctx.tx
+                .select({ id: qboIdMap.localId })
+                .from(qboIdMap)
+                .where(and(eq(qboIdMap.organizationId, kit.org), eq(qboIdMap.entity, "DepositLine"), sql`${qboIdMap.qboId} LIKE ${`${l.qboId}:%`}`))
+            ).map((c) => c.id);
+        let want = l.amount.abs();
+        for (const id of candidates) {
+          if (!id || want.lte(0)) continue;
+          const p = await paymentLeft(kit, id);
+          if (!p || p.customerId !== customerId) continue;
+          const already = sumMoney(credits.filter((c) => c.id === id).map((c) => c.amount));
+          const take = min(want, p.left.minus(already));
+          if (take.lte(0)) continue;
+          credits.push({ id, amount: take });
+          want = want.minus(take);
+        }
+        if (want.gt(0)) kit.note(`${label}: ${want.toFixed(2)} of deposit ${l.qboId} it applies isn't here as this customer's money, so that part stays unapplied.`);
+      }
+      const plan = allocate(docs, credits);
+      if (plan.credit.length === 0) throw new AppError("invalid_input", "nothing from its deposits could be applied to its invoices here.");
+      await kit.ctx.tx
+        .insert(arPaymentApplications)
+        .values(plan.credit.map((c) => ({ organizationId: kit.org, paymentId: c.creditId, invoiceId: c.docId, amount: toDbMoney(c.amount) })));
+      for (const id of new Set(plan.credit.map((c) => c.docId))) await recomputeInvoiceStatus(kit.ctx.tx, kit.org, id);
+      await kit.remember("PaymentFromDeposit", r.Id, null, "applied");
     });
   },
 });
