@@ -4,6 +4,7 @@ import {
   accounts,
   apPayments,
   arPayments,
+  auditLog,
   bankTransactions,
   glJournals,
   glLineClearings,
@@ -51,11 +52,11 @@ const ENTITIES: Record<string, string[]> = {
   Refund: ["RefundReceipt"],
   "Refund Receipt": ["RefundReceipt"],
   Transfer: ["Transfer"],
-  "Credit Card Payment": ["Transfer"],
+  "Credit Card Payment": ["CreditCardPayment", "Transfer"],
   "Journal Entry": ["JournalEntry"],
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ALL = ["Purchase", "BillPayment", "Deposit", "Payment", "SalesReceipt", "RefundReceipt", "Transfer", "JournalEntry"];
+const ALL = ["Purchase", "BillPayment", "Deposit", "Payment", "SalesReceipt", "RefundReceipt", "Transfer", "CreditCardPayment", "JournalEntry"];
 
 /** (transaction type, QuickBooks id) for every data row. */
 function transactions(report: Report): Array<{ type: string; id: string }> {
@@ -85,6 +86,7 @@ const WHERE: Record<string, Where> = {
   Purchase: "bank",
   Deposit: "bank",
   Transfer: "bank",
+  CreditCardPayment: "bank",
   BillPayment: "ap",
   Payment: "ar",
   SalesReceipt: "sales",
@@ -230,40 +232,75 @@ export const clearingStep: Step = {
   },
 };
 
-/** One completed reconciliation holding everything QuickBooks reconciled on the account. */
+/**
+ * One completed reconciliation holding everything QuickBooks reconciled on
+ * the account. Run again (an import resumed for a step added later), the
+ * newly reconciled lines join that same reconciliation and its totals are
+ * worked out again, so an account never gets a second imported one.
+ */
 async function reconciliationFor(kit: Kit, a: { id: string; normal: string; name: string }) {
-  const [sum] = await kit.ctx.tx
-    .select({
-      total: sql<string>`coalesce(sum(${glLines.debitLocal} - ${glLines.creditLocal}), 0)::text`,
-      count: sql<number>`count(*)::int`,
-      last: sql<string | null>`max(${glJournals.journalDate})::text`,
-    })
-    .from(glLineClearings)
-    .innerJoin(glLines, eq(glLines.id, glLineClearings.glLineId))
-    .innerJoin(glJournals, eq(glJournals.id, glLines.journalId))
-    .where(and(eq(glLineClearings.accountId, a.id), eq(glLineClearings.status, "reconciled"), sql`${glLineClearings.reconciliationId} IS NULL`));
-  if (!sum.count || !sum.last) return;
-  const balance = toDbMoney(money(sum.total).times(a.normal === "credit" ? -1 : 1));
-  const [rec] = await kit.ctx.tx
+  const tx = kit.ctx.tx;
+  const loose = and(eq(glLineClearings.accountId, a.id), eq(glLineClearings.status, "reconciled"), sql`${glLineClearings.reconciliationId} IS NULL`);
+  const totals = async (where: ReturnType<typeof and>) => {
+    const [sum] = await tx
+      .select({
+        total: sql<string>`coalesce(sum(${glLines.debitLocal} - ${glLines.creditLocal}), 0)::text`,
+        count: sql<number>`count(*)::int`,
+        last: sql<string | null>`max(${glJournals.journalDate})::text`,
+      })
+      .from(glLineClearings)
+      .innerJoin(glLines, eq(glLines.id, glLineClearings.glLineId))
+      .innerJoin(glJournals, eq(glJournals.id, glLines.journalId))
+      .where(where);
+    return { ...sum, balance: toDbMoney(money(sum.total).times(a.normal === "credit" ? -1 : 1)) };
+  };
+  const fresh = await totals(loose);
+  if (!fresh.count || !fresh.last) return;
+
+  const [prior] = await tx
+    .select({ id: reconciliations.id })
+    .from(reconciliations)
+    .innerJoin(auditLog, and(eq(auditLog.entityId, reconciliations.id), eq(auditLog.event, "bank.reconciliation.imported")))
+    .where(and(eq(reconciliations.organizationId, kit.org), eq(reconciliations.accountId, a.id), eq(reconciliations.status, "completed")))
+    .limit(1);
+  if (prior) {
+    await tx.update(glLineClearings).set({ reconciliationId: prior.id }).where(loose);
+    const all = await totals(eq(glLineClearings.reconciliationId, prior.id));
+    await tx
+      .update(reconciliations)
+      .set({ statementEndDate: all.last!, statementEndingBalance: all.balance, clearedBalance: all.balance, clearedCount: all.count, updatedAt: sql`now()` })
+      .where(eq(reconciliations.id, prior.id));
+    await writeAudit(
+      {
+        organizationId: kit.org,
+        ...auditFields(kit.ctx.actor),
+        event: "bank.reconciliation.import_extended",
+        entityType: "reconciliation",
+        entityId: prior.id,
+        metadata: { account: a.name, added: fresh.count, lines: all.count, clearedBalance: all.balance, statementEndDate: all.last, from: "quickbooks" },
+      },
+      tx
+    );
+    return;
+  }
+
+  const [rec] = await tx
     .insert(reconciliations)
     .values({
       organizationId: kit.org,
       accountId: a.id,
-      statementEndDate: sum.last,
-      statementEndingBalance: balance,
+      statementEndDate: fresh.last,
+      statementEndingBalance: fresh.balance,
       beginningBalance: "0",
-      clearedBalance: balance,
-      clearedCount: sum.count,
+      clearedBalance: fresh.balance,
+      clearedCount: fresh.count,
       status: "completed",
       startedBy: kit.ctx.actor.userId,
       completedAt: sql`now()`,
       completedBy: kit.ctx.actor.userId,
     })
     .returning();
-  await kit.ctx.tx
-    .update(glLineClearings)
-    .set({ reconciliationId: rec.id })
-    .where(and(eq(glLineClearings.accountId, a.id), eq(glLineClearings.status, "reconciled"), sql`${glLineClearings.reconciliationId} IS NULL`));
+  await tx.update(glLineClearings).set({ reconciliationId: rec.id }).where(loose);
   await writeAudit(
     {
       organizationId: kit.org,
@@ -271,8 +308,8 @@ async function reconciliationFor(kit: Kit, a: { id: string; normal: string; name
       event: "bank.reconciliation.imported",
       entityType: "reconciliation",
       entityId: rec.id,
-      metadata: { account: a.name, lines: sum.count, clearedBalance: balance, statementEndDate: sum.last, from: "quickbooks" },
+      metadata: { account: a.name, lines: fresh.count, clearedBalance: fresh.balance, statementEndDate: fresh.last, from: "quickbooks" },
     },
-    kit.ctx.tx
+    tx
   );
 }

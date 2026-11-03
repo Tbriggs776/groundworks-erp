@@ -576,8 +576,12 @@ async function main() {
     assert(txns.some((t) => t.type === "deposit" && Number(t.total) === 30), "card credit is money back on the card");
     assert(txns.some((t) => t.payee === "Pat Smith"), "employee payee by name");
     assertEq(await balance(await qboAccount("17")), 300, "Savings got the transfer");
-    assertEq(await balance(await qboAccount("15")), -300, "Visa owes 300: −240 + 30 − 200 − 50 + 200 − 40");
-    assertEq(await balance(await qboAccount("1")), -1321.8, "Checking");
+    assertEq(await balance(await qboAccount("15")), -200, "Visa owes 200: −240 + 30 − 200 − 50 + 200 − 40, and the 100 card payment");
+    assertEq(await balance(await qboAccount("1")), -1421.8, "Checking, less the 100 card payment");
+    const [pay] = await db.execute<{ type: string; memo: string; status: string }>(sql`
+      SELECT b.type, b.memo, b.status FROM bank_transactions b JOIN qbo_id_map m ON m.local_id = b.id
+       WHERE m.organization_id = ${orgId} AND m.entity = 'CreditCardPayment' AND m.qbo_id = '1201'`);
+    assertEq(`${pay?.type} ${pay?.status} ${pay?.memo}`, "transfer posted Visa autopay", "a credit card payment is a posted transfer from the bank to the card");
   });
 
   await check("inventory moves with the history, costs FIFO, then matches QuickBooks' stock on hand", async () => {
@@ -644,19 +648,41 @@ async function main() {
     const [c] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM gl_line_clearings WHERE account_id = ${checking} AND status = 'cleared'`);
     // Transfer 1102 is cleared on the Visa, and QuickBooks' list gives a
     // transaction one status, so its Checking side is cleared too (noted).
-    assertEq(c.n, 3, "three cleared, not reconciled: two of Checking's own, and the Visa transfer's Checking side");
+    assertEq(c.n, 4, "four cleared, not reconciled: two of Checking's own, and the Checking side of the Visa transfer and card payment");
     const [visa] = await db.execute<{ bal: string }>(sql`
       SELECT statement_ending_balance::text AS bal FROM reconciliations WHERE account_id = ${await qboAccount("15")} AND status = 'completed'`);
     assertEq(Number(visa.bal), 240, "card: amount owed");
     const n = await notes();
     assert(n.includes("1 cleared or reconciled QuickBooks transaction isn't here, so it stays unmarked."), "a transaction that isn't here is noted");
-    assert(n.some((x) => /^Checking and .+: 1 transaction touches both accounts/.test(x) || /^.+ and Checking: 1 transaction touches both accounts/.test(x)), `two-sided transactions are noted (${n.filter((x) => x.includes("both accounts")).join(" | ")})`);
+    assert(n.some((x) => /^Checking and .+: 2 transactions touch both accounts/.test(x) || /^.+ and Checking: 2 transactions touch both accounts/.test(x)), `two-sided transactions are noted (${n.filter((x) => x.includes("both accounts")).join(" | ")})`);
     const v = await view();
     assert(v.skipped.some((s) => s.entity === "Purchase" && s.qboIds.includes("900004")), "every skipped record is listed, by QuickBooks id");
     assertEq(v.notesDropped, false, "no notes dropped");
     const sheet = await runAs(as(), (ctx) => reconcile.startReconciliation(ctx, { accountId: checking, statementEndDate: "2026-04-30", statementEndingBalance: "0" }));
     assertEq(Number(sheet.beginningBalance), 699.4, "the next reconciliation starts where QuickBooks' ended");
     await runAs(as(), (ctx) => reconcile.cancelReconciliation(ctx, { id: sheet.id }));
+  });
+
+  await check("an import resumed for a step added later keeps one imported reconciliation per account", async () => {
+    const checking = await qboAccount("1");
+    const recs = () =>
+      db.execute<{ n: number; bal: string; end: string }>(sql`
+        SELECT cleared_count AS n, statement_ending_balance::text AS bal, statement_end_date::text AS "end" FROM reconciliations
+         WHERE account_id = ${checking} AND status = 'completed'`);
+    const before = await recs();
+    // A reconciled line the first run didn't mark, as a step added later brings.
+    const [line] = await db.execute<{ id: string }>(sql`
+      SELECT gl_line_id AS id FROM gl_line_clearings WHERE account_id = ${checking} AND status = 'reconciled' ORDER BY gl_line_id LIMIT 1`);
+    await db.execute(sql`DELETE FROM gl_line_clearings WHERE gl_line_id = ${line.id}`);
+    await db.update(qboImports).set({ status: "running", cursor: { step: "cleared", position: 1 }, finishedAt: null }).where(eq(qboImports.organizationId, orgId));
+    let v = await batch(20_000);
+    for (let i = 0; i < 5 && v.status === "running"; i++) v = await batch(20_000);
+    assertEq(v.status, "done", `finished again (${v.lastError ?? ""})`);
+    const after = await recs();
+    assertEq(after.length, 1, "still one imported reconciliation");
+    assertEq(`${after[0].n} ${Number(after[0].bal)} ${after[0].end}`, `${before[0].n} ${Number(before[0].bal)} ${before[0].end}`, "the line rejoined it, totals worked out again");
+    const [ext] = await db.select().from(auditLog).where(and(eq(auditLog.organizationId, orgId), eq(auditLog.event, "bank.reconciliation.import_extended")));
+    assert(ext, "extending it is audited");
   });
 
   section("Finishing");
@@ -723,7 +749,7 @@ async function main() {
     assertEq(t.months[0].postable, false, "nothing left to post there");
     assert(t.months[0].lines.some((l) => l.code === "3300" && Number(l.difference) === 12), "Opening Balance Equity holds it");
     await expectError(() => runAs(as("admin"), (ctx) => tieout.postTieoutEntries(ctx, {})), "invalid_state");
-    assertEq(await balance(await qboAccount("1")), -1358.8, "Checking: −1321.80 − 20 − 5 − 12");
+    assertEq(await balance(await qboAccount("1")), -1458.8, "Checking: −1421.80 − 20 − 5 − 12");
     const [a] = await db.select().from(auditLog).where(and(eq(auditLog.organizationId, orgId), eq(auditLog.event, "qbo.tieout.posted")));
     assert(a, "audited");
   });

@@ -298,3 +298,47 @@ export const transfersStep = pagedStep({
     });
   },
 });
+
+/**
+ * Paying a credit card from the bank. QuickBooks keeps these as their own
+ * record (CreditCardPayment), not as transfers; here each one is a
+ * transfer from the bank account to the card, which pays the card down.
+ */
+export const creditCardPaymentsStep = pagedStep({
+  key: "card_payments",
+  label: "Credit card payments",
+  entity: "CreditCardPayment",
+  preload: ["Account"],
+  async importOne(kit, r) {
+    const label = `Credit card payment ${r.Id} (${String(r.TxnDate)})`;
+    return importTxn(kit, "CreditCardPayment", r, label, async () => {
+      const from = await kit.local("Account", r.BankAccountRef as Ref);
+      const to = await kit.local("Account", r.CreditCardAccountRef as Ref);
+      if (!from || !to) throw new AppError("invalid_input", "its bank account or card isn't here.");
+      const amount = amountOf(r.Amount);
+      if (amount.lte(0)) throw new AppError("invalid_input", "its amount isn't more than zero.");
+      const date = dateOf(r);
+      await kit.year(date);
+      const [txn] = await kit.ctx.tx
+        .insert(bankTransactions)
+        .values({
+          organizationId: kit.org,
+          txnNumber: await nextNumber(kit.ctx.tx, kit.org, "XFER"),
+          type: "transfer",
+          txnDate: date,
+          bankAccountId: from,
+          transferAccountId: to,
+          reference: text(r.CheckNum, 100),
+          memo: text(r.PrivateNote ?? r.Memo, 2000),
+          ...(await currencyOf(kit, r)),
+          totalAmount: toDbMoney(amount),
+          status: "draft",
+          ...creatorFields(kit.ctx.actor),
+        })
+        .returning();
+      const { journalId } = await postBankTransactionToGl(kit.ctx, txn, []);
+      await kit.ctx.tx.update(bankTransactions).set({ status: "posted", ...posted(kit, journalId) }).where(eq(bankTransactions.id, txn.id));
+      await kit.remember("CreditCardPayment", r.Id, txn.id);
+    });
+  },
+});
