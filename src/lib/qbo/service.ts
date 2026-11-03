@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { qboConnections, qboImports, type QboImport } from "@/lib/db/schema";
+import { qboConnections, qboIdMap, qboImports, type QboImport } from "@/lib/db/schema";
 import { auditFields, requirePermission, requireWorkspaceRole, type Ctx, type WsCtx } from "@/lib/actor";
 import { writeAudit } from "@/lib/audit";
 import { db } from "@/lib/db/client";
@@ -67,7 +67,12 @@ export const STEPS: Step[] = [
   finishStep,
 ];
 
-const MAX_NOTES = 500;
+/**
+ * Notes kept for the person. A big company writes thousands; past this the
+ * rest are dropped, so the page also lists every skipped record from the id
+ * map (`skipped` in the view), which is complete whatever the notes hold.
+ */
+const MAX_NOTES = 5000;
 
 // Default batch budget: no new record starts after this. The page sets
 // maxDuration=300, so the record in flight, flushRecosting, and the status
@@ -268,6 +273,10 @@ export type ImportView = {
   status: "running" | "failed" | "done" | "none";
   steps: Array<{ key: string; label: string; state: "done" | "current" | "waiting"; imported: number; skipped: number }>;
   notes: string[];
+  /** Notes past MAX_NOTES that were dropped (the page says so). */
+  notesDropped: boolean;
+  /** Every record that didn't come across, by QuickBooks entity and id: complete even when notes were dropped. */
+  skipped: Array<{ entity: string; qboIds: string[] }>;
   lastError: string | null;
   /** The last batch was stopped (by the platform) before it could save, and nothing has run since. */
   interrupted: { label: string | null; at: Date } | null;
@@ -281,6 +290,8 @@ const notImported = (): ImportView => ({
   status: "none",
   steps: [],
   notes: [],
+  notesDropped: false,
+  skipped: [],
   lastError: null,
   interrupted: null,
   batches: 0,
@@ -305,6 +316,8 @@ export async function getImportView(ctx: Ctx): Promise<ImportView | null> {
       skipped: imp?.counts[s.key]?.skipped ?? 0,
     })),
     notes: imp?.notes ?? [],
+    notesDropped: (imp?.notes.length ?? 0) >= MAX_NOTES,
+    skipped: imp ? await skippedRecords(ctx) : [],
     lastError: imp?.lastError ?? null,
     interrupted: imp && imp.status !== "done" ? await readInterrupted(ctx, BATCH_LIMIT_SECONDS + 60) : null,
     batches: imp?.batches ?? 0,
@@ -320,6 +333,18 @@ export async function getImportView(ctx: Ctx): Promise<ImportView | null> {
         }
       : null,
   };
+}
+
+/** Records remembered as skipped (importTxn and the watch), grouped by QuickBooks entity. */
+async function skippedRecords(ctx: Ctx): Promise<ImportView["skipped"]> {
+  const rows = await ctx.tx
+    .select({ entity: qboIdMap.entity, qboId: qboIdMap.qboId })
+    .from(qboIdMap)
+    .where(and(eq(qboIdMap.organizationId, ctx.actor.organizationId), eq(qboIdMap.value, "skipped")))
+    .orderBy(qboIdMap.entity, qboIdMap.qboId);
+  const out = new Map<string, string[]>();
+  for (const r of rows) out.set(r.entity, [...(out.get(r.entity) ?? []), r.qboId]);
+  return [...out].map(([entity, qboIds]) => ({ entity, qboIds }));
 }
 
 /** The import's progress for the API: "none" when the company wasn't imported. */

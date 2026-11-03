@@ -74,45 +74,60 @@ function transactions(report: Report): Array<{ type: string; id: string }> {
   return out;
 }
 
-/** The ledger journals an imported transaction posted. */
-async function journalsOf(kit: Kit, entity: string, localId: string, value: string | null): Promise<string[]> {
-  const tx = kit.ctx.tx;
-  const one = async (q: Promise<Array<{ j: string | null }>>) => (await q).map((r) => r.j).filter((j): j is string => Boolean(j));
-  switch (entity) {
-    case "JournalEntry":
-      return [localId];
-    case "Purchase":
-    case "Deposit":
-    case "Transfer":
-      return one(tx.select({ j: bankTransactions.glJournalId }).from(bankTransactions).where(eq(bankTransactions.id, localId)));
-    case "BillPayment":
-      return [
-        ...(await one(tx.select({ j: apPayments.glJournalId }).from(apPayments).where(eq(apPayments.id, localId)))),
-        ...(value && UUID.test(value) ? await one(tx.select({ j: bankTransactions.glJournalId }).from(bankTransactions).where(eq(bankTransactions.id, value))) : []),
-      ];
-    case "Payment":
-      return one(tx.select({ j: arPayments.glJournalId }).from(arPayments).where(eq(arPayments.id, localId)));
-    case "SalesReceipt":
-      return one(tx.select({ j: salesReceipts.glJournalId }).from(salesReceipts).where(eq(salesReceipts.id, localId)));
-    case "RefundReceipt":
-      return one(tx.select({ j: refundReceipts.glJournalId }).from(refundReceipts).where(eq(refundReceipts.id, localId)));
-    default:
-      return [];
-  }
-}
+const CHUNK = 2000;
+const chunks = <T,>(xs: T[]) => Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK));
 
-async function journalsFor(kit: Kit, t: { type: string; id: string }): Promise<string[]> {
-  for (const entity of ENTITIES[t.type] ?? ALL) {
-    const m = await kit.mapped(entity, t.id);
-    if (m?.localId) return journalsOf(kit, entity, m.localId, m.value);
-    // A bill payment with nothing applied is only its check against Accounts Payable.
-    if (entity === "BillPayment" && m?.value && UUID.test(m.value)) {
-      return (await kit.ctx.tx.select({ j: bankTransactions.glJournalId }).from(bankTransactions).where(eq(bankTransactions.id, m.value)))
-        .map((r) => r.j)
-        .filter((j): j is string => Boolean(j));
+/** The document table an imported transaction's journal lives on (a journal entry is its own journal). */
+const TABLES = { bank: bankTransactions, ap: apPayments, ar: arPayments, sales: salesReceipts, refund: refundReceipts } as const;
+type Where = keyof typeof TABLES | "self";
+const WHERE: Record<string, Where> = {
+  JournalEntry: "self",
+  Purchase: "bank",
+  Deposit: "bank",
+  Transfer: "bank",
+  BillPayment: "ap",
+  Payment: "ar",
+  SalesReceipt: "sales",
+  RefundReceipt: "refund",
+};
+
+/**
+ * The ledger journals of many imported transactions at once (key
+ * `type:id`): each one is found in the id map (preloaded), grouped by the
+ * table its document lives in, and each table is read once. A bill payment
+ * also has its check against Accounts Payable when nothing was applied (a
+ * bank transaction, in the map's `value`).
+ */
+async function journalsForAll(kit: Kit, txns: Array<{ type: string; id: string }>): Promise<Map<string, string[]>> {
+  const wants = new Map<Where, Array<{ key: string; localId: string }>>();
+  const want = (where: Where, key: string, localId: string) => wants.set(where, [...(wants.get(where) ?? []), { key, localId }]);
+  for (const t of txns) {
+    const key = `${t.type}:${t.id}`;
+    for (const entity of ENTITIES[t.type] ?? ALL) {
+      const m = await kit.mapped(entity, t.id);
+      const check = entity === "BillPayment" && m?.value && UUID.test(m.value) ? m.value : null;
+      if (m?.localId) want(WHERE[entity], key, m.localId);
+      if (check) want("bank", key, check);
+      if (m?.localId || check) break;
     }
   }
-  return [];
+  const journals = new Map<string, string[]>();
+  const add = (key: string, j: string | null | undefined) => {
+    if (j) journals.set(key, [...(journals.get(key) ?? []), j]);
+  };
+  for (const [where, list] of wants) {
+    if (where === "self") {
+      for (const w of list) add(w.key, w.localId);
+      continue;
+    }
+    const table = TABLES[where];
+    const byId = new Map<string, string | null>();
+    for (const ids of chunks([...new Set(list.map((w) => w.localId))])) {
+      for (const r of await kit.ctx.tx.select({ id: table.id, j: table.glJournalId }).from(table).where(inArray(table.id, ids))) byId.set(r.id, r.j);
+    }
+    for (const w of list) add(w.key, byId.get(w.localId));
+  }
+  return journals;
 }
 
 export const clearingStep: Step = {
@@ -120,58 +135,95 @@ export const clearingStep: Step = {
   label: "Cleared and reconciled",
   async run(kit, position) {
     // Bank and card accounts that came from QuickBooks, in a stable order.
-    const accts = await kit.ctx.tx
+    const all = await kit.ctx.tx
       .select({ qboId: qboIdMap.qboId, id: accounts.id, normal: accounts.normalBalance, name: accounts.name })
       .from(qboIdMap)
       .innerJoin(accounts, eq(accounts.id, qboIdMap.localId))
       .where(and(eq(qboIdMap.organizationId, kit.org), eq(qboIdMap.entity, "Account"), eq(accounts.isReconciliation, true)))
       .orderBy(accounts.code);
+    // An import that stopped partway through this step (it used to go an
+    // account a batch) keeps the accounts it finished as they are.
+    const accts = all.slice(position - 1);
+    if (accts.length === 0) return { done: true, position: 1 };
+    for (const e of ALL) await kit.preload(e);
     const end = format(addDays(new Date(), 400), "yyyy-MM-dd");
-    for (let i = position - 1; i < accts.length; i++) {
-      if (kit.timeUp()) return { done: false, position: i + 1 };
-      const a = accts[i];
-      let missing = 0;
-      for (const status of ["Reconciled", "Cleared"] as const) {
-        const report = await kit.client.report<Report>("TransactionList", {
-          account: a.qboId,
-          cleared: status,
-          start_date: "1990-01-01",
-          end_date: end,
-          columns: "tx_date,txn_type,doc_num",
-        });
-        for (const t of transactions(report)) {
-          const journals = await journalsFor(kit, t);
-          if (journals.length === 0) {
-            missing += 1;
-            continue;
-          }
-          const lines = await kit.ctx.tx
-            .select({ id: glLines.id })
-            .from(glLines)
-            .where(and(inArray(glLines.journalId, journals), eq(glLines.accountId, a.id)));
-          if (lines.length === 0) continue;
-          await kit.ctx.tx
-            .insert(glLineClearings)
-            .values(
-              lines.map((l) => ({
-                glLineId: l.id,
-                organizationId: kit.org,
-                accountId: a.id,
-                status: status === "Reconciled" ? ("reconciled" as const) : ("cleared" as const),
-                clearedBy: kit.ctx.actor.userId,
-              }))
-            )
-            .onConflictDoNothing();
-        }
+    const t0 = Date.now();
+
+    // QuickBooks' transaction list, filtered by status, once for the whole
+    // company: the report has no documented account filter, so asking per
+    // account read the same list again for every account. Reconciled wins
+    // over cleared.
+    const status = new Map<string, "reconciled" | "cleared">();
+    const txns: Array<{ type: string; id: string }> = [];
+    for (const s of ["Reconciled", "Cleared"] as const) {
+      const report = await kit.client.report<Report>("TransactionList", { cleared: s, start_date: "1990-01-01", end_date: end, columns: "tx_date,txn_type,doc_num" });
+      const rows = transactions(report);
+      console.log(`[qbo.cleared] ${s}: ${rows.length} transactions (+${Date.now() - t0}ms)`);
+      for (const t of rows) {
+        const key = `${t.type}:${t.id}`;
+        if (status.has(key)) continue;
+        status.set(key, s === "Reconciled" ? "reconciled" : "cleared");
+        txns.push(t);
       }
+    }
+    const journals = await journalsForAll(kit, txns);
+    const missing = txns.filter((t) => !journals.has(`${t.type}:${t.id}`)).length;
+    const journalStatus = new Map<string, "reconciled" | "cleared">();
+    for (const [key, js] of journals) for (const j of js) if (journalStatus.get(j) !== "reconciled") journalStatus.set(j, status.get(key)!);
+
+    // Their lines on the bank and card accounts, then the marks, in bulk.
+    const acctIds = accts.map((a) => a.id);
+    const lines: Array<{ id: string; accountId: string; journalId: string }> = [];
+    for (const js of chunks([...journalStatus.keys()])) {
+      lines.push(
+        ...(await kit.ctx.tx
+          .select({ id: glLines.id, accountId: glLines.accountId, journalId: glLines.journalId })
+          .from(glLines)
+          .where(and(inArray(glLines.journalId, js), inArray(glLines.accountId, acctIds))))
+      );
+    }
+    for (const part of chunks(lines)) {
+      await kit.ctx.tx
+        .insert(glLineClearings)
+        .values(
+          part.map((l) => ({
+            glLineId: l.id,
+            organizationId: kit.org,
+            accountId: l.accountId,
+            status: journalStatus.get(l.journalId)!,
+            clearedBy: kit.ctx.actor.userId,
+          }))
+        )
+        .onConflictDoNothing();
+    }
+    console.log(`[qbo.cleared] marked ${lines.length} lines on ${accts.length} accounts (+${Date.now() - t0}ms)`);
+
+    // A transaction on two of these accounts (a transfer, a card payment)
+    // gets one status from QuickBooks' list, so both sides carry it. Say so.
+    const names = new Map(accts.map((a) => [a.id, a.name]));
+    const sides = new Map<string, Set<string>>();
+    for (const l of lines) sides.set(l.journalId, (sides.get(l.journalId) ?? new Set()).add(l.accountId));
+    const pairs = new Map<string, number>();
+    for (const accountIds of sides.values()) {
+      if (accountIds.size < 2) continue;
+      const pair = [...accountIds].map((id) => names.get(id)!).sort().join(" and ");
+      pairs.set(pair, (pairs.get(pair) ?? 0) + 1);
+    }
+    for (const [pair, n] of pairs) {
+      kit.note(
+        `${pair}: ${n} ${n === 1 ? "transaction touches" : "transactions touch"} both accounts and came across with QuickBooks' one cleared status on both sides. Check ${n === 1 ? "it" : "them"} in each account's first reconciliation.`
+      );
+    }
+    if (missing > 0) {
+      kit.note(
+        missing === 1
+          ? "1 cleared or reconciled QuickBooks transaction isn't here, so it stays unmarked."
+          : `${missing} cleared or reconciled QuickBooks transactions aren't here, so they stay unmarked.`
+      );
+    }
+
+    for (const a of accts) {
       await reconciliationFor(kit, a);
-      if (missing > 0) {
-        kit.note(
-          missing === 1
-            ? `${a.name}: 1 cleared or reconciled QuickBooks transaction isn't here, so it stays unmarked.`
-            : `${a.name}: ${missing} cleared or reconciled QuickBooks transactions aren't here, so they stay unmarked.`
-        );
-      }
       kit.count("cleared", "imported");
     }
     return { done: true, position: 1 };
