@@ -19,7 +19,7 @@ import { estimatesStep, purchaseOrdersStep } from "./import/orders";
 import { stockStep } from "./import/stock";
 import { auditStep, classesStep, companyStep, customersStep, departmentsStep, itemsStep, termsStep, vendorsStep } from "./import/lists";
 import { billPaymentsStep, customerPaymentsStep, depositsStep } from "./import/payments";
-import { billsStep, purchasesStep, transfersStep, vendorCreditsStep } from "./import/purchases";
+import { billsStep, creditCardPaymentsStep, purchasesStep, transfersStep, vendorCreditsStep } from "./import/purchases";
 import { creditMemosStep, invoicesStep, refundReceiptsStep, salesReceiptsStep } from "./import/sales";
 import { paymentMethodsStep, taxAgenciesStep, taxCodesStep, taxRatesStep } from "./import/tax";
 import { clearWatch, clearWatchIn, readInterrupted, startWatch, STOPS_TO_SKIP } from "./import/watch";
@@ -54,6 +54,7 @@ export const STEPS: Step[] = [
   vendorCreditsStep,
   purchasesStep,
   transfersStep,
+  creditCardPaymentsStep,
   invoicesStep,
   salesReceiptsStep,
   creditMemosStep,

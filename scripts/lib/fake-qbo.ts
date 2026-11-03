@@ -457,6 +457,8 @@ function history(): Record<string, Rec[]> {
       { Id: "1101", TxnDate: "2026-03-15", FromAccountRef: ref("1"), ToAccountRef: ref("17"), Amount: 300 },
       { Id: "1102", TxnDate: "2026-03-28", FromAccountRef: ref("1"), ToAccountRef: ref("15"), Amount: 200, PrivateNote: "Paying the Visa" },
     ],
+    // QuickBooks keeps paying a card from the bank as its own record, not a transfer.
+    CreditCardPayment: [{ Id: "1201", TxnDate: "2026-03-29", BankAccountRef: ref("1"), CreditCardAccountRef: ref("15"), Amount: 100, PrivateNote: "Visa autopay" }],
   };
 }
 
@@ -480,6 +482,7 @@ export const CLEARED: Record<string, Record<"Reconciled" | "Cleared", Array<[str
     Cleared: [
       ["Credit Card Credit", "1003"],
       ["Transfer", "1102"],
+      ["Credit Card Payment", "1201"],
     ],
   },
 };
