@@ -120,12 +120,18 @@ export class QboClient {
    * One page of a query: `select * from <entity> [where …]` in QuickBooks'
    * own order. Importers check the count at the end and rescan if anything
    * slipped between pages (the id map makes a rescan safe).
+   *
+   * The records come back under the entity's name, except where QuickBooks
+   * names them otherwise (a CreditCardPayment query answers with
+   * `CreditCardPaymentTxn`): then they're the response's one list.
    */
   async page(entity: string, startPosition: number, where = ""): Promise<QboRecord[]> {
     const q = `select * from ${entity}${where ? ` where ${where}` : ""} startposition ${startPosition} maxresults ${PAGE_SIZE}`;
     const r = await this.get<{ QueryResponse: Record<string, QboRecord[] | number | undefined> }>("query", { query: q });
-    const rows = r.QueryResponse[entity];
-    return Array.isArray(rows) ? rows : [];
+    const named = r.QueryResponse[entity];
+    if (Array.isArray(named)) return named;
+    const lists = Object.values(r.QueryResponse).filter((v): v is QboRecord[] => Array.isArray(v));
+    return lists.length === 1 ? lists[0] : [];
   }
 
   /** How many records a query matches. */

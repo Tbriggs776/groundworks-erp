@@ -221,7 +221,10 @@ export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSch
     kit.count(suspect.step, "skipped");
     kit.note(`${suspect.label} stopped the import ${suspect.stops} times before it could be saved, so it was skipped. Enter it by hand.`);
   }
-  let index = Math.max(0, STEPS.findIndex((s) => s.key === imp.cursor.step));
+  // A step this version doesn't know was saved by a newer one (a page open
+  // from before a deploy): stop, never start the import over from the top.
+  let index = STEPS.findIndex((s) => s.key === imp.cursor.step);
+  if (index < 0) throw new AppError("invalid_state", "This page is out of date. Reload it, then continue the import.");
   let position = imp.cursor.position;
   while (index < STEPS.length) {
     kit.step = STEPS[index].key;
