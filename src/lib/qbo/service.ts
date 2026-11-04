@@ -243,6 +243,9 @@ export async function runImportBatch(ctx: Ctx, input: z.input<typeof RunBatchSch
     position = 1;
     if (kit.timeUp()) break;
   }
+  if (kit.noCustomerLines > 0) {
+    kit.note(`Deposits: ${kit.noCustomerLines} lines (${kit.noCustomer.toFixed(2)}) went to Accounts Receivable without a customer, so they can't pay an invoice here. Check how they were entered in QuickBooks.`);
+  }
   log("flushRecosting");
   await flushRecosting(ctx);
   log("writing status");

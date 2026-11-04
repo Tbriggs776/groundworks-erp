@@ -333,7 +333,8 @@ function history(): Record<string, Rec[]> {
           {
             Amount: 100,
             DetailType: "DepositLineDetail",
-            DepositLineDetail: { AccountRef: ref("9"), Entity: { value: "1", type: "Customer" }, ClassRef: ref("1") },
+            // QuickBooks spells the kind in capitals on deposit lines.
+            DepositLineDetail: { AccountRef: ref("9"), Entity: { value: "1", type: "CUSTOMER" }, ClassRef: ref("1") },
           },
         ],
         CashBack: { AccountRef: ref("19"), Amount: 20, Memo: "Petty cash" },
@@ -343,7 +344,8 @@ function history(): Record<string, Rec[]> {
         Id: "602",
         TxnDate: "2026-04-07",
         DepositToAccountRef: ref("1"),
-        Line: [{ Id: "1", Amount: 50, DetailType: "DepositLineDetail", DepositLineDetail: { AccountRef: ref("2"), Entity: { value: "4", type: "Customer" }, CheckNum: "7788" } }],
+        // The line against AR names no customer: only payment 505, which applies it, does.
+        Line: [{ Id: "1", Amount: 50, DetailType: "DepositLineDetail", DepositLineDetail: { AccountRef: ref("2"), CheckNum: "7788" } }],
         TotalAmt: 50,
       },
     ],
