@@ -22,6 +22,7 @@ export function LegalFrame({
           <nav className="ml-auto flex gap-4 text-xs text-muted-foreground">
             <Link href="/legal/privacy" className="hover:text-foreground">Privacy</Link>
             <Link href="/legal/terms" className="hover:text-foreground">Terms</Link>
+            <Link href="/legal/retention" className="hover:text-foreground">Retention</Link>
           </nav>
         </div>
       </header>

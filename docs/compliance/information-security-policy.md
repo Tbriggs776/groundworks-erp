@@ -272,10 +272,19 @@ access to).
 
 ## 12. Data retention and deletion
 
+The authoritative retention schedule, disposal methods, legal-hold
+procedure, and backup-restoration procedure are set out in the Data
+Retention and Disposal Policy
+(`docs/compliance/data-retention-policy.md`), which is a companion to
+this Policy and is published publicly at `/legal/retention`. The
+summary below is for orientation; the companion policy controls where
+the two differ.
+
 **Operational retention.** Customer data is retained for the duration
-of the customer's active account, plus a reasonable period
-thereafter to meet legal, dispute-resolution, and backup-cycle
-obligations.
+of the customer's active account, plus a reasonable period thereafter
+to meet legal, dispute-resolution, and backup-cycle obligations.
+Financial records are retained for the life of the company plus seven
+years.
 
 **Audit log retention.** Audit log entries are retained for the
 longer of seven years and the period required by applicable law.
