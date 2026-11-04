@@ -27,7 +27,7 @@ import { money, sumMoney, toDbMoney } from "@/lib/money";
 import type { QboRecord } from "../client";
 import { pagedStep, type Kit, type Ref } from "./kit";
 import { insertBankTxn } from "./purchases";
-import { amountOf, auditVoided, currencyOf, dateOf, importTxn, isVoided, methodOf, tags, text, voidedAt } from "./txn";
+import { amountOf, auditVoided, currencyOf, dateOf, importTxn, isEntity, isVoided, methodOf, tags, text, voidedAt } from "./txn";
 
 /**
  * Money that settles documents: customer payments (and the credit memos
@@ -130,7 +130,12 @@ export const customerPaymentsStep = pagedStep({
         if (l.type === "Invoice" && local) docs.push({ id: local, amount: l.amount, open: await invoiceOpen(kit, local) });
         else if (l.type === "CreditMemo" && local) credits.push({ id: local, amount: l.amount });
         // A deposit's money applied here: the step after deposits applies it.
-        else if (l.type === "Deposit") continue;
+        // Whose money it was goes along, for a deposit line that doesn't say.
+        else if (l.type === "Deposit") {
+          if (l.lineId) await kit.remember("DepositCustomer", `${l.qboId}:${l.lineId}`, customerId);
+          await kit.remember("DepositCustomer", `${l.qboId}:*`, customerId);
+          continue;
+        }
         else kit.note(`${label}: its ${l.type} ${l.qboId} line (${l.amount.toFixed(2)}) isn't here, so that part stays unapplied.`);
       }
       const plan = allocate(docs, credits);
@@ -339,7 +344,7 @@ export const depositsStep = pagedStep({
   key: "deposits",
   label: "Deposits",
   entity: "Deposit",
-  preload: ["Customer", "Account", "Payment", "SalesReceipt", "Class", "Department"],
+  preload: ["Customer", "Account", "Payment", "SalesReceipt", "Class", "Department", "DepositCustomer"],
   async importOne(kit, r) {
     const label = `Deposit ${r.Id} (${String(r.TxnDate)})`;
     return importTxn(kit, "Deposit", r, label, async () => {
@@ -375,12 +380,25 @@ export const depositsStep = pagedStep({
         const d = l.DepositLineDetail;
         const accountId = await kit.local("Account", d?.AccountRef);
         if (!accountId) throw new AppError("invalid_input", `account ${d?.AccountRef?.name ?? ""} isn't in the chart.`);
-        const customerId = d?.Entity?.type === "Customer" ? await kit.local("Customer", d.Entity) : null;
+        const lineId = l.Id ?? String(i + 1);
+        let customerId = isEntity(d?.Entity, "Customer") ? await kit.local("Customer", d!.Entity) : null;
+        // A line against AR that names no customer: the customer of the
+        // QuickBooks payment that applies this deposit line (or deposit).
+        if (!customerId && accountId === ar.id) {
+          customerId =
+            (await kit.local("DepositCustomer", { value: `${r.Id}:${lineId}` })) ?? (await kit.local("DepositCustomer", { value: `${r.Id}:*` }));
+        }
+        if (accountId === ar.id && !customerId && amount.gt(0)) {
+          // Money against AR whose customer nobody names: it can't pay an invoice. Say so.
+          await kit.once("deposit-ar-no-customer", async () => console.log(`[qbo.deposits] AR line with no customer: ${JSON.stringify(l).slice(0, 600)}`));
+          kit.noCustomer = kit.noCustomer.plus(amount);
+          kit.noCustomerLines += 1;
+        }
         if (accountId === ar.id && customerId && amount.gt(0)) {
           // A customer's money against what they owe: a payment received
           // (into Undeposited Funds) that this deposit takes to the bank, so
           // the invoices it pays can be marked paid with it.
-          const p = await paymentFromDepositLine(kit, r, l, l.Id ?? String(i + 1), customerId, amount, uf);
+          const p = await paymentFromDepositLine(kit, r, l, lineId, customerId, amount, uf);
           lines.push({ accountId: uf, amount: toDbMoney(amount), description: `Payment ${p.paymentNumber}${p.reference ? ` · ${p.reference}` : ""}`, customerId, arPaymentId: p.id });
           continue;
         }

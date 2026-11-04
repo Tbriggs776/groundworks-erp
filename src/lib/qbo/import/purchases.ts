@@ -17,6 +17,7 @@ import {
   currencyOf,
   dateOf,
   importTxn,
+  isEntity,
   isVoided,
   later,
   methodOf,
@@ -216,8 +217,8 @@ export const purchasesStep = pagedStep({
       const bankAccountId = await kit.local("Account", r.AccountRef as Ref);
       if (!bankAccountId) throw new AppError("invalid_input", `its account ${(r.AccountRef as Ref)?.name ?? ""} isn't here.`);
       const entity = r.EntityRef as EntityRef | undefined;
-      const vendorId = entity?.type === "Vendor" ? await kit.local("Vendor", entity) : null;
-      const customerId = entity?.type === "Customer" ? await kit.local("Customer", entity) : null;
+      const vendorId = isEntity(entity, "Vendor") ? await kit.local("Vendor", entity) : null;
+      const customerId = isEntity(entity, "Customer") ? await kit.local("Customer", entity) : null;
       const credit = r.Credit === true;
       const fallback: PaymentMethod = r.PaymentType === "Check" ? "check" : r.PaymentType === "CreditCard" ? "credit_card" : "cash";
       const header = {

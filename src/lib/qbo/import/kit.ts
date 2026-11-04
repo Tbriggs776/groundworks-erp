@@ -3,6 +3,7 @@ import { organizations, qboIdMap, type QboCounts } from "@/lib/db/schema";
 import type { Ctx } from "@/lib/actor";
 import { toAppError } from "@/lib/errors";
 import { ensureFiscalYearFor } from "@/lib/gl/fiscal-calendar";
+import { money } from "@/lib/money";
 import { PAGE_SIZE, type QboClient, type QboRecord } from "../client";
 import { watchRecord } from "./watch";
 
@@ -19,6 +20,9 @@ export class Kit {
   readonly counts: QboCounts;
   /** The step running now (set by the batch). */
   step = "";
+  /** Deposit money against AR that names no customer, this batch (noted at the end of the batch). */
+  noCustomer = money(0);
+  noCustomerLines = 0;
   private cache = new Map<string, { localId: string | null; value: string | null } | null>();
 
   constructor(

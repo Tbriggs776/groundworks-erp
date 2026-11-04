@@ -543,6 +543,10 @@ async function main() {
         JOIN ar_payment_applications a ON a.payment_id = p.id JOIN ar_invoices i ON i.id = a.invoice_id
        WHERE m.organization_id = ${orgId} AND m.entity = 'DepositLine' AND m.qbo_id = '602:1'`);
     assertEq(`${dep?.status} ${Number(dep?.amount)} ${dep?.ref} ${Number(dep?.applied)} ${dep?.invoice}`, "posted 50 7788 50 paid", "the deposit line is a payment, applied to the invoice it paid");
+    const [svc] = await db.execute<{ customer: string | null }>(sql`
+      SELECT l.customer_id AS customer FROM qbo_id_map m JOIN bank_transaction_lines l ON l.transaction_id = m.local_id
+       WHERE m.organization_id = ${orgId} AND m.entity = 'Deposit' AND m.qbo_id = '601' AND l.account_id = ${await qboAccount("9")}`);
+    assertEq(svc?.customer, await localId("Customer", "1"), "a deposit line's customer comes across however QuickBooks spells the kind");
     const [{ n }] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM ar_payments WHERE organization_id = ${orgId} AND status = 'voided'`);
     assertEq(n, 1, "voided payment kept, voided");
     const [app] = await db.execute<{ amount: string }>(sql`SELECT amount::text FROM ar_credit_applications WHERE organization_id = ${orgId}`);

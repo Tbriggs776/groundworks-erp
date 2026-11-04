@@ -24,6 +24,8 @@ export const text = (v: unknown, max: number) => (typeof v === "string" && v.tri
 export const amountOf = (v: unknown) => money(typeof v === "number" || typeof v === "string" ? String(v) : "0");
 export const later = (a: string, b: string) => (a > b ? a : b);
 export const dateOf = (r: QboRecord) => String(r.TxnDate);
+/** A QuickBooks entity reference of a kind: QuickBooks spells the kind "Customer" in some records and "CUSTOMER" in others. */
+export const isEntity = (e: { type?: string } | undefined, kind: "Customer" | "Vendor" | "Employee") => (e?.type ?? "").toLowerCase() === kind.toLowerCase();
 
 /** QuickBooks zeroes a voided transaction and notes it "Voided". */
 export function isVoided(r: QboRecord) {
