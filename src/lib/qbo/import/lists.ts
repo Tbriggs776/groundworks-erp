@@ -18,6 +18,18 @@ import { attempt, pagedStep, type Kit, type Ref, type Step } from "./kit";
 const ACTIVE_OR_NOT = "Active in (true, false)";
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+/** A month as QuickBooks may give it ("August", "Aug", "august", "8"): 1–12, or null when it isn't one. */
+export function monthNumber(v: unknown): number | null {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (/^\d{1,2}$/.test(s)) {
+    const n = Number(s);
+    return n >= 1 && n <= 12 ? n : null;
+  }
+  if (s.length < 3) return null;
+  const i = MONTHS.findIndex((m) => m.toLowerCase().startsWith(s.slice(0, 3)));
+  return i >= 0 ? i + 1 : null;
+}
+
 type QboAddress = { Line1?: string; Line2?: string; City?: string; CountrySubDivisionCode?: string; PostalCode?: string; Country?: string } | undefined;
 
 const text = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
@@ -50,8 +62,18 @@ export const companyStep: Step = {
   async run(kit) {
     const info = (await kit.client.get<{ CompanyInfo: QboRecord }>(`companyinfo/${kit.client.realmId}`)).CompanyInfo;
     const prefs = (await kit.client.get<{ Preferences: Record<string, Record<string, unknown>> }>("preferences")).Preferences;
-    const firstMonth = String(prefs.AccountingInfoPrefs?.FirstMonthOfFiscalYear ?? info.FiscalYearStartMonth ?? "January");
-    const startMonth = Math.max(1, MONTHS.indexOf(firstMonth) + 1);
+    // The fiscal year sets "year to date" everywhere: never guess it quietly.
+    const fromPrefs = prefs.AccountingInfoPrefs?.FirstMonthOfFiscalYear;
+    const fromInfo = info.FiscalYearStartMonth;
+    console.log(`[qbo.company] fiscal year starts: preferences=${JSON.stringify(fromPrefs)} company=${JSON.stringify(fromInfo)}`);
+    const a = monthNumber(fromPrefs);
+    const b = monthNumber(fromInfo);
+    const startMonth = a ?? b ?? 1;
+    if (a && b && a !== b) {
+      kit.note(`QuickBooks gives two fiscal year starts (${MONTHS[a - 1]} in its preferences, ${MONTHS[b - 1]} on the company). ${MONTHS[a - 1]} is used here; check it in Settings.`);
+    } else if (!a && !b) {
+      kit.note(`QuickBooks' fiscal year start couldn't be read (${JSON.stringify(fromPrefs ?? fromInfo ?? null)}), so it's January here. Check it before relying on year-to-date figures.`);
+    }
     const home = ((prefs.CurrencyPrefs?.HomeCurrency as Ref)?.value ?? "USD").toUpperCase();
     await kit.ctx.tx
       .update(organizations)

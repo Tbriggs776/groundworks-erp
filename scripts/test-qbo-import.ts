@@ -295,6 +295,11 @@ async function main() {
   };
 
   section("Company");
+  await check("a fiscal year start is read however QuickBooks spells the month", async () => {
+    const { monthNumber } = await import("../src/lib/qbo/import/lists");
+    assertEq(["August", "Aug", "august", " AUG ", "8", "08", "Jan", "12"].map(monthNumber).join(" "), "8 8 8 8 8 8 1 12", "months");
+    assertEq([monthNumber(""), monthNumber("Ag"), monthNumber("13"), monthNumber("Fiscal"), monthNumber(undefined)].join(" "), "    ", "not months");
+  });
   await check("fiscal year, currency, and profile come from QuickBooks", async () => {
     const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
     assertEq(org.fiscalYearStartMonth, 7, "fiscal year starts in July");
